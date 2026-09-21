@@ -1,0 +1,16 @@
+/* Extracted verbatim from AXIExportChat's injectStyles() (script.js ~11018-11034). */
+#axiExportBtn {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:0 11px; height:32px; border-radius:8px;
+  border:1.5px solid #e0e4ef; background:#fff;
+  color:#52545a; font-size:12px; font-weight:500;
+  cursor:pointer; transition:all .15s; font-family:inherit;
+  white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,.04);
+  flex-shrink:0;
+}
+#axiExportBtn:hover {
+  border-color:#93c5fd; background:#eff6ff; color:#1d4ed8;
+  box-shadow:0 2px 8px rgba(59,130,246,.14);
+}
+#axiExportBtn:active { transform:scale(.97); }
+#axiExportBtn svg { flex-shrink:0; }

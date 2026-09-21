@@ -7,11 +7,19 @@ import { defineConfig } from 'vite'
 // slot, exactly like the existing axi-*.js files in AXIBOT/. No
 // <script type="module">, no code-splitting, no import maps on the host page.
 //
+// React + ReactDOM are NOT bundled into each feature — they're marked
+// `external` and loaded once via CDN <script> tags in AXIBOT/index.html
+// (React 19 UMD, exposing window.React / window.ReactDOM), before any
+// feature bundle. Without this, every feature would carry its own ~200KB
+// (gzipped) copy of React, which compounds fast as more features convert.
+//
 // Each feature is its own IIFE (a separate global name), so each needs its
 // own build pass — that's what FEATURE selects below. Run:
-//   npm run build            (builds every feature, one after another)
-//   npm run build:databin    (just the Data Bin wizard)
-//   npm run build:admin      (just the Admin dashboard)
+//   npm run build              (builds every feature, one after another)
+//   npm run build:databin      (just the Data Bin wizard)
+//   npm run build:admin        (just the Admin dashboard)
+//   npm run build:promptTemplates
+//   npm run build:exportChat
 // then copy the matching dist/axi-*.js (+ .css, if present) into AXIBOT/.
 const FEATURES = {
   databin: {
@@ -23,6 +31,16 @@ const FEATURES = {
     entry: 'src/features/admin/mount.jsx',
     name: 'AxiAdminDashboard',
     fileName: 'axi-admin-dashboard-react',
+  },
+  promptTemplates: {
+    entry: 'src/features/promptTemplates/mount.jsx',
+    name: 'AxiPromptTemplates',
+    fileName: 'axi-prompt-templates-react',
+  },
+  exportChat: {
+    entry: 'src/features/exportChat/mount.jsx',
+    name: 'AxiExportChat',
+    fileName: 'axi-export-chat-react',
   },
 }
 
@@ -45,7 +63,16 @@ export default defineConfig({
       fileName: () => `${feature.fileName}.js`,
     },
     rollupOptions: {
+      // react-dom/client has no UMD global of its own — React 18+'s
+      // react-dom UMD bundle exposes createRoot directly on window.ReactDOM,
+      // so it maps to the same global as 'react-dom'.
+      external: ['react', 'react-dom', 'react-dom/client'],
       output: {
+        globals: {
+          react: 'React',
+          'react-dom': 'ReactDOM',
+          'react-dom/client': 'ReactDOM',
+        },
         // Force a predictable CSS filename instead of a hashed one.
         assetFileNames: (info) =>
           info.name && info.name.endsWith('.css') ? `${feature.fileName}.css` : 'assets/[name][extname]',
