@@ -52,6 +52,11 @@ const FEATURES = {
     name: 'AxiMessageThread',
     fileName: 'axi-message-thread-react',
   },
+  systemPromptEditor: {
+    entry: 'src/features/systemPromptEditor/mount.jsx',
+    name: 'AxiSystemPromptEditor',
+    fileName: 'axi-system-prompt-editor-react',
+  },
 }
 
 const featureKey = process.env.AXI_FEATURE || 'databin'
