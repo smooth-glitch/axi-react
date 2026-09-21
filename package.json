@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:databin && npm run build:admin && npm run build:promptTemplates && npm run build:exportChat && npm run build:providerSwitcher && npm run build:messageThread && npm run build:systemPromptEditor",
+    "build": "npm run build:databin && npm run build:admin && npm run build:promptTemplates && npm run build:exportChat && npm run build:providerSwitcher && npm run build:messageThread && npm run build:systemPromptEditor && npm run build:composer",
     "build:databin": "cross-env AXI_FEATURE=databin vite build",
     "build:admin": "cross-env AXI_FEATURE=admin vite build",
     "build:promptTemplates": "cross-env AXI_FEATURE=promptTemplates vite build",
@@ -13,6 +13,7 @@
     "build:providerSwitcher": "cross-env AXI_FEATURE=providerSwitcher vite build",
     "build:messageThread": "cross-env AXI_FEATURE=messageThread vite build",
     "build:systemPromptEditor": "cross-env AXI_FEATURE=systemPromptEditor vite build",
+    "build:composer": "cross-env AXI_FEATURE=composer vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },

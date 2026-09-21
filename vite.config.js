@@ -57,6 +57,11 @@ const FEATURES = {
     name: 'AxiSystemPromptEditor',
     fileName: 'axi-system-prompt-editor-react',
   },
+  composer: {
+    entry: 'src/features/composer/mount.jsx',
+    name: 'AxiComposer',
+    fileName: 'axi-composer-react',
+  },
 }
 
 const featureKey = process.env.AXI_FEATURE || 'databin'
