@@ -71,7 +71,18 @@ if (!feature) {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  // classic, not the default 'automatic', JSX runtime: automatic imports
+  // from the 'react/jsx-runtime' subpath, which — unlike 'react'/'react-dom'
+  // themselves — was NOT marked external below, so Rollup bundled its actual
+  // source into every output. That source's own entry-point dispatcher does
+  // an internal `process.env.NODE_ENV` check to pick dev vs prod internals;
+  // `process` doesn't exist in a browser, so every single bundle crashed
+  // immediately on load with "Uncaught ReferenceError: process is not
+  // defined" (caught via live testing). classic mode transforms JSX into
+  // React.createElement(...) calls against the plain `React` global instead
+  // — already provided via the UMD <script> tag — sidestepping the
+  // jsx-runtime package (and this whole class of bug) entirely.
+  plugins: [react({ jsxRuntime: 'classic' })],
   build: {
     outDir: 'dist',
     emptyOutDir: false,
