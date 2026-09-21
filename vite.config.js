@@ -47,6 +47,11 @@ const FEATURES = {
     name: 'AxiProviderSwitcher',
     fileName: 'axi-provider-switcher-react',
   },
+  messageThread: {
+    entry: 'src/features/messageThread/mount.jsx',
+    name: 'AxiMessageThread',
+    fileName: 'axi-message-thread-react',
+  },
 }
 
 const featureKey = process.env.AXI_FEATURE || 'databin'
