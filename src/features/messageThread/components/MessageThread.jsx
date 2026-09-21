@@ -16,7 +16,7 @@ export default function MessageThread() {
   return (
     <>
       {chat.messages.map((m, idx) => (
-        <MessageBubble key={idx} message={m} />
+        <MessageBubble key={idx} message={m} idx={idx} isLast={idx === chat.messages.length - 1} />
       ))}
     </>
   );
