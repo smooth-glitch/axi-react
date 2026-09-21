@@ -42,6 +42,11 @@ const FEATURES = {
     name: 'AxiExportChat',
     fileName: 'axi-export-chat-react',
   },
+  providerSwitcher: {
+    entry: 'src/features/providerSwitcher/mount.jsx',
+    name: 'AxiProviderSwitcher',
+    fileName: 'axi-provider-switcher-react',
+  },
 }
 
 const featureKey = process.env.AXI_FEATURE || 'databin'
