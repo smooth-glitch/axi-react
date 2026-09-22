@@ -7,6 +7,7 @@
 %%% deliberately NOT persisted -- they're transient by nature.
 -module(chat_room).
 -behaviour(gen_server).
+-include_lib("kernel/include/logger.hrl").
 
 -export([start_link/0]).
 -export([register_user/2, unregister_user/1, broadcast/2, broadcast/3,
@@ -95,11 +96,13 @@ init([]) ->
 handle_call({register, Name, Pid}, _From, State = #state{users = Users, monitors = Monitors}) ->
     case maps:is_key(Name, Users) of
         true ->
+            ?LOG_DEBUG("registration rejected, username already taken: ~s", [Name]),
             {reply, {error, taken}, State};
         false ->
             Ref = erlang:monitor(process, Pid),
             NewUsers = maps:put(Name, Pid, Users),
             NewMonitors = maps:put(Ref, Name, Monitors),
+            ?LOG_INFO("~s connected (~p total online)", [Name, maps:size(NewUsers)]),
             notify_all(NewUsers, {system, io_lib:format("~s has joined", [Name])}),
             {reply, ok, State#state{users = NewUsers, monitors = NewMonitors}}
     end;
@@ -148,6 +151,7 @@ handle_cast({unregister, Name}, State = #state{users = Users, monitors = Monitor
                 false -> true
             end
         end, Monitors),
+    ?LOG_INFO("~s disconnected cleanly (~p total online)", [Name, maps:size(NewUsers)]),
     notify_all(NewUsers, {system, io_lib:format("~s has left", [Name])}),
     {noreply, State#state{users = NewUsers, monitors = NewMonitors}};
 handle_cast({broadcast, From, Text, ReplyTo}, State = #state{users = Users}) ->
@@ -227,11 +231,17 @@ handle_cast({broadcast_profile, User}, State = #state{users = Users}) ->
     notify_all(Users, {profile_update, User, Avatar, Status}),
     {noreply, State}.
 
-handle_info({'DOWN', Ref, process, _Pid, _Reason}, State = #state{users = Users, monitors = Monitors}) ->
+handle_info({'DOWN', Ref, process, _Pid, Reason}, State = #state{users = Users, monitors = Monitors}) ->
     case maps:find(Ref, Monitors) of
         {ok, Name} ->
             NewUsers = maps:remove(Name, Users),
             NewMonitors = maps:remove(Ref, Monitors),
+            %% Distinct from the clean-unregister log above: this path
+            %% means the connection process died without a graceful
+            %% /quit or tcp_closed -- worth telling apart when chasing a
+            %% pattern of unexpected drops (a crash vs. a normal close).
+            ?LOG_INFO("~s disconnected unexpectedly (reason=~p, ~p total online)",
+                      [Name, Reason, maps:size(NewUsers)]),
             notify_all(NewUsers, {system, io_lib:format("~s has disconnected", [Name])}),
             {noreply, State#state{users = NewUsers, monitors = NewMonitors}};
         error ->

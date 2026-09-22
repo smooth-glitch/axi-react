@@ -10,6 +10,7 @@
 %%% deploy section for what the VM side needs.
 -module(chat_redis).
 -export([start_link/0, q/1]).
+-include_lib("kernel/include/logger.hrl").
 
 -define(NAME, ?MODULE).
 
@@ -32,11 +33,11 @@ start_link() ->
 %% points anywhere else (the VM). Loud, unmissable startup log rather than
 %% a silent misconfiguration.
 warn_if_insecure(Host, "") when Host =/= "127.0.0.1", Host =/= "localhost" ->
-    io:format(
-        "~n!!! WARNING: chat_redis is connecting to '~s' with NO PASSWORD SET. "
-        "Set REDIS_PASSWORD before this points at anything other than a local "
-        "dev Redis -- an unauthenticated Redis reachable over the network can "
-        "read/write every chat message stored in it. !!!~n~n",
+    ?LOG_WARNING(
+        "chat_redis is connecting to '~s' with NO PASSWORD SET. Set "
+        "REDIS_PASSWORD before this points at anything other than a local "
+        "dev Redis -- an unauthenticated Redis reachable over the network "
+        "can read/write every chat message stored in it.",
         [Host]);
 warn_if_insecure(_Host, _Password) ->
     ok.

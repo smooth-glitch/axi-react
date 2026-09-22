@@ -1,11 +1,21 @@
 %%% Minimal HTTP + WebSocket server, hand-rolled on gen_tcp (no cowboy/
-%%% ranch dependency, so the whole app stays zero-install). Serves the
-%%% single-page UI at GET / and upgrades WebSocket connections into the
-%%% same chat_room registry the raw TCP handler uses. Also accepts image
+%%% ranch dependency, so the whole app stays zero-install). Upgrades
+%%% WebSocket connections into the same chat_room registry the raw TCP
+%%% handler uses -- this is the interface axi-react (and any future
+%%% mobile client -- see the module doc for handshake/protocol details in
+%%% docs/CHAT_PROTOCOL.md) actually talks to. Also accepts image/voice
 %%% uploads (POST /upload) and serves them back (GET /uploads/<name>).
+%%% No page-serving of any kind -- the frontend hosts its own build.
+%%%
+%%% Debugging: every connect/disconnect, handshake rejection, and crash is
+%%% logged via OTP's `logger` (see chat.hrl's log level note and
+%%% docs/DEBUGGING.md) rather than scattered io:format calls -- filter by
+%%% module (`logger:set_module_level(chat_web, debug)`) when chasing a
+%%% specific connection's behavior on a live node.
 -module(chat_web).
 -export([start/1]).
 -include("chat.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
 -define(MAX_UPLOAD_SIZE, 8 * 1024 * 1024).
@@ -26,7 +36,7 @@ wait_for_socket(Socket) ->
                 read_request(Socket)
             catch
                 Class:Reason:Stack ->
-                    io:format("chat_web handler crashed: ~p:~p~n~p~n", [Class, Reason, Stack]),
+                    ?LOG_ERROR("chat_web handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
                     gen_tcp:close(Socket)
             end
     end.
@@ -541,6 +551,12 @@ handle_username_data(Socket, Buf) ->
                 {ok, Name, Identity} ->
                     complete_registration(Socket, Name, Identity, Rest);
                 {error, Reason} ->
+                    %% debug, not warning: a rejected handshake is
+                    %% expected/normal traffic (a client retrying after a
+                    %% typo, a taken username), not something operators
+                    %% need paged for. Never logs the raw Payload -- it
+                    %% may contain a real ARM token even when malformed.
+                    ?LOG_DEBUG("connect handshake rejected: ~s", [Reason]),
                     ws_send_json(Socket, "error", Reason),
                     handle_username_data(Socket, Rest)
             end;
@@ -750,7 +766,9 @@ handle_ws_data(Socket, Name, Buf) ->
                 Line ->
                     case check_rate_limit() of
                         ok -> handle_line(Socket, Name, Line);
-                        limited -> ws_send_json(Socket, "error", "Too many commands -- slow down")
+                        limited ->
+                            ?LOG_WARNING("~s hit the rate limit", [Name]),
+                            ws_send_json(Socket, "error", "Too many commands -- slow down")
                     end,
                     handle_ws_data(Socket, Name, Rest)
             end;

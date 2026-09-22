@@ -14,6 +14,7 @@
 %%% the network call, json (built into OTP 27+) for the body.
 -module(chat_arm).
 -export([get_list/2, get_list/3, put/2]).
+-include_lib("kernel/include/logger.hrl").
 
 -define(AXI_ARM_BASE_URL, "https://agile.axi-global.com/ARM_API").
 -define(AXI_ARM_PROJECT, "erpdemo").
@@ -94,6 +95,12 @@ put(#{token := Token, arm_session_id := ArmSessionId, username := Username}, Tra
     }),
     post_json(?PUSH_TO_QUEUE_URL, Body, Token).
 
+%% Never logs Body/Headers/Token here or anywhere in this module -- Body
+%% carries the ARM token embedded in the request payload for put/2, and
+%% RespBody is real Axpert data. Logs are limited to the URL (fixed,
+%% carries no secrets) and the HTTP status/error reason -- enough to
+%% diagnose "is ARM reachable / did auth fail" without ever writing a
+%% credential or a user's data to disk.
 post_json(Url, Body, Token) ->
     Headers = [{"Accept", "application/json"} | auth_header(Token)],
     Opts = [{timeout, ?FETCH_TIMEOUT}, {connect_timeout, ?CONNECT_TIMEOUT}, {autoredirect, false}],
@@ -103,11 +110,15 @@ post_json(Url, Body, Token) ->
             try
                 {ok, json:decode(RespBody)}
             catch
-                _:_ -> {error, {bad_json, RespBody}}
+                _:_ ->
+                    ?LOG_WARNING("ARM API call to ~s returned unparseable JSON", [Url]),
+                    {error, {bad_json, RespBody}}
             end;
         {ok, {{_, Code, _}, _RespHeaders, RespBody}} ->
+            ?LOG_WARNING("ARM API call to ~s failed with HTTP ~p", [Url, Code]),
             {error, {http_error, Code, RespBody}};
         {error, Reason} ->
+            ?LOG_WARNING("ARM API call to ~s failed: ~p", [Url, Reason]),
             {error, Reason}
     end.
 
