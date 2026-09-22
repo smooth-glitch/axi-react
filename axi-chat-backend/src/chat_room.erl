@@ -11,6 +11,7 @@
 -export([start_link/0]).
 -export([register_user/2, unregister_user/1, broadcast/2, broadcast/3,
          send_private/3, send_private/4, list_users/0]).
+-export([send_host_message/3, send_host_message/4, host_conv_key/2]).
 -export([get_pid/1, typing/1, typing_dm/2, mark_read/2]).
 -export([react_global/3, react_dm/4]).
 -export([delete_global/2, delete_dm/3]).
@@ -46,6 +47,24 @@ send_private(From, To, Text, ReplyTo) ->
 
 list_users() ->
     gen_server:call(?MODULE, list_users).
+
+%% Department-host messaging (associate <-> chat host, per the boss's
+%% spec) -- sits alongside plain send_private/4 rather than replacing it,
+%% since ordinary associate-to-associate DMs stay exactly as they are.
+%% HostKey resolves to an actual recipient via chat_hosts:resolve_host/2 --
+%% the sender never needs to know who that currently is.
+send_host_message(From, HostKey, Text) ->
+    send_host_message(From, HostKey, Text, []).
+
+send_host_message(From, HostKey, Text, ReplyTo) ->
+    gen_server:call(?MODULE, {host_message, From, HostKey, Text, ReplyTo}).
+
+%% Threaded per (host, associate) rather than per (host, whoever's
+%% currently resolved to it) -- if a department host's assigned user
+%% changes later, this associate's history with "HR" stays intact instead
+%% of splitting across whoever happened to be staffing it at the time.
+host_conv_key(HostKey, User) ->
+    "host:" ++ HostKey ++ "|" ++ User.
 
 %% Used by chat_groups to route a group message to each online member
 %% without chat_groups needing its own copy of the username registry.
@@ -101,6 +120,19 @@ handle_call({private, From, To, Text, ReplyTo}, _From, State = #state{users = Us
             {reply, {ok, Id}, State};
         error ->
             {reply, {error, not_found}, State}
+    end;
+handle_call({host_message, From, HostKey, Text, ReplyTo}, _From, State = #state{users = Users}) ->
+    case chat_hosts:resolve_host(HostKey, From) of
+        {ok, ResolvedTo} ->
+            ConvKey = host_conv_key(HostKey, From),
+            Id = chat_store:save_message(ConvKey, From, Text, chat, true, ReplyTo),
+            case maps:find(ResolvedTo, Users) of
+                {ok, Pid} -> Pid ! {host_message, HostKey, Id, From, Text, ReplyTo};
+                error -> ok
+            end,
+            {reply, {ok, Id}, State};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
     end;
 handle_call(list_users, _From, State = #state{users = Users}) ->
     {reply, maps:keys(Users), State};

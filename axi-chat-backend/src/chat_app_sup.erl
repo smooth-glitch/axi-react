@@ -18,6 +18,12 @@ init([TcpPort, WebPort]) ->
                   shutdown => 5000,
                   type => worker,
                   modules => [chat_redis]},
+    ChatHosts = #{id => chat_hosts,
+                  start => {chat_hosts, start_link, []},
+                  restart => permanent,
+                  shutdown => 5000,
+                  type => worker,
+                  modules => [chat_hosts]},
     ChatRoom = #{id => chat_room,
                  start => {chat_room, start_link, []},
                  restart => permanent,
@@ -42,7 +48,7 @@ init([TcpPort, WebPort]) ->
     %% just unused.
     Children = case TcpPort of
         undefined ->
-            [ChatRedis, ChatRoom, ChatGroups, WebListener];
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, WebListener];
         _ ->
             Listener = #{id => chat_listener,
                          start => {chat_listener, start_link, [TcpPort]},
@@ -50,6 +56,6 @@ init([TcpPort, WebPort]) ->
                          shutdown => 5000,
                          type => worker,
                          modules => [chat_listener]},
-            [ChatRedis, ChatRoom, ChatGroups, Listener, WebListener]
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, Listener, WebListener]
     end,
     {ok, {SupFlags, Children}}.

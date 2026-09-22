@@ -572,6 +572,12 @@ ws_loop(Socket, Name, Buf) ->
         {private_message, Id, From, Text, ReplyTo} ->
             ws_send_chat(Socket, "private", Id, From, Text, ReplyTo),
             ws_loop(Socket, Name, Buf);
+        {host_message, HostKey, Id, From, Text, ReplyTo} ->
+            ws_send(Socket, json_obj2([
+                {"type", {str, "host_message"}}, {"host", {str, HostKey}},
+                {"id", {raw, integer_to_list(Id)}}, {"from", {str, From}}, {"text", {str, Text}},
+                reply_field(ReplyTo)])),
+            ws_loop(Socket, Name, Buf);
         {system, Text} ->
             ws_send_json(Socket, "system", Text),
             ws_loop(Socket, Name, Buf);
@@ -704,6 +710,30 @@ handle_line(_Socket, _Name, "") ->
     ok;
 handle_line(Socket, _Name, "/list") ->
     ws_send_users(Socket, chat_room:list_users());
+handle_line(Socket, _Name, "/hosts") ->
+    ws_send_hosts(Socket, chat_hosts:list_hosts());
+%% Department-host messaging -- sits alongside /msg rather than replacing
+%% it (see chat_room:send_host_message/3 doc). LLM hosts and "My work
+%% space" never reach here: the boss's spec has those handled entirely
+%% client-side ("the same experience as today's AXI chat"), so a client
+%% should just switch its own view for those rather than calling this.
+handle_line(Socket, Name, "/hostmsg " ++ Rest) ->
+    case string:split(Rest, " ") of
+        [_HostKey, Text] when length(Text) > ?MAX_MESSAGE_LEN ->
+            ws_send_json(Socket, "error",
+                io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
+        [HostKey, Text] when Text =/= "" ->
+            case chat_room:send_host_message(Name, HostKey, Text) of
+                {ok, Id} ->
+                    ws_send(Socket, json_obj2([
+                        {"type", {str, "host_ack"}}, {"host", {str, HostKey}}, {"status", {str, "delivered"}},
+                        {"id", {raw, integer_to_list(Id)}}]));
+                {error, not_found} ->
+                    ws_send_json(Socket, "error", "No such host, or it has no one assigned yet: " ++ HostKey)
+            end;
+        _ ->
+            ws_send_json(Socket, "error", "Usage: /hostmsg <hostKey> <message>")
+    end;
 handle_line(Socket, Name, "/msg " ++ Rest) ->
     case string:split(Rest, " ") of
         [_To, Text] when length(Text) > ?MAX_MESSAGE_LEN ->
@@ -770,6 +800,9 @@ handle_line(Socket, Name, "/history " ++ Rest) ->
         ["group", GroupName] ->
             Key = "group:" ++ GroupName,
             send_history_payload(Socket, "group", [{"group", GroupName}], chat_store:load_history(Key));
+        ["host", HostKey] ->
+            Key = chat_room:host_conv_key(HostKey, Name),
+            send_history_payload(Socket, "host", [{"host", HostKey}], chat_store:load_history(Key));
         _ ->
             ok
     end;
@@ -941,7 +974,7 @@ handle_line(_Socket, _Name, Text) when
     Text =:= "/setavatar"; Text =:= "/setstatus"; Text =:= "/getprofile";
     Text =:= "/react"; Text =:= "/delete"; Text =:= "/creategroup";
     Text =:= "/addmember"; Text =:= "/leavegroup"; Text =:= "/groupmsg";
-    Text =:= "/replygroup" ->
+    Text =:= "/replygroup"; Text =:= "/hostmsg" ->
     ok;
 handle_line(_Socket, Name, Text) ->
     chat_room:broadcast(Name, Text).
@@ -1027,6 +1060,14 @@ ws_send_chat(Socket, Type, Id, From, Text, ReplyTo) ->
 
 ws_send_users(Socket, Users) ->
     ws_send(Socket, json_obj2([{"type", {str, "users"}}, {"list", {raw, json_string_array(Users)}}])).
+
+%% Hosts is a list of #{key, name, kind} maps from chat_hosts:list_hosts/0.
+ws_send_hosts(Socket, Hosts) ->
+    Items = [json_obj2([{"key", {str, Key}}, {"name", {str, HostName}}, {"kind", {str, Kind}}])
+             || #{key := Key, name := HostName, kind := Kind} <- Hosts],
+    ws_send(Socket, json_obj2([
+        {"type", {str, "hosts"}},
+        {"list", {raw, "[" ++ string:join(Items, ",") ++ "]"}}])).
 
 ws_send_group_created(Socket, GroupName, Members) ->
     ws_send(Socket, json_obj2([

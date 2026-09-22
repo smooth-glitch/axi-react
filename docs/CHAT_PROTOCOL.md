@@ -1,0 +1,219 @@
+# AXI Chat Backend — WebSocket Protocol
+
+What Anish and Gunn build the frontend chat UI against today. Source of
+truth is `axi-chat-backend/src/chat_web.erl` — if this doc and the code
+ever disagree, the code wins; ping Arjun to fix the doc.
+
+**Scope note, read this first:** this documents the real-time messaging
+transport plus the host directory — connect, DM, group chat, host
+messaging, reactions, typing, uploads. The **directory itself** is real
+today (`/hosts` lists the fixed preconfigured hosts always, per the boss's
+spec) but **department hosts are empty until the backend dev creates the
+chat-host tstruct** — the mechanism is wired end-to-end, there's just
+nothing configured to return yet. The **prompt engine**
+(List/Input/Upload/Download/Payment/OTP as a configurable per-host
+interaction unit) doesn't exist at all yet — that's separate, future work
+(Phase 3+ in `NEXT_STEPS.md`).
+
+---
+
+## Connecting
+
+1. Open a WebSocket to the backend (`ws://<host>:8090` locally by
+   default — see `axi-chat-backend/README.md` for how to run it).
+2. The **first text frame you send must be a plain username string**
+   (not JSON) — e.g. just `arjun`. Max 24 chars.
+3. Server replies:
+   - Success: `{"type":"welcome","name":"arjun"}`, immediately followed by
+     a `history` event for the global room (see below).
+   - Failure: `{"type":"error","text":"Username taken"}` (or "Username
+     cannot be empty" / "Username too long...") — connection stays open,
+     you can retry with another username on the same socket.
+
+There is currently **no authentication** on this handshake — any string
+becomes a valid username. Wiring this to real ARM API identity (so a
+connection is tied to who's actually signed in, not an arbitrary claimed
+name) is planned but not implemented yet — see the open item in
+`NEXT_STEPS.md` about forwarding the frontend's ARM `{token,
+ARMSessionId}` at connect time.
+
+Once connected, every message you send is a **plain-text command** (not
+JSON); every message you receive is a **JSON event**. This is intentionally
+asymmetric — commands are cheap to parse server-side, events are easy to
+consume client-side.
+
+---
+
+## Commands you send (plain text, one per WS text frame)
+
+| Command | Effect |
+|---|---|
+| `/list` | Server replies with `{"type":"users","list":[...]}` — currently-online usernames. |
+| `/hosts` | Server replies with `{"type":"hosts","list":[...]}` — the full host directory (see "Host directory" below). |
+| `/hostmsg <hostKey> <text>` | Send a message to a **department** host (see below — do NOT use this for `llm`/`workspace`-kind hosts). Reply: `host_ack` event, or an error if the host doesn't exist or has no one assigned yet. |
+| `/msg <username> <text>` | Send a DM to another associate directly. Reply: `dm_ack` event, or an error if the user doesn't exist. |
+| `/reply <messageId> <text>` | Reply to a message in the **global** room. |
+| `/replydm <username> <messageId> <text>` | Reply to a message within a DM thread. |
+| `/history global` | Re-fetch global room history (also sent automatically on connect). |
+| `/history dm <username>` | Fetch DM history with that user. |
+| `/history group <groupName>` | Fetch a group's history. |
+| `/history host <hostKey>` | Fetch your history with a department host. |
+| `/typing global` | Broadcast a typing indicator to the global room. |
+| `/typing dm <username>` | Broadcast a typing indicator to that DM. |
+| `/typing group <groupName>` | Broadcast a typing indicator to that group. |
+| `/read dm <username>` | Mark a DM thread as read (triggers `dm_read` to the other party). |
+| `/pubkey <base64Key>` | Publish your E2EE public key (for DM encryption support — currently only consumed by the iOS client's crypto, not yet by any web/React flow). |
+| `/getpubkey <username>` | Fetch another user's public key. |
+| `/setavatar <url>` | Set your avatar URL. Broadcasts a `profile` event to contacts. |
+| `/setstatus <text>` | Set your status line. Same broadcast as above. |
+| `/getprofile <username>` | Fetch another user's avatar/status. |
+| `/gifsearch [query]` | Search GIFs (Giphy-backed). Reply: `gif_results` event. |
+| `/stickersearch [query]` | Same, for stickers. Reply: `sticker_results`. |
+| `/react global <messageId> <emoji>` | Toggle a reaction on a global message. |
+| `/react dm <username> <messageId> <emoji>` | Toggle a reaction on a DM message. |
+| `/react group <groupName> <messageId> <emoji>` | Toggle a reaction on a group message. |
+| `/delete global <messageId>` | Delete your own message (sender-only, enforced server-side). |
+| `/delete dm <username> <messageId>` | Same, for a DM. |
+| `/delete group <groupName> <messageId>` | Same, for a group message. |
+| `/creategroup <name>` | Create a group (you become the sole/owner member). Max 32 chars. |
+| `/addmember <group> <username>` | Add an online user to a group you're in. |
+| `/leavegroup <group>` | Leave a group. |
+| `/groupmsg <group> <text>` | Send a message to a group. |
+| `/replygroup <group> <messageId> <text>` | Reply within a group thread. |
+| `/groups` | List the groups you're in. Reply: `groups` event. |
+| `/quit` | Clean disconnect. |
+| Anything else (no leading `/`) | Broadcast as a plain message to the **global** room. |
+
+Messages are capped at 2000 chars — longer ones get an `error` event back
+instead of being sent.
+
+---
+
+## Events you receive (JSON, one object per WS text frame)
+
+Every event has a `"type"` field. Shapes below use `...` for fields that
+mirror the command that triggered them.
+
+| `type` | When | Key fields |
+|---|---|---|
+| `welcome` | Right after a successful handshake | `name` |
+| `history` | On connect, or after `/history ...` | `scope` (`global`/`dm`/`group`), `with`/`group` (if scoped), `list`: array of message objects (see below) |
+| `hosts` | Reply to `/hosts` | `list`: array of `{key, name, kind}` — see "Host directory" below |
+| `host_ack` | Your `/hostmsg` was delivered | `host`, `status`, `id` |
+| `host_message` | You received a message via a department host | `host`, `id`, `from`, `text`, `replyTo` |
+| `chat` | Someone posted in the global room | `id`, `from`, `text`, `replyTo` (int or `null`) |
+| `private` | You received a DM | same shape as `chat` |
+| `system` | A system notice (join/leave, etc.) | `text` |
+| `group_message` | A group message | `group`, `id`, `from`, `text`, `replyTo` |
+| `group_system` | A group system notice | `group`, `text` |
+| `added_to_group` | You were added to a group | `name`, `members` (array), `by` |
+| `group_created` | Your `/creategroup` succeeded | `name`, `members` |
+| `groups` | Reply to `/groups` | `list`: array of `{name, members}` |
+| `users` | Reply to `/list` | `list`: array of usernames |
+| `typing` | Someone's typing in global | `text` (the username) |
+| `typing_dm` | Someone's typing in your DM | `from` |
+| `group_typing` | Someone's typing in a group you're in | `group`, `from` |
+| `dm_read` | Your DM was marked read | `from` |
+| `dm_ack` | Your `/msg` was delivered | `with`, `status`, `id` |
+| `group_msg_ack` | Your `/groupmsg`/`/replygroup` was delivered | `group`, `id` |
+| `reaction` / `dm_reaction` / `group_reaction` | A reaction changed | `messageId`, `reactions`: array of `{user, emoji}`; DM/group variants add `userA`/`userB` or `group` |
+| `profile` | Someone's avatar/status changed | `user`, `avatar` (or `null`), `status` (or `null`) |
+| `deleted` / `dm_deleted` / `group_deleted` | A message was deleted | `messageId`; DM/group variants add `userA`/`userB` or `group` |
+| `own_message_id` | Echo of your own broadcast's assigned id | `id` |
+| `link_preview` / `dm_link_preview` / `group_link_preview` | A pasted link's preview finished fetching | `messageId`, `previewUrl`, `previewTitle`, `previewDescription`, `previewImage` (all `""` if none) |
+| `gif_results` / `sticker_results` | Reply to a search | `query`, `results`: array of `{id, url, preview, width, height}` |
+| `pubkey` | Reply to `/getpubkey` | `user`, `key` (or `null`) |
+| `left_group` | Your `/leavegroup` succeeded | (text payload, not JSON object — see `json_obj` vs `json_obj2` in source) |
+| `error` | Any command usage error | `text` |
+
+### Message object shape (inside a `history` event's `list`)
+
+```json
+{
+  "id": 123,
+  "from": "arjun",
+  "text": "hello",
+  "private": false,
+  "reactions": [{"user": "gunn", "emoji": "👍"}],
+  "deleted": false,
+  "replyTo": null,
+  "previewUrl": "", "previewTitle": "", "previewDescription": "", "previewImage": ""
+}
+```
+
+History returns at most the last 50 messages for that conversation, oldest
+first.
+
+---
+
+## Host directory
+
+Per the boss's spec, the directory a user sees is **associates + hosts**.
+Associates are just other online users (`/list`) — no separate concept
+needed there yet since there's no "user master"/org-chart data source
+wired up. Hosts come from `/hosts`, and are one of three `kind`s:
+
+- **`"llm"`** (`openai`, `ai_router`, `claude`, `gemini`) and
+  **`"workspace"`** (`workspace`, "My work space") — fixed, always
+  present regardless of backend config, per spec. **Selecting one of
+  these is a client-side-only concern** — per the boss's doc, it's "the
+  same experience as today's AXI chat" (the existing Provider Switcher/
+  Composer/MessageThread). **Do not** call `/hostmsg` for these — there's
+  nothing on the backend to route to, since the LLM call itself doesn't
+  go through this Erlang service at all.
+- **`"department"`** (e.g. a future `hr`, `finance`) — configured chat
+  hosts (HR, Finance, IT Support, etc. per the spec's "Chat host tstruct").
+  **Currently always an empty list** — the backend dev hasn't created the
+  chat-host tstruct yet, so there's nothing to populate this with. The
+  mechanism (`/hostmsg`, `/history host`, message routing, resolving a
+  host to whichever person/group is currently assigned) is fully wired
+  and tested end-to-end — it just has no real hosts to resolve to yet.
+  Calling `/hostmsg` for a host key that doesn't exist (which, right now,
+  is any department host key at all) gets you back an `error` event.
+
+Once the chat-host tstruct exists, department hosts will start appearing
+in `/hosts`'s response with no frontend changes needed — the shape
+(`{key, name, kind: "department"}`) is already final.
+
+A department-host conversation threads separately from an ordinary DM
+with whoever currently happens to be assigned to that host — if HR's
+assigned person changes later, your history with "HR" stays intact rather
+than splitting.
+
+---
+
+## File uploads (separate from the WS protocol — plain HTTP)
+
+- `POST /upload` — multipart/form-data, one file field. Images
+  (png/jpeg/gif/webp) and voice notes (webm/ogg/mp4 audio), max 8MB.
+  Returns `{"url": "/uploads/<random-name>"}` on success. Content-type is
+  verified against the file's actual magic bytes, not just the declared
+  header — a mismatch is rejected.
+- `GET /uploads/<name>` — serves it back. Supports HTTP Range requests
+  (needed for `<audio>`/`<video>` elements to seek/preload correctly).
+
+There's no `chat` command tying an uploaded file to a message yet — the
+current pattern (inherited from the original single-page client this
+protocol was built for) is: upload the file, get the URL back, then send
+that URL as the `text` of an ordinary `/msg`/`/groupmsg`/broadcast. Worth
+revisiting once the frontend's actual attachment UX is designed.
+
+---
+
+## What's deliberately NOT here yet
+
+- Real department hosts — the directory mechanism exists (`/hosts`,
+  `/hostmsg`, host-scoped history/routing) but has nothing configured
+  until the backend dev creates the chat-host tstruct (see "Host
+  directory" above).
+- An associate directory beyond "who's currently online" — no user-master/
+  org-chart data source exists yet either.
+- Prompts (List/Input/Upload/Download/Payment/OTP) as a configurable
+  interaction unit.
+- Real identity/auth on connect (see the note under "Connecting").
+- Month-grouping or any thread-organization metadata — `history` just
+  returns a flat, most-recent-50 list.
+
+These land once the backend dev's `AxExternalUsers`/chat-host/prompt
+tstructs exist and `chat_arm.erl` has real data to read — see
+`NEXT_STEPS.md` Phase 3 and Section 8.
