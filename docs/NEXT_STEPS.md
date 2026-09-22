@@ -137,11 +137,21 @@ Type-specific fields, shown only for that prompt type:
 
 ## 3. What's already built
 
+> **Scope correction (post-audit):** Templates, the System Prompt Editor
+> ("user prompt"), and the Admin Dashboard are being **removed from the
+> app entirely**, not extended — the boss's spec doesn't call for any of
+> them, and the generic prompt engine (Section 4) replaces what the
+> System Prompt Editor did as a one-off. This is Anish and Gunn's work,
+> starting once Arjun's backend base is done — don't build anything new
+> on top of these three in the meantime. The "✅ Built"/"🟡 Partial" rows
+> below referencing them describe what exists *today*, not what to keep
+> extending.
+
 | Vision concept | Status | Where |
 |---|---|---|
 | Chat with an LLM host (OpenAI/Claude/Gemini) | ✅ Built | Provider Switcher, Composer, Message Thread |
 | List prompt → table result from an ADS | ✅ Built (as Data Bin datasources) | Data Bin wizard, `services/dataSources.js` |
-| Input prompt → tstruct form popup | 🟡 Partial — one instance, not generalized | System Prompt Editor |
+| Input prompt → tstruct form popup | 🟡 Partial, and slated for removal — see scope correction above | System Prompt Editor |
 | Upload file prompt | ✅ Built | `services/fileUpload.js` |
 | Download file prompt | ✅ Built (chat/message export) | `services/chatExport.js`, `pdfExport.js` |
 | Message cards, expand/collapse | ✅ Built (single-thread form) | MessageBubble / MessageThread |
@@ -160,6 +170,10 @@ Type-specific fields, shown only for that prompt type:
 These don't extend existing components — they're new surfaces the current
 IA has no place for yet.
 
+- [ ] **Remove templates, the System Prompt Editor, and the Admin
+      Dashboard** — not extended, deleted entirely (see the scope
+      correction in Section 3). Anish and Gunn's first task once Arjun's
+      backend base is done.
 - [ ] **Directory & navigation shell** — a left-rail list of associates,
       external users, and hosts (departmental + LLM), replacing today's
       single-conversation layout with a conversation list + active-
@@ -176,8 +190,9 @@ IA has no place for yet.
       an external script) — needs a scoped design pass with the backend
       dev, not a blind port.
 - [ ] **Registration & host admin** — forms for "Register External Users"
-      and chat-host configuration, likely extensions of the existing Admin
-      Dashboard.
+      and chat-host configuration. **Not** an extension of the existing
+      Admin Dashboard — that's being removed (Section 3) — this is new,
+      built fresh.
 - [ ] **Payment & OTP flows** — new UI patterns with no analog in the
       current app; scope depends entirely on backend/provider decisions.
 
@@ -207,15 +222,18 @@ IA has no place for yet.
 
 - [ ] Generic prompt renderer (reads a prompt definition, dispatches to the right UI)
 - [ ] List prompt type (reuse Data Bin datasource patterns)
-- [ ] Input prompt type (reuse System Prompt editor's form pattern)
+- [ ] Input prompt type (the System Prompt Editor is being removed, not
+      reused — its form pattern can still inform this build, but expect
+      to build the actual component fresh)
 - [ ] Wire in existing Upload/Download services
 
 ### Phase 4 — Registration & host admin
-*Extends the existing Admin Dashboard.*
+*Built fresh — the old Admin Dashboard is being removed (Section 3), not extended.*
 
 - [ ] External-user registration form (`AxExternalUsers` fields)
 - [ ] Chat-host configuration UI
-- [ ] Both as new tabs/panels in the existing Admin Dashboard
+- [ ] New admin surface for both — whatever replaces the old Admin
+      Dashboard's navigation, TBD by Anish/Gunn when they get here
 
 ### Phase 5 — Payment, OTP, Smart View
 *Highest external-dependency risk — sequence last.*
