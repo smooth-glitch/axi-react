@@ -418,6 +418,31 @@ live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
         `httpd_can_network_connect=1` to proxy to any backend at all, and
         static content directories need `httpd_sys_content_t` for nginx
         to read them.
+  - [x] **Fully isolated preview environment per PR/branch — done and
+        verified live end-to-end.** Every PR gets its own URL
+        (`http://10.0.2.146/preview/<branch-slug>/`), its own backend
+        process, and its own Redis database (0 = prod, 1-15 = previews)
+        — two people can have two different branches live at once
+        without colliding. **How it works for you:** open a PR as usual;
+        within ~1-2 minutes, `preview-deploy.yml` posts a comment on the
+        PR with your preview's URL (reachable from the office network/VPN
+        only, same as prod). Every time you push more commits to that PR,
+        the preview redeploys automatically. When the PR closes (merged
+        or not), `preview-cleanup.yml` tears the whole thing down
+        automatically — nothing to clean up yourself.
+        Implementation: `chat_redis.erl`'s `REDIS_DB` env var, a
+        flock-guarded slot registry (`/opt/preview/allocate-slot.sh` /
+        `teardown-slot.sh` on the VM), a systemd template unit
+        (`axi-chat-backend-preview@<slot>.service`), a per-branch nginx
+        config dropped into `conf.d/previews/` (included from inside the
+        main server block — bare `location` blocks in top-level
+        `conf.d/*.conf` files don't work, they need a wrapping
+        `server{}`), and the frontend built per-branch with Vite's
+        `--base` flag so assets resolve under `/preview/<slug>/` instead
+        of root. Capped at 15 concurrent preview slots (Redis's default
+        database count) — more than enough for a 3-person team, but if
+        that ever becomes a real constraint, Redis's `databases` config
+        value can be raised.
 - [ ] **Confirm with backend**: does production still need
       `shared/axi-standalone-bridge.js`'s standalone sign-in screen? Its whole job
       is bridging to the real ARM API when there's no Axpert host around —
