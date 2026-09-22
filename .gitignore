@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Copied (not committed) from shared/ by scripts/sync-public-assets.mjs
+# before dev/build — see that file for why these are copies, not symlinks.
+public/axi-standalone-bridge.js
+public/axi-foundation.js
+public/axi-databin-services.js
+public/axi-admin-services.js
+public/axi-databin-core.js
+public/axi-databin-extras.js
+public/axi-ui-polish.js
+public/axi-push-to-tstruct.js
+public/styles.css

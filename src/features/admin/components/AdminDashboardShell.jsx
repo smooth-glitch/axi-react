@@ -40,11 +40,20 @@ export default function AdminDashboardShell() {
 
   useEffect(() => {
     // boot(): fetchADSData may not be ready yet — poll like the original did.
+    // Also wait for App.jsx's deferred legacy-script loader (__axiLegacyScriptsReady)
+    // — axi-databin-extras.js defines syncSavedPinsDropdownSelection, which
+    // loadSavedPins()/setActiveDataBin() call as a bare global; calling
+    // loadSavedPins before that script has loaded throws a ReferenceError
+    // (confirmed via live testing with real credentials), which — since
+    // axi-databin-services.js's own catch block doesn't release the global
+    // loading overlay on failure — left it stuck. Not a full fix on its own
+    // (App.jsx's loader also self-heals with its own retry once everything
+    // is loaded), but avoids relying on that retry as the only path.
     let cancelled = false;
     let tries = 0;
     (async function tryLoad() {
       tries++;
-      if (typeof window.fetchADSData !== 'function' && tries < 12) {
+      if ((typeof window.fetchADSData !== 'function' || !window.__axiLegacyScriptsReady) && tries < 20) {
         setTimeout(tryLoad, 500);
         return;
       }

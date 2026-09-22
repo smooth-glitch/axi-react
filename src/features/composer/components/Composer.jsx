@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getState, useComposerVersion } from '../store';
 
 const MAX_CHARS = 2000;
@@ -64,6 +64,32 @@ export default function Composer() {
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   }, [text]);
+
+  // FIXED BUG (found via live testing): several legacy files still poke
+  // #prompt directly — e.g. axi-foundation.js's renderFilePills sets
+  // `promptEl.value = msg` then dispatches a plain `new Event('input', {
+  // bubbles: true })` before clicking #send, exactly like it did before the
+  // composer was a React component. That still visibly fills the textarea
+  // (the DOM value really does change), but React's onChange did NOT fire —
+  // React wraps the native `value` setter to track "the last value it set,"
+  // and a plain external `.value = x` assignment updates that tracked value
+  // too, so when the dispatched 'input' event arrives React's diff sees no
+  // change and skips onChange. Net effect: the textarea LOOKS filled in but
+  // the Send button stays disabled (React's `text` state, which drives
+  // `disabled`, never updated) — confirmed live: clicking a file pill filled
+  // the box but Send silently did nothing. A plain native listener here
+  // (not React's synthetic onChange) reads the DOM value directly on every
+  // real 'input' event regardless of how it was triggered, so external
+  // writes are no longer silently dropped.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return undefined;
+    function handleNativeInput() {
+      setText(ta.value);
+    }
+    ta.addEventListener('input', handleNativeInput);
+    return () => ta.removeEventListener('input', handleNativeInput);
+  }, []);
 
   const hasText = !!text.trim();
   const hasAny = hasText || state.pendingAttachments.length > 0;

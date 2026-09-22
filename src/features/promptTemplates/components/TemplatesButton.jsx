@@ -33,7 +33,7 @@ export default function TemplatesButton() {
   return (
     <div className="axi-tpl-wrap" ref={wrapRef}>
       <button
-        id="axiTplBtn"
+        id="axiTplBtnReact"
         type="button"
         title="Prompt Templates"
         className={open ? 'axi-tpl-active' : ''}

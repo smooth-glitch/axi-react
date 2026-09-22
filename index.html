@@ -2,9 +2,81 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Axpert Insights (AXI)</title>
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>axi-react</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" />
+    <!-- STANDALONE: the Material Icons font needed for every
+         <span class="material-icons"> in this app was previously bundled
+         inside Axpert's own UI CSS (only reachable when actually embedded).
+         Public Google Fonts equivalent used here instead — see AXIBOT's
+         index.html for the same note on the legacy hybrid page. -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+
+    <!-- MUST be the first script tag: lets the app run standalone (its own
+         tab, no Axpert iframe) against the real ARM REST API. Does nothing
+         at all when actually embedded in Axpert. -->
+    <script src="/axi-standalone-bridge.js"></script>
+    <script src="/axi-foundation.js"></script>
+
+    <!-- Shared React runtime — the app bundle below marks react/react-dom
+         external (see vite.config.js) so it doesn't carry its own copy.
+         React 18, not 19 — React 19 dropped UMD builds entirely. -->
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+
+    <!-- Data Bin + Admin backend/persistence layers — real ARM-API-integrated
+         code, kept exactly as-is (not React, not ES modules) per the
+         migration's risk tradeoff: this logic is tested against the live
+         API and not safe to blind-refactor without live credentials. The
+         React components (rendered inside App.jsx) call into these by their
+         window.* names, same as the previous hybrid architecture did.
+         Pure logic/state, no boot-time DOM queries — safe to load eagerly. -->
+    <script src="/axi-databin-services.js"></script>
+    <script src="/axi-admin-services.js"></script>
+    <!-- axi-databin-core.js, axi-databin-extras.js, axi-ui-polish.js, and
+         axi-push-to-tstruct.js are NOT loaded here — each has a
+         document.readyState-gated boot routine that queries specific
+         static markup (e.g. #provider, #dataBinNameInput) expecting it to
+         already exist, which was true in the old hybrid page (all markup
+         was static HTML) but is NOT true here (index.html ships only
+         <div id="root">; everything else is client-rendered by App.jsx).
+         Loading them eagerly null-refs on the very first query. App.jsx
+         injects these four dynamically, after its own first render commits
+         the markup they depend on — see its `useEffect` script loader. -->
+
+
+    <!-- Core libs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <!-- Highcharts & modules -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/heatmap.js"></script>
+    <script src="https://code.highcharts.com/modules/treemap.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/legacy/build/pdf.min.js"></script>
+    <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+
+    <!-- PDF report export (src/services/pdfExport.js, generatePDFReport) and
+         chat export-to-PDF (src/services/chatExport.js) both need these two
+         UMD globals — present in the legacy hybrid page but missed when this
+         SPA's index.html was first assembled since they were pasted in far
+         from the rest of the CDN tags there. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div id="root"></div>

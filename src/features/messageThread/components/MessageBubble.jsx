@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar';
 import ThinkingBlock from './ThinkingBlock';
+import ReportActions from './ReportActions';
 
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -291,6 +292,7 @@ export default function MessageBubble({ message, idx, isLast }) {
           </div>
         )}
         <div className="message__meta">{timeStr}</div>
+        {message.role === 'assistant' && !message._streaming && <ReportActions message={message} bubbleRef={bubbleRef} />}
         {message.role === 'assistant' && <FollowUpChips message={message} isLast={isLast} />}
       </div>
     </div>

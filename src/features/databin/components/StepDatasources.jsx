@@ -1,13 +1,31 @@
-import { useMemo, useState } from 'react';
-import { ensureDataPinState, useDataPinVersion } from '../store';
+import { useEffect, useMemo, useState } from 'react';
+import { ensureDataPinState, useDataPinVersion, notify } from '../store';
 import { getDatasourceOptions, toggleDatasourceSelection } from '../logic';
+import { refreshDataSources } from '../../../services/dataSources';
 
 // Mirrors core.js:1033-1105 renderDatasourceCards + core.js:861-895
 // updateDatasourceSelectionCount. Search input mirrors core.js:1126.
 export default function StepDatasources({ onExpandParam }) {
   useDataPinVersion();
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(!Array.isArray(window.DBLIST) || window.DBLIST.length === 0);
   const state = ensureDataPinState();
+
+  // FIXED BUG: window.DBLIST used to be a one-shot boot-time snapshot that
+  // was reliably empty for a standalone sign-in (see services/dataSources.js
+  // for the full story) and was never refreshed after that. Re-fetch every
+  // time this step actually mounts instead.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    refreshDataSources().finally(() => {
+      if (!cancelled) {
+        setLoading(false);
+        notify();
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const allOptions = getDatasourceOptions();
   const q = search.trim().toLowerCase();
@@ -53,7 +71,14 @@ export default function StepDatasources({ onExpandParam }) {
         </div>
 
         <div className="dataBinDatasourceGrid" aria-live="polite">
-          {!options.length ? (
+          {loading ? (
+            <div className="dataBinEmptyState">
+              <div>
+                <span className="material-icons">hourglass_top</span>
+                <h3>Loading datasources…</h3>
+              </div>
+            </div>
+          ) : !options.length ? (
             <div className="dataBinEmptyState">
               <div>
                 <span className="material-icons">search_off</span>
