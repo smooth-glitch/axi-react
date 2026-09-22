@@ -276,11 +276,11 @@ naturally avoids file-level overlap with the React work.
 - [ ] Publishing the API contract (WS command/event shapes) that the
       Frontend Owners build the frontend against — do this early, before
       they're blocked on real data
-- [ ] **VM access + CI/CD auto-deploy** (Section 7) — get VM details from
-      the boss, install/confirm Redis + Erlang on it, and set up the
-      GitHub Actions/webhook deploy so pushes to `main` go live
-      automatically. Not backend-dev-blocked — can start the moment the
-      boss hands over VM access.
+- [x] **VM access + CI/CD auto-deploy** (Section 7) — done and verified
+      live: Erlang/Redis/nginx set up, backend running as a systemd
+      service, self-hosted GitHub Actions runner deploying on every push.
+      TLS still open (needs a domain). Frontend isn't wired into this
+      pipeline yet — see Section 7 for the full breakdown.
 - [ ] **Chase the boss/backend dev on the open data contracts** (Section
       8) — `AxExternalUsers`/chat-host/prompt-definition table shapes.
       This is the one thing genuinely gating most of the remaining
@@ -367,27 +367,51 @@ live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
   required at runtime. The Erlang backend builds via `rebar3 compile`
   (fetches `eredis` from Hex) — see `axi-chat-backend/Dockerfile` for the
   containerized build.
-- **CI/CD — auto-deploy on push**: a push to `main` on GitHub must trigger
-  an automatic deploy to the boss's VM so the team can test live changes
-  immediately. Since frontend and backend are one repo now, a single
-  workflow can build and ship both.
-  - [ ] Get VM access details from the boss (IP/hostname, SSH access) and
-        confirm Redis is installed and running there (see
-        `axi-chat-backend/README.md`'s setup section) — this is a new
-        VM dependency beyond Node/Erlang.
-  - [ ] Set up a GitHub Actions workflow (or webhook-triggered script on
-        the VM) that: builds the React app (`npm run build`) and the
-        Erlang backend (`rebar3 compile`, or via the Dockerfile), then
-        ships both to the VM and restarts the Erlang service.
-  - [ ] Decide the deploy mechanism: GitHub Actions `deploy` job over SSH
-        (`scp`/`rsync` + remote restart command) vs. a lightweight webhook
-        listener running on the VM that pulls and rebuilds on push —
-        either works, pick based on what access the boss grants.
-  - [ ] Store any VM credentials/SSH keys as GitHub Actions secrets, never
-        committed to the repo.
-  - [ ] Confirm whether deploys should trigger on every push to `main`, or
-        only on PR merge (recommended, so in-progress branch pushes don't
-        hit the shared VM before review).
+- **CI/CD — auto-deploy on push — DONE for the backend, verified live:**
+  - [x] VM access confirmed: `10.0.2.146`, Oracle Linux 9, reachable only
+        from the office network/VPN, user `opc`, key-based SSH
+        (`erlang.ppk`).
+  - [x] Erlang/OTP 27.3.4.18 built from source via `kerl` and installed at
+        `/opt/erlang/27.3.4.18` — EPEL's own `erlang` package is only
+        26.x, too old for this app's OTP 27+ `json` module usage.
+  - [x] Redis installed, password-protected (env file at
+        `/etc/axi-chat-backend.env`, `root:opc` `640`), bound to
+        `127.0.0.1` only, AOF persistence on, running as a systemd
+        service.
+  - [x] nginx installed as a reverse proxy — port 80 → `127.0.0.1:8080`
+        (the app's own port is never exposed externally), WebSocket
+        upgrade headers configured. **TLS still not set up** — needs a
+        domain, tracked as its own item above.
+  - [x] Firewall opened for `http`/`https` only — `ssh` untouched, the
+        app's own port never exposed.
+  - [x] `axi-chat-backend` runs as its own systemd service
+        (`axi-chat-backend.service`), auto-restart on failure.
+  - [x] **Chose a self-hosted GitHub Actions runner over an SSH-based
+        deploy job** — GitHub's cloud-hosted runners cannot reach
+        `10.0.2.146` at all (private, office-network-only), so a normal
+        "SSH in from Actions" workflow was never going to work here. The
+        runner lives on the VM itself and makes an outbound connection to
+        GitHub, sidestepping the inbound-reachability problem entirely.
+        Installed at `/home/opc/actions-runner`, labeled `axi-vm`, running
+        as its own systemd service.
+  - [x] Workflow: `.github/workflows/deploy-backend.yml` — triggers on
+        push to `main` touching `axi-chat-backend/**`, builds via
+        `rebar3`, restarts the service, and verifies the backend actually
+        responds correctly before the job succeeds.
+  - [x] **Verified with a real push** — checkout → build → restart →
+        health check all passed, then confirmed live from an outside
+        machine over the real network.
+  - [ ] **Frontend build/deploy is NOT wired into CI yet** — this pipeline
+        only handles `axi-chat-backend/`. Extending it to also build and
+        ship the React `dist/` is still open, and depends on where/how
+        the frontend gets served (same VM behind the same nginx? a
+        different target?) — a decision, not just an implementation
+        detail.
+  - [ ] Several SELinux (Enforcing) gotchas hit along the way, fixed but
+        worth knowing about for future VM work: binaries executed from a
+        user's home directory need a `bin_t` context
+        (`restorecon`/`semanage fcontext`), and nginx needs
+        `httpd_can_network_connect=1` to proxy to any backend at all.
 - [ ] **Confirm with backend**: does production still need
       `shared/axi-standalone-bridge.js`'s standalone sign-in screen? Its whole job
       is bridging to the real ARM API when there's no Axpert host around —
