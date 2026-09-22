@@ -258,6 +258,15 @@ naturally avoids file-level overlap with the React work.
 - [ ] Publishing the API contract (WS command/event shapes) that Anish
       and Gunn build the frontend against — do this early, before they're
       blocked on real data
+- [ ] **VM access + CI/CD auto-deploy** (Section 7) — get VM details from
+      the boss, install/confirm Redis + Erlang on it, and set up the
+      GitHub Actions/webhook deploy so pushes to `main` go live
+      automatically. Not backend-dev-blocked — can start the moment the
+      boss hands over VM access.
+- [ ] **Chase the boss/backend dev on the open data contracts** (Section
+      8) — `AxExternalUsers`/chat-host/prompt-definition table shapes.
+      This is the one thing genuinely gating most of the remaining
+      backend work, so keeping it moving is on you, not just waiting on it.
 
 **Anish & Gunn — React frontend**
 - Split Phase 1–2 work between the two of you by module, same principle as
