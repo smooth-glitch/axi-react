@@ -1,7 +1,7 @@
 # AXI — React SPA
 
-> **Proprietary — All Rights Reserved.** This repository is company
-> property, not open source. It is publicly reachable on GitHub only as a
+> **Proprietary — All Rights Reserved.** This repository is the property
+> of Agile Labs Private Limited, not open source. It is publicly reachable on GitHub only as a
 > practical necessity (private-repo access could not be granted to the
 > full dev team at the time of writing) — that does **not** grant anyone
 > outside the authorized development team any right to use, copy,
