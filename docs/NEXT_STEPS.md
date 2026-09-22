@@ -277,10 +277,11 @@ naturally avoids file-level overlap with the React work.
       Frontend Owners build the frontend against — do this early, before
       they're blocked on real data
 - [x] **VM access + CI/CD auto-deploy** (Section 7) — done and verified
-      live: Erlang/Redis/nginx set up, backend running as a systemd
-      service, self-hosted GitHub Actions runner deploying on every push.
-      TLS still open (needs a domain). Frontend isn't wired into this
-      pipeline yet — see Section 7 for the full breakdown.
+      live for both halves: Erlang/Redis/nginx set up, backend running as
+      a systemd service, React frontend built and served by nginx at `/`,
+      self-hosted GitHub Actions runner deploying both on every push
+      (separate workflows, only the changed half rebuilds). TLS still
+      open (needs a domain) — see Section 7 for the full breakdown.
 - [ ] **Chase the boss/backend dev on the open data contracts** (Section
       8) — `AxExternalUsers`/chat-host/prompt-definition table shapes.
       This is the one thing genuinely gating most of the remaining
@@ -401,17 +402,22 @@ live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
   - [x] **Verified with a real push** — checkout → build → restart →
         health check all passed, then confirmed live from an outside
         machine over the real network.
-  - [ ] **Frontend build/deploy is NOT wired into CI yet** — this pipeline
-        only handles `axi-chat-backend/`. Extending it to also build and
-        ship the React `dist/` is still open, and depends on where/how
-        the frontend gets served (same VM behind the same nginx? a
-        different target?) — a decision, not just an implementation
-        detail.
+  - [x] **Frontend build/deploy — also done and verified live.**
+        `.github/workflows/deploy-frontend.yml` builds via `npm` and
+        rsyncs `dist/` to `/var/www/axi-react` on the VM. Required
+        reworking the VM's nginx config: it now serves this static build
+        at `/`, and routes `/ws` (WebSocket), `/upload`, and `/uploads/*`
+        to the Erlang backend — see `docs/CHAT_PROTOCOL.md`'s
+        "Connecting" section for the exact prod-vs-local-dev WS URLs.
+        Verified: the real built app (not a placeholder) is being served,
+        and `/ws` still reaches the backend correctly after the rework.
   - [ ] Several SELinux (Enforcing) gotchas hit along the way, fixed but
         worth knowing about for future VM work: binaries executed from a
         user's home directory need a `bin_t` context
-        (`restorecon`/`semanage fcontext`), and nginx needs
-        `httpd_can_network_connect=1` to proxy to any backend at all.
+        (`restorecon`/`semanage fcontext`), nginx needs
+        `httpd_can_network_connect=1` to proxy to any backend at all, and
+        static content directories need `httpd_sys_content_t` for nginx
+        to read them.
 - [ ] **Confirm with backend**: does production still need
       `shared/axi-standalone-bridge.js`'s standalone sign-in screen? Its whole job
       is bridging to the real ARM API when there's no Axpert host around —

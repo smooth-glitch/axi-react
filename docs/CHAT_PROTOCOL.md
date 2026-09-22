@@ -19,8 +19,18 @@ interaction unit) doesn't exist at all yet — that's separate, future work
 
 ## Connecting
 
-1. Open a WebSocket to the backend (`ws://<host>:8090` locally by
-   default — see `axi-chat-backend/README.md` for how to run it).
+1. Open a WebSocket to the backend.
+   - **Local dev** (running `axi-chat-backend` standalone, no nginx in
+     front): `ws://localhost:8080` — root path, no prefix.
+   - **On the deploy VM** (behind nginx, which also serves this frontend's
+     build at `/`): `ws://<vm-host>/ws` — nginx routes `/ws` specifically
+     to the backend; `chat_web.erl` itself doesn't care what path a
+     WebSocket upgrade arrives on, so this is purely nginx's routing
+     choice, not a protocol detail. `/upload` and `/uploads/*` are routed
+     the same way for file attachments.
+   - Whatever environment you're in, the frontend needs to pick the right
+     URL — this is not something the protocol itself can tell you at
+     runtime.
 2. The **first text frame you send must be JSON**, not a bare string:
    ```json
    {"username": "alice", "token": "<ARM token>", "armSessionId": "<ARM session id>"}
