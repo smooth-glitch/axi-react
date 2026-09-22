@@ -1,0 +1,13 @@
+# rebar3 build output + fetched deps -- regenerate with tools/rebar3 compile
+_build/
+
+# User-uploaded media (images/voice notes saved by the running server)
+uploads/*
+!uploads/.gitkeep
+
+# Runtime logs / crash dumps
+*.log
+erl_crash.dump
+
+# macOS
+.DS_Store

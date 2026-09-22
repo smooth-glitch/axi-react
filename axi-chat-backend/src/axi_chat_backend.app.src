@@ -1,0 +1,8 @@
+{application, axi_chat_backend,
+ [{description, "AXI chat backend -- Erlang/OTP real-time chat layer for the axi-react app"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [kernel, stdlib, crypto, inets, ssl, eredis]},
+  {env, []},
+  {modules, []}
+ ]}.
