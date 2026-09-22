@@ -16,6 +16,11 @@ the history stays meaningful.
 > relative to this repo's root unless noted otherwise; `shared/` holds the
 > real ARM-API-integrated files this app depends on — see the root
 > `README.md`'s "Shared files" section.
+>
+> The Erlang chat backend lives in this same repo now, at
+> `axi-chat-backend/` (renamed from the standalone `ember-chat`/Ember
+> project it started as — see that folder's own `README.md` for its
+> architecture and setup). One repo, one remote, both layers.
 
 ---
 
@@ -225,22 +230,32 @@ IA has no place for yet.
 
 Dividing by **feature ownership / layer**, not by file type — two people
 editing the same file is where every conflict in this codebase has actually
-come from so far, and the Erlang backend is a separate codebase entirely so
-it naturally avoids overlap with the React work.
+come from so far. The Erlang backend now lives in this same repo
+(`axi-chat-backend/`) rather than a separate one, but it's still a wholly
+separate directory/language/toolchain from the React side, so it still
+naturally avoids file-level overlap with the React work.
 
 ### Split work by module, not by task type
 
-**Arjun — Erlang chat backend**
-- [ ] Chat backend service in Erlang (the "separately-owned backend" this
-      doc's frontend work builds against) — connections, message routing,
-      real-time delivery (websocket/polling — see the open question in
-      Section 8), and the API contract the React app calls
-- [ ] Prompt-engine backend support: List (GetList API), Input (tstruct
-      save), Upload/Download file endpoints
-- [ ] Chat-host and external-user data access — reads/writes against the
-      existing schema (e.g. `erpdemo`); no new database or schema setup
-      needed, this plugs into the schema already in place
-- [ ] Publishing the API contract (endpoints, payload shapes) that Anish
+**Arjun — Erlang chat backend (`axi-chat-backend/`)**
+- [x] Chat backend service in Erlang — connections, message routing,
+      real-time delivery over WebSocket (confirmed, not polling), and the
+      command/event protocol the React app calls (see
+      `axi-chat-backend/README.md`'s "Protocol" section)
+- [x] Persistence — messages/groups/profiles in Redis (live store), with a
+      once-daily job (pending) syncing each user's data to the real DB via
+      the ARM API's `AXput` once that endpoint exists
+- [x] `chat_arm.erl` — ARM API client for reading Axpert data (directory,
+      chat-host config, prompt definitions), using the same
+      `{token, ARMSessionId}` the frontend already gets from its own ARM
+      sign-in; the backend never handles a password itself
+- [ ] Prompt-engine backend support: List (`GetList`/`AxList`), Input
+      (tstruct save via `AXput`), Upload/Download file endpoints
+- [ ] Chat-host and external-user data access via the ARM API once the
+      backend dev creates the `AxExternalUsers`/chat-host tables (not done
+      yet as of this writing) — no direct DB connection, all reads/writes
+      go through ARM API calls
+- [ ] Publishing the API contract (WS command/event shapes) that Anish
       and Gunn build the frontend against — do this early, before they're
       blocked on real data
 
@@ -314,24 +329,29 @@ Confirmed: local development, then every push to GitHub auto-deploys to a
 VM your boss provides — that VM is the shared production/test server for
 live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
 
-- **Local dev** stays exactly as now — everyone runs `npm run dev` in
-  `axi-react-src/` (frontend) or the Erlang release locally (backend)
-  against their own machines, each signing in to the real ARM API
-  standalone.
+- **Local dev** — frontend: `npm run dev` in `axi-react-src/`, signing in
+  to the real ARM API standalone. Backend: `.\build.ps1` then `.\run.ps1`
+  inside `axi-chat-backend/` (or `./tools/rebar3 compile` + `erl ...` on
+  macOS/Linux — see that folder's `README.md`), against a local Redis
+  instance (`redis-server`, defaults to `127.0.0.1:6379` — see
+  `chat_redis.erl` for the env vars to point it elsewhere).
 - **Build** — `npm run build` produces a static `dist/` (`index.html` +
   hashed JS/CSS) that needs nothing but a file server; no Node process
-  required at runtime. The Erlang backend builds/releases separately
-  (e.g. via `rebar3 release`).
+  required at runtime. The Erlang backend builds via `rebar3 compile`
+  (fetches `eredis` from Hex) — see `axi-chat-backend/Dockerfile` for the
+  containerized build.
 - **CI/CD — auto-deploy on push**: a push to `main` on GitHub must trigger
   an automatic deploy to the boss's VM so the team can test live changes
-  immediately.
-  - [ ] Get VM access details from the boss (IP/hostname, SSH access, and
-        whether it's one VM hosting both frontend + Erlang backend or two
-        separate targets).
+  immediately. Since frontend and backend are one repo now, a single
+  workflow can build and ship both.
+  - [ ] Get VM access details from the boss (IP/hostname, SSH access) and
+        confirm Redis is installed and running there (see
+        `axi-chat-backend/README.md`'s setup section) — this is a new
+        VM dependency beyond Node/Erlang.
   - [ ] Set up a GitHub Actions workflow (or webhook-triggered script on
         the VM) that: builds the React app (`npm run build`) and the
-        Erlang release, then ships both to the VM and restarts the Erlang
-        service.
+        Erlang backend (`rebar3 compile`, or via the Dockerfile), then
+        ships both to the VM and restarts the Erlang service.
   - [ ] Decide the deploy mechanism: GitHub Actions `deploy` job over SSH
         (`scp`/`rsync` + remote restart command) vs. a lightweight webhook
         listener running on the VM that pulls and rebuilds on push —
@@ -366,17 +386,19 @@ live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
       a sandbox for frontend development?
 - [ ] **OTP** — which OTP channel (SMS/email) and provider — affects the UI
       (code length, resend timing, etc.).
-- [ ] **Real-time** — human-to-human chat implies live delivery — is there
-      a websocket/polling mechanism planned on the backend, or does the
-      frontend need to design around polling for now?
+- [x] **Real-time** — resolved: WebSocket, hand-rolled in
+      `axi-chat-backend/src/chat_web.erl` (not polling).
 - [ ] **Existing AXI** — does "My work space" / LLM chat stay exactly as-is
       inside the new shell, or does the boss want changes to it as part of
       this pass?
 - [ ] **Deployment target** — confirm exactly how `dist/` and the Erlang
-      release get served on the boss's VM (see Section 7): access method,
+      backend get served on the boss's VM (see Section 7): access method,
       whether frontend and backend share the VM, and what web/reverse-proxy
       server (if any) fronts them.
-- [ ] **Database/schema** — confirmed this plugs into an existing schema
-      (e.g. `erpdemo`) rather than needing a new DB setup; still need the
-      exact schema/table access details from the backend dev once Arjun
-      starts wiring the Erlang service to it.
+- [ ] **`AXput` syntax** — the write endpoint for inserting/updating data
+      in a table (needed for the once-daily Redis→DB sync job, and
+      eventually the Input prompt type's tstruct saves) — Arjun has this
+      pending from the backend dev.
+- [ ] **`AxExternalUsers`/chat-host tables** — not created yet as of this
+      writing (the backend dev's task); blocks the directory and prompt
+      engine from reading real data via `chat_arm.erl` until they exist.
