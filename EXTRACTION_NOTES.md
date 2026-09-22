@@ -6,8 +6,9 @@ The backend/persistence layer (DataBinStore, `_axiGetAdsRows`, `_resolveAxFns`,
 `_saveDataBinRemote`, `_deleteDataBinRemote`, `ensureDataPinState`, `_probeADSParams`,
 `buildActiveDataBinContext`, `applyPin`, `loadSavedPins`, `setActiveDataBin`/
 `getActiveDataBinId`) has already been extracted **verbatim** into
-`C:\Users\Arjun\Desktop\AXIBOT\axi-databin-services.js` — call those `window.*` functions
-from React rather than re-reading this file for them.
+`axi-databin-services.js` (in the `smooth-glitch/axibot` repo this project was
+split out from) — call those `window.*` functions from React rather than
+re-reading this file for them.
 
 **Biggest finding, read this first:** `axi-databin-core.js` contains TWO parallel,
 independent UI implementations for the datasource/file pickers:

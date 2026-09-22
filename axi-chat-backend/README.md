@@ -1,5 +1,8 @@
 # AXI Chat Backend
 
+> **Proprietary — All Rights Reserved.** Company property, not open
+> source — see [`../LICENSE`](../LICENSE).
+
 Erlang/OTP real-time chat backend for the [`axi-react`](..) app. Handles
 online presence, associate DMs, group chat, and the associate+host
 directory over a hand-rolled WebSocket server, with Redis-backed

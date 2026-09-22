@@ -1,8 +1,8 @@
 # AXI Chat Backend — WebSocket Protocol
 
-What Anish and Gunn build the frontend chat UI against today. Source of
-truth is `axi-chat-backend/src/chat_web.erl` — if this doc and the code
-ever disagree, the code wins; ping Arjun to fix the doc.
+What the frontend team builds the frontend chat UI against today. Source
+of truth is `axi-chat-backend/src/chat_web.erl` — if this doc and the code
+ever disagree, the code wins; flag it to the backend owner to fix the doc.
 
 **Scope note, read this first:** this documents the real-time messaging
 transport plus the host directory — connect, DM, group chat, host
@@ -23,14 +23,14 @@ interaction unit) doesn't exist at all yet — that's separate, future work
    default — see `axi-chat-backend/README.md` for how to run it).
 2. The **first text frame you send must be JSON**, not a bare string:
    ```json
-   {"username": "arjun", "token": "<ARM token>", "armSessionId": "<ARM session id>"}
+   {"username": "alice", "token": "<ARM token>", "armSessionId": "<ARM session id>"}
    ```
    `token` and `armSessionId` are exactly what you already have after
    your own ARM Signin (`session.token`/`session.armSessionId` in
    `shared/axi-standalone-bridge.js`) — forward them as-is, don't
    re-derive anything. `username` max 24 chars.
 3. Server replies:
-   - Success: `{"type":"welcome","name":"arjun"}`, immediately followed by
+   - Success: `{"type":"welcome","name":"alice"}`, immediately followed by
      a `history` event for the global room (see below).
    - Failure: `{"type":"error","text":"..."}` — malformed/missing fields,
      empty/too-long username, or username already taken. Connection stays
@@ -146,10 +146,10 @@ mirror the command that triggered them.
 {
   "id": 123,
   "ts": 1790071256909,
-  "from": "arjun",
+  "from": "alice",
   "text": "hello",
   "private": false,
-  "reactions": [{"user": "gunn", "emoji": "👍"}],
+  "reactions": [{"user": "bob", "emoji": "👍"}],
   "deleted": false,
   "replyTo": null,
   "previewUrl": "", "previewTitle": "", "previewDescription": "", "previewImage": ""

@@ -1,7 +1,7 @@
 # Debugging & Handover Guide
 
 Written so someone with no prior context on this codebase — a new
-teammate, or whoever inherits this after Arjun — can diagnose a problem
+teammate, or whoever inherits this codebase later — can diagnose a problem
 without having to read every module first.
 
 ## 1. Run the integration test suite first
@@ -86,7 +86,7 @@ redis-cli ZRANGE conv:global:msgs -10 -1   # last 10 message ids in the global r
 redis-cli SMEMBERS groups                  # every group name
 redis-cli HGETALL group:squad              # one group's owner/members
 redis-cli GET next_msg_id                  # the message-id counter (see §6)
-redis-cli HGETALL profile:arjun            # one user's avatar/status/pubkey
+redis-cli HGETALL profile:someuser         # one user's avatar/status/pubkey
 ```
 
 ## 5. Common issues and what they look like

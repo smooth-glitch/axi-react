@@ -1,5 +1,13 @@
 # AXI — React SPA
 
+> **Proprietary — All Rights Reserved.** This repository is company
+> property, not open source. It is publicly reachable on GitHub only as a
+> practical necessity (private-repo access could not be granted to the
+> full dev team at the time of writing) — that does **not** grant anyone
+> outside the authorized development team any right to use, copy,
+> modify, or redistribute this code. See [`LICENSE`](LICENSE) for the
+> full terms.
+
 The true single-root React app for AXI (Axpert Insights) — one
 `createRoot()`, one component tree, real owned state. This repo was split
 out from `smooth-glitch/axibot` (where the app was originally built

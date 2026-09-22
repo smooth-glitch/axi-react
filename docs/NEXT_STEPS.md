@@ -2,7 +2,7 @@
 
 Source: `AxpertChat.docx` (your boss's plan). This doc maps that vision onto the
 current AXI React app, lists what's genuinely missing, and tracks progress
-for a three-person team — Arjun on the Erlang chat backend, Anish and Gunn
+for a three-person team — the Backend Owner on the Erlang chat backend, the Frontend Owners
 on the React frontend.
 
 **How to use this file**: tick a box with `- [x]` as you finish that item,
@@ -141,8 +141,8 @@ Type-specific fields, shown only for that prompt type:
 > ("user prompt"), and the Admin Dashboard are being **removed from the
 > app entirely**, not extended — the boss's spec doesn't call for any of
 > them, and the generic prompt engine (Section 4) replaces what the
-> System Prompt Editor did as a one-off. This is Anish and Gunn's work,
-> starting once Arjun's backend base is done — don't build anything new
+> System Prompt Editor did as a one-off. This is the Frontend Owners' work,
+> starting once the Backend Owner's backend base is done — don't build anything new
 > on top of these three in the meantime. The "✅ Built"/"🟡 Partial" rows
 > below referencing them describe what exists *today*, not what to keep
 > extending.
@@ -172,8 +172,8 @@ IA has no place for yet.
 
 - [ ] **Remove templates, the System Prompt Editor, and the Admin
       Dashboard** — not extended, deleted entirely (see the scope
-      correction in Section 3). Anish and Gunn's first task once Arjun's
-      backend base is done.
+      correction in Section 3). The Frontend Owners' first task once the
+      Backend Owner's backend base is done.
 - [ ] **Directory & navigation shell** — a left-rail list of associates,
       external users, and hosts (departmental + LLM), replacing today's
       single-conversation layout with a conversation list + active-
@@ -233,7 +233,7 @@ IA has no place for yet.
 - [ ] External-user registration form (`AxExternalUsers` fields)
 - [ ] Chat-host configuration UI
 - [ ] New admin surface for both — whatever replaces the old Admin
-      Dashboard's navigation, TBD by Anish/Gunn when they get here
+      Dashboard's navigation, TBD by the Frontend Owners when they get here
 
 ### Phase 5 — Payment, OTP, Smart View
 *Highest external-dependency risk — sequence last.*
@@ -255,7 +255,7 @@ naturally avoids file-level overlap with the React work.
 
 ### Split work by module, not by task type
 
-**Arjun — Erlang chat backend (`axi-chat-backend/`)**
+**Backend Owner — Erlang chat backend (`axi-chat-backend/`)**
 - [x] Chat backend service in Erlang — connections, message routing,
       real-time delivery over WebSocket (confirmed, not polling), and the
       command/event protocol the React app calls (see
@@ -273,9 +273,9 @@ naturally avoids file-level overlap with the React work.
       backend dev creates the `AxExternalUsers`/chat-host tables (not done
       yet as of this writing) — no direct DB connection, all reads/writes
       go through ARM API calls
-- [ ] Publishing the API contract (WS command/event shapes) that Anish
-      and Gunn build the frontend against — do this early, before they're
-      blocked on real data
+- [ ] Publishing the API contract (WS command/event shapes) that the
+      Frontend Owners build the frontend against — do this early, before
+      they're blocked on real data
 - [ ] **VM access + CI/CD auto-deploy** (Section 7) — get VM details from
       the boss, install/confirm Redis + Erlang on it, and set up the
       GitHub Actions/webhook deploy so pushes to `main` go live
@@ -286,14 +286,14 @@ naturally avoids file-level overlap with the React work.
       This is the one thing genuinely gating most of the remaining
       backend work, so keeping it moving is on you, not just waiting on it.
 
-**Anish & Gunn — React frontend**
+**Frontend Owners — React frontend**
 - Split Phase 1–2 work between the two of you by module, same principle as
   before (natural boundaries: `src/features/<name>/`, `src/services/<name>.js`):
   - [ ] Associate/host directory + conversation-list navigation shell +
         routing (one owner)
       - [ ] Card-based message thread redesign + prompt renderer
         components per type (other owner)
-  - [ ] Both: wire against Arjun's published API contract rather than
+  - [ ] Both: wire against the Backend Owner's published API contract rather than
         against mocks once it's available
 
 > **The one shared file to watch**: `src/app/App.jsx` is the single root
@@ -309,8 +309,8 @@ before they reach the shared VM:
 
 - [ ] Before merging a PR, at least one of the *other two* people pulls the
       branch and exercises the feature manually (not just a code review) —
-      Arjun tests Anish/Gunn's UI flows against real usage; Anish and Gunn
-      take turns exercising Arjun's backend endpoints/chat behavior.
+      the Backend Owner tests the Frontend Owners' UI flows against real usage; the Frontend Owners
+      take turns exercising the Backend Owner's backend endpoints/chat behavior.
 - [ ] Log what you tested and found (even informally, in the PR itself) so
       there's a record of what's been verified beyond "it compiles."
 - [ ] Treat the live VM deployment (Section 7) as the shared integration

@@ -83,113 +83,113 @@ async function main() {
     tooLong.close();
 
     const suffix = Date.now();
-    const nameA = `arjuntest${suffix}`, nameB = `gunntest${suffix}`;
+    const nameA = `clientAtest${suffix}`, nameB = `clientBtest${suffix}`;
 
-    const arjun = new Client(nameA);
-    await arjun.open();
-    arjun.send({ username: nameA, token: "tok-a", armSessionId: "sess-a" });
-    const welcomeA = await arjun.waitFor(m => m.type === "welcome");
+    const clientA = new Client(nameA);
+    await clientA.open();
+    clientA.send({ username: nameA, token: "tok-a", armSessionId: "sess-a" });
+    const welcomeA = await clientA.waitFor(m => m.type === "welcome");
     ok("client A gets welcome", welcomeA.name === nameA);
-    const historyA = await arjun.waitFor(m => m.type === "history");
+    const historyA = await clientA.waitFor(m => m.type === "history");
     ok("client A gets initial history event", historyA.scope === "global" && Array.isArray(historyA.list));
 
-    const gunn = new Client(nameB);
-    await gunn.open();
-    gunn.send({ username: nameB, token: "tok-g", armSessionId: "sess-g" });
-    await gunn.waitFor(m => m.type === "welcome");
-    const joinSystemMsg = await arjun.waitFor(m => m.type === "system" && m.text.includes(`${nameB} has joined`), 2000, "join notice");
+    const clientB = new Client(nameB);
+    await clientB.open();
+    clientB.send({ username: nameB, token: "tok-g", armSessionId: "sess-g" });
+    await clientB.waitFor(m => m.type === "welcome");
+    const joinSystemMsg = await clientA.waitFor(m => m.type === "system" && m.text.includes(`${nameB} has joined`), 2000, "join notice");
     ok("client A sees client B's join system message", !!joinSystemMsg);
 
     console.log("=== Directory ===");
-    arjun.send("/list");
-    const usersResp = await arjun.waitFor(m => m.type === "users");
+    clientA.send("/list");
+    const usersResp = await clientA.waitFor(m => m.type === "users");
     ok("/list includes both clients", usersResp.list.includes(nameA) && usersResp.list.includes(nameB), JSON.stringify(usersResp.list));
 
-    arjun.send("/hosts");
-    const hostsResp = await arjun.waitFor(m => m.type === "hosts");
+    clientA.send("/hosts");
+    const hostsResp = await clientA.waitFor(m => m.type === "hosts");
     const hostKeys = hostsResp.list.map(h => h.key).sort();
     ok("/hosts returns exactly the 5 preconfigured hosts", JSON.stringify(hostKeys) === JSON.stringify(["ai_router", "claude", "gemini", "openai", "workspace"]), JSON.stringify(hostKeys));
 
     console.log("=== DM ===");
-    arjun.send(`/msg ${nameB} hello from A`);
-    const dmAck = await arjun.waitFor(m => m.type === "dm_ack");
+    clientA.send(`/msg ${nameB} hello from A`);
+    const dmAck = await clientA.waitFor(m => m.type === "dm_ack");
     ok("dm_ack has id and ts", typeof dmAck.id === "number" && typeof dmAck.ts === "number", JSON.stringify(dmAck));
-    const dmReceived = await gunn.waitFor(m => m.type === "private");
+    const dmReceived = await clientB.waitFor(m => m.type === "private");
     ok("client B receives the DM with matching text/id/ts", dmReceived.text === "hello from A" && dmReceived.id === dmAck.id && dmReceived.ts === dmAck.ts, JSON.stringify(dmReceived));
 
-    arjun.send(`/history dm ${nameB}`);
-    const dmHistory = await arjun.waitFor(m => m.type === "history" && m.scope === "dm");
+    clientA.send(`/history dm ${nameB}`);
+    const dmHistory = await clientA.waitFor(m => m.type === "history" && m.scope === "dm");
     ok("dm history contains the sent message", dmHistory.list.some(m => m.id === dmAck.id && m.text === "hello from A"), JSON.stringify(dmHistory.list));
 
     console.log("=== Reactions & delete ===");
-    gunn.send(`/react dm ${nameA} ${dmAck.id} :thumbsup:`);
-    const reactionOnArjun = await arjun.waitFor(m => m.type === "dm_reaction" && m.messageId === dmAck.id);
-    ok("dm_reaction reaches client A", reactionOnArjun.reactions.some(r => r.user === nameB), JSON.stringify(reactionOnArjun));
-    const reactionOnGunn = await gunn.waitFor(m => m.type === "dm_reaction" && m.messageId === dmAck.id);
-    ok("dm_reaction also echoes back to client B (the reactor)", reactionOnGunn.reactions.some(r => r.user === nameB));
+    clientB.send(`/react dm ${nameA} ${dmAck.id} :thumbsup:`);
+    const reactionOnClientA = await clientA.waitFor(m => m.type === "dm_reaction" && m.messageId === dmAck.id);
+    ok("dm_reaction reaches client A", reactionOnClientA.reactions.some(r => r.user === nameB), JSON.stringify(reactionOnClientA));
+    const reactionOnClientB = await clientB.waitFor(m => m.type === "dm_reaction" && m.messageId === dmAck.id);
+    ok("dm_reaction also echoes back to client B (the reactor)", reactionOnClientB.reactions.some(r => r.user === nameB));
 
-    gunn.send(`/delete dm ${nameA} ${dmAck.id}`);
-    const denied = await gunn.waitFor(m => m.type === "delete_denied" && m.messageId === dmAck.id, 2000, "delete_denied");
+    clientB.send(`/delete dm ${nameA} ${dmAck.id}`);
+    const denied = await clientB.waitFor(m => m.type === "delete_denied" && m.messageId === dmAck.id, 2000, "delete_denied");
     ok("non-owner delete attempt gets explicit delete_denied feedback", denied.reason === "forbidden", JSON.stringify(denied));
 
-    arjun.send(`/delete dm ${nameB} ${dmAck.id}`);
+    clientA.send(`/delete dm ${nameB} ${dmAck.id}`);
     const deletedEvt = await Promise.race([
-        arjun.waitFor(m => m.type === "dm_deleted" && m.messageId === dmAck.id, 2000, "dm_deleted"),
-        gunn.waitFor(m => m.type === "dm_deleted" && m.messageId === dmAck.id, 2000, "dm_deleted"),
+        clientA.waitFor(m => m.type === "dm_deleted" && m.messageId === dmAck.id, 2000, "dm_deleted"),
+        clientB.waitFor(m => m.type === "dm_deleted" && m.messageId === dmAck.id, 2000, "dm_deleted"),
     ]);
     ok("owner delete succeeds and pushes dm_deleted", !!deletedEvt);
 
     console.log("=== Host messaging (department hosts unconfigured, LLM/workspace must NOT be routable) ===");
     for (const key of ["openai", "ai_router", "claude", "gemini", "workspace"]) {
-        arjun.send(`/hostmsg ${key} test`);
-        const resp = await arjun.waitFor(m => m.type === "error" && m.text.includes(key), 2000, `hostmsg rejection for ${key}`);
+        clientA.send(`/hostmsg ${key} test`);
+        const resp = await clientA.waitFor(m => m.type === "error" && m.text.includes(key), 2000, `hostmsg rejection for ${key}`);
         ok(`/hostmsg correctly refuses to route to preconfigured host "${key}"`, resp.text.includes("No such host"));
     }
-    arjun.send("/hostmsg hr some message");
-    const hrResp = await arjun.waitFor(m => m.type === "error" && m.text.includes("hr"));
+    clientA.send("/hostmsg hr some message");
+    const hrResp = await clientA.waitFor(m => m.type === "error" && m.text.includes("hr"));
     ok("/hostmsg to an unconfigured department host errors cleanly", hrResp.text.includes("No such host"));
 
     console.log("=== Groups ===");
     const groupName = `squadtest${suffix}`;
-    gunn.send(`/creategroup ${groupName}`);
-    const groupCreated = await gunn.waitFor(m => m.type === "group_created");
+    clientB.send(`/creategroup ${groupName}`);
+    const groupCreated = await clientB.waitFor(m => m.type === "group_created");
     ok("group created", groupCreated.name === groupName && groupCreated.members.includes(nameB));
 
-    gunn.send(`/addmember ${groupName} ${nameA}`);
-    const addedEvt = await arjun.waitFor(m => m.type === "added_to_group" && m.name === groupName);
+    clientB.send(`/addmember ${groupName} ${nameA}`);
+    const addedEvt = await clientA.waitFor(m => m.type === "added_to_group" && m.name === groupName);
     ok("client A notified of being added to group", addedEvt.members.includes(nameA) && addedEvt.members.includes(nameB));
 
-    gunn.send(`/groupmsg ${groupName} hello squad`);
-    const groupAck = await gunn.waitFor(m => m.type === "group_msg_ack");
+    clientB.send(`/groupmsg ${groupName} hello squad`);
+    const groupAck = await clientB.waitFor(m => m.type === "group_msg_ack");
     ok("group_msg_ack has id and ts", typeof groupAck.id === "number" && typeof groupAck.ts === "number");
-    const groupMsgOnArjun = await arjun.waitFor(m => m.type === "group_message" && m.group === groupName);
-    ok("client A receives the group message with matching id/ts", groupMsgOnArjun.id === groupAck.id && groupMsgOnArjun.ts === groupAck.ts);
+    const groupMsgOnClientA = await clientA.waitFor(m => m.type === "group_message" && m.group === groupName);
+    ok("client A receives the group message with matching id/ts", groupMsgOnClientA.id === groupAck.id && groupMsgOnClientA.ts === groupAck.ts);
 
-    arjun.send("/groups");
-    const groupsResp = await arjun.waitFor(m => m.type === "groups");
+    clientA.send("/groups");
+    const groupsResp = await clientA.waitFor(m => m.type === "groups");
     ok("/groups lists the new group for client A", groupsResp.list.some(g => g.name === groupName));
 
-    arjun.send(`/leavegroup ${groupName}`);
-    const leftResp = await arjun.waitFor(m => m.type === "left_group");
+    clientA.send(`/leavegroup ${groupName}`);
+    const leftResp = await clientA.waitFor(m => m.type === "left_group");
     ok("leave group acknowledged", leftResp.text === groupName);
-    gunn.send(`/leavegroup ${groupName}`); // clean up so this group doesn't linger in Redis
+    clientB.send(`/leavegroup ${groupName}`); // clean up so this group doesn't linger in Redis
 
     console.log("=== Global broadcast & profile ===");
-    gunn.send("plain broadcast message from client B");
-    const chatMsgOnArjun = await arjun.waitFor(m => m.type === "chat" && m.text === "plain broadcast message from client B");
-    ok("client A receives client B's global broadcast with ts", typeof chatMsgOnArjun.ts === "number");
+    clientB.send("plain broadcast message from client B");
+    const chatMsgOnClientA = await clientA.waitFor(m => m.type === "chat" && m.text === "plain broadcast message from client B");
+    ok("client A receives client B's global broadcast with ts", typeof chatMsgOnClientA.ts === "number");
 
-    gunn.send("/setavatar https://example.com/avatar.png");
-    const profileUpdate = await arjun.waitFor(m => m.type === "profile" && m.user === nameB);
+    clientB.send("/setavatar https://example.com/avatar.png");
+    const profileUpdate = await clientA.waitFor(m => m.type === "profile" && m.user === nameB);
     ok("avatar change broadcasts to client A", profileUpdate.avatar === "https://example.com/avatar.png");
 
-    arjun.send(`/getprofile ${nameB}`);
-    const profileResp = await arjun.waitFor(m => m.type === "profile" && m.user === nameB);
+    clientA.send(`/getprofile ${nameB}`);
+    const profileResp = await clientA.waitFor(m => m.type === "profile" && m.user === nameB);
     ok("/getprofile returns client B's avatar", profileResp.avatar === "https://example.com/avatar.png");
 
     console.log("=== Message length guard ===");
-    arjun.send(`/msg ${nameB} ${"x".repeat(2001)}`);
-    const tooLongMsg = await arjun.waitFor(m => m.type === "error" && /too long/i.test(m.text));
+    clientA.send(`/msg ${nameB} ${"x".repeat(2001)}`);
+    const tooLongMsg = await clientA.waitFor(m => m.type === "error" && /too long/i.test(m.text));
     ok("over-length message rejected", !!tooLongMsg);
 
     console.log("\n=== SUMMARY ===");
@@ -205,8 +205,8 @@ async function main() {
     // on Windows (a Node/ws-on-Windows interaction, not anything server-
     // side). The test result itself is already printed above regardless
     // of what happens here.
-    arjun.close();
-    gunn.close();
+    clientA.close();
+    clientB.close();
     await new Promise(r => setTimeout(r, 300));
     process.exit(code);
 }
