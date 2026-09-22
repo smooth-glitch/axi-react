@@ -395,10 +395,14 @@ live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
       backend get served on the boss's VM (see Section 7): access method,
       whether frontend and backend share the VM, and what web/reverse-proxy
       server (if any) fronts them.
-- [ ] **`AXput` syntax** — the write endpoint for inserting/updating data
-      in a table (needed for the once-daily Redis→DB sync job, and
-      eventually the Input prompt type's tstruct saves) — Arjun has this
-      pending from the backend dev.
+- [x] **`AXput` syntax** — resolved: not a direct write endpoint, it's
+      queue-based. Build the `data`/`submitdata` (dc/row) payload, wrap it
+      in a `_parameters` object with `ARMSessionId`/`ARMToken`/`project`/
+      `username`, JSON-encode that as a string, and POST it as `queuedata`
+      to `ARM_APIs/api/v1/ARMPushToQueue` (`queuename: "CachedSaveQueue"`).
+      Success there means "queued," not "saved" — no synchronous save
+      confirmation. Implemented as `chat_arm:put/2` in
+      `axi-chat-backend/src/chat_arm.erl`.
 - [ ] **`AxExternalUsers`/chat-host tables** — not created yet as of this
       writing (the backend dev's task); blocks the directory and prompt
       engine from reading real data via `chat_arm.erl` until they exist.
