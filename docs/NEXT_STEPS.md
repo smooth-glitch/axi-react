@@ -398,6 +398,40 @@ live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
       provider API keys — needed before a second deployment target
       (a client) exists.
 
+### Security checklist (audited — see `axi-chat-backend/src/`)
+
+Fixed, verified live (real WebSocket client, not just module-level tests):
+- [x] **WS connect now requires a real ARM identity** — first frame is
+      `{username, token, armSessionId}`, not a bare claimable username.
+      Not independent cryptographic re-verification (ARMToken is an
+      HMAC-signed JWT — can't be verified without ARM's own secret) — see
+      the security note in `docs/CHAT_PROTOCOL.md`'s "Connecting" section
+      for exactly what this does and doesn't guarantee.
+- [x] **Per-connection rate limiting** — 30 commands / 10s, tested live
+      (flooded 40, 10 correctly rejected).
+- [x] **Startup warning if Redis has no password** on a non-loopback host
+      — can't enforce this from code (the VM's Redis config is out of this
+      repo's hands), but it's now loud and unmissable in the server log
+      rather than a silent gap.
+
+**Not fixed — genuinely can't be from this side, blocking before real
+associates use this for real chats:**
+- [ ] **TLS.** This backend has zero encryption in transit right now —
+      plain `ws://`, not `wss://`. Deliberately *not* solved by hacking
+      native TLS into `chat_web.erl` (would mean rewriting every
+      `gen_tcp:*` call and `{tcp, ...}` message pattern in a ~1000-line
+      file to be transport-agnostic, untestable properly without a real
+      cert/domain, high risk of a subtle bug in code that currently
+      works). **The fix is an nginx (or similar) reverse proxy on the VM
+      terminating HTTPS/WSS** in front of this backend's plain WS port —
+      standard practice, needs a domain + cert, both blocked on VM access.
+      Do not treat this app as ready for real chat traffic until this
+      exists.
+- [ ] **Redis auth/lockdown on the actual VM** — the warning above only
+      fires if someone's watching the log; nothing stops a VM Redis from
+      being deployed with no password if whoever sets it up misses that
+      warning. Explicit VM setup step (Section 7's earlier checklist).
+
 ---
 
 ## 8. Open questions for the boss / backend dev

@@ -21,21 +21,34 @@ interaction unit) doesn't exist at all yet — that's separate, future work
 
 1. Open a WebSocket to the backend (`ws://<host>:8090` locally by
    default — see `axi-chat-backend/README.md` for how to run it).
-2. The **first text frame you send must be a plain username string**
-   (not JSON) — e.g. just `arjun`. Max 24 chars.
+2. The **first text frame you send must be JSON**, not a bare string:
+   ```json
+   {"username": "arjun", "token": "<ARM token>", "armSessionId": "<ARM session id>"}
+   ```
+   `token` and `armSessionId` are exactly what you already have after
+   your own ARM Signin (`session.token`/`session.armSessionId` in
+   `shared/axi-standalone-bridge.js`) — forward them as-is, don't
+   re-derive anything. `username` max 24 chars.
 3. Server replies:
    - Success: `{"type":"welcome","name":"arjun"}`, immediately followed by
      a `history` event for the global room (see below).
-   - Failure: `{"type":"error","text":"Username taken"}` (or "Username
-     cannot be empty" / "Username too long...") — connection stays open,
-     you can retry with another username on the same socket.
+   - Failure: `{"type":"error","text":"..."}` — malformed/missing fields,
+     empty/too-long username, or username already taken. Connection stays
+     open, retry with a corrected payload on the same socket.
 
-There is currently **no authentication** on this handshake — any string
-becomes a valid username. Wiring this to real ARM API identity (so a
-connection is tied to who's actually signed in, not an arbitrary claimed
-name) is planned but not implemented yet — see the open item in
-`NEXT_STEPS.md` about forwarding the frontend's ARM `{token,
-ARMSessionId}` at connect time.
+**Security note — read this before assuming more than it claims.** This
+is **not** independent cryptographic re-verification of the token.
+`ARMToken` is an HMAC-signed JWT (confirmed from the real `AXput` release
+notes' worked example), which by construction can't be verified by
+anyone without ARM's own signing secret — unlike the RS256 tokens the old
+Ember project's Google/Apple sign-in could check against a public JWKS.
+There's also no documented "verify this session" ARM endpoint to call
+instead. What this buys: a connection now requires having actually gone
+through a real ARM sign-in (the browser blocks the app until Signin
+succeeds), rather than the previous behavior of accepting literally any
+typed string as an identity. It does not confirm the token is *currently*
+still valid — that only gets checked the first time it's actually used
+for a real ARM API call.
 
 Once connected, every message you send is a **plain-text command** (not
 JSON); every message you receive is a **JSON event**. This is intentionally
@@ -215,7 +228,9 @@ revisiting once the frontend's actual attachment UX is designed.
   org-chart data source exists yet either.
 - Prompts (List/Input/Upload/Download/Payment/OTP) as a configurable
   interaction unit.
-- Real identity/auth on connect (see the note under "Connecting").
+- Independent cryptographic verification of the ARM token on connect
+  (see the security note under "Connecting" for exactly what this does
+  and doesn't guarantee).
 - Month-grouping itself — `history` returns a flat, most-recent-50 list.
   Every message now carries `ts` (epoch ms), so the client has what it
   needs to compute month groups itself; the backend doesn't pre-group.

@@ -498,8 +498,28 @@ handshake(Socket, Headers) ->
     inet:setopts(Socket, [{active, once}, {packet, raw}, binary, {nodelay, true}]),
     ws_username_loop(Socket, <<>>).
 
-%% ---- pre-login: first WS text frame is the username -------------------
-
+%% ---- pre-login: first WS text frame is the connect payload -------------
+%% {"username": "...", "token": "...", "armSessionId": "..."} -- token and
+%% armSessionId are exactly what the frontend already holds after its own
+%% ARM Signin (shared/axi-standalone-bridge.js's `session`), forwarded here
+%% so a connection requires having actually gone through a real ARM
+%% sign-in rather than just claiming any username (the previous behavior).
+%%
+%% Security note, read before assuming this is more than it is: this is
+%% NOT independent cryptographic re-verification of the token. ARMToken is
+%% an HMAC-signed JWT (confirmed from the AXput release notes' worked
+%% example -- an HS256-family alg), which by construction can't be
+%% verified by anyone who doesn't hold ARM's own signing secret -- unlike
+%% the RS256 Google/Apple tokens chat_oauth.erl used to check against a
+%% public JWKS. There is also no documented "verify this session" ARM
+%% endpoint to call instead. What this DOES buy: only someone who
+%% completed a real ARM sign-in has a token to present at all (the
+%% browser's login overlay blocks the app until Signin succeeds), which is
+%% a real improvement over the previous "type any string" model, but it's
+%% presence-based trust, not a guarantee the token is still valid this
+%% second. The first time this identity is actually used for a real ARM
+%% API call (chat_hosts:refresh_department_hosts/1, once a real ADS
+%% exists), an auth failure there is the actual validity check.
 ws_username_loop(Socket, Buf) ->
     receive
         {tcp, Socket, Data} ->
@@ -517,30 +537,12 @@ ws_username_loop(Socket, Buf) ->
 handle_username_data(Socket, Buf) ->
     case ws_decode(Buf) of
         {ok, 1, Payload, Rest} ->
-            case string:trim(binary_to_list(Payload)) of
-                "" ->
-                    ws_send_json(Socket, "error", "Username cannot be empty"),
-                    handle_username_data(Socket, Rest);
-                Name when length(Name) > ?MAX_USERNAME_LEN ->
-                    ws_send_json(Socket, "error",
-                        io_lib:format("Username too long (max ~p chars)", [?MAX_USERNAME_LEN])),
-                    handle_username_data(Socket, Rest);
-                Name ->
-                    %% Load global history *before* registering: this user
-                    %% isn't in chat_room's recipient map yet at this point,
-                    %% so nothing broadcast from here on can already be both
-                    %% in this snapshot and in a live push racing it in --
-                    %% closes off a rare duplicate-line-on-login window.
-                    GlobalHistory = chat_store:load_history("global"),
-                    case chat_room:register_user(Name, self()) of
-                        ok ->
-                            ws_send(Socket, json_obj([{"type", "welcome"}, {"name", Name}])),
-                            send_history_payload(Socket, "global", [], GlobalHistory),
-                            handle_ws_data(Socket, Name, Rest);
-                        {error, taken} ->
-                            ws_send_json(Socket, "error", "Username taken"),
-                            handle_username_data(Socket, Rest)
-                    end
+            case parse_connect_payload(Payload) of
+                {ok, Name, Identity} ->
+                    complete_registration(Socket, Name, Identity, Rest);
+                {error, Reason} ->
+                    ws_send_json(Socket, "error", Reason),
+                    handle_username_data(Socket, Rest)
             end;
         {ok, 8, _Payload, _Rest} ->
             gen_tcp:close(Socket);
@@ -554,6 +556,57 @@ handle_username_data(Socket, Buf) ->
         more ->
             inet:setopts(Socket, [{active, once}]),
             ws_username_loop(Socket, Buf)
+    end.
+
+parse_connect_payload(Payload) ->
+    try json:decode(Payload) of
+        #{<<"username">> := UsernameBin, <<"token">> := TokenBin, <<"armSessionId">> := ArmSessionIdBin}
+                when is_binary(UsernameBin), is_binary(TokenBin), is_binary(ArmSessionIdBin) ->
+            Name = string:trim(unicode:characters_to_list(UsernameBin)),
+            Token = binary_to_list(TokenBin),
+            ArmSessionId = binary_to_list(ArmSessionIdBin),
+            validate_connect_fields(Name, Token, ArmSessionId);
+        _ ->
+            {error, "Expected {\"username\":..,\"token\":..,\"armSessionId\":..}"}
+    catch
+        _:_ -> {error, "Expected {\"username\":..,\"token\":..,\"armSessionId\":..}"}
+    end.
+
+validate_connect_fields("", _Token, _ArmSessionId) ->
+    {error, "Username cannot be empty"};
+validate_connect_fields(Name, _Token, _ArmSessionId) when length(Name) > ?MAX_USERNAME_LEN ->
+    {error, io_lib:format("Username too long (max ~p chars)", [?MAX_USERNAME_LEN])};
+validate_connect_fields(_Name, "", _ArmSessionId) ->
+    {error, "Missing ARM token -- sign in before connecting"};
+validate_connect_fields(_Name, _Token, "") ->
+    {error, "Missing ARM session id -- sign in before connecting"};
+validate_connect_fields(Name, Token, ArmSessionId) ->
+    {ok, Name, #{token => Token, arm_session_id => ArmSessionId, username => Name}}.
+
+%% Load global history *before* registering: this user isn't in
+%% chat_room's recipient map yet at this point, so nothing broadcast from
+%% here on can already be both in this snapshot and in a live push racing
+%% it in -- closes off a rare duplicate-line-on-login window.
+complete_registration(Socket, Name, Identity, Rest) ->
+    GlobalHistory = chat_store:load_history("global"),
+    case chat_room:register_user(Name, self()) of
+        ok ->
+            %% Available to any handler in this connection's process via
+            %% get(arm_identity) -- e.g. the prompt engine's future
+            %% ARM-backed List/Input calls. Not used for anything else in
+            %% this module yet besides the opportunistic refresh below.
+            put(arm_identity, Identity),
+            %% Fire-and-forget: chat_arm:get_list can take up to 15s, and
+            %% there's nothing real to fetch yet anyway (CHAT_HOST_ADS_NAME
+            %% is unset until the backend dev's chat-host tstruct exists)
+            %% -- never worth blocking this connection's handshake on it.
+            spawn(fun() -> chat_hosts:refresh_department_hosts(Identity) end),
+            ws_send(Socket, json_obj([{"type", "welcome"}, {"name", Name}])),
+            send_history_payload(Socket, "global", [], GlobalHistory),
+            handle_ws_data(Socket, Name, Rest);
+        {error, taken} ->
+            ws_send_json(Socket, "error", "Username taken"),
+            handle_username_data(Socket, Rest)
     end.
 
 %% ---- post-login loop ---------------------------------------------------
@@ -690,7 +743,10 @@ handle_ws_data(Socket, Name, Buf) ->
                     gen_tcp:send(Socket, ws_encode(8, <<>>)),
                     gen_tcp:close(Socket);
                 Line ->
-                    handle_line(Socket, Name, Line),
+                    case check_rate_limit() of
+                        ok -> handle_line(Socket, Name, Line);
+                        limited -> ws_send_json(Socket, "error", "Too many commands -- slow down")
+                    end,
                     handle_ws_data(Socket, Name, Rest)
             end;
         {ok, 8, _Payload, _Rest} ->
@@ -1175,6 +1231,28 @@ with_int(Str, Fun) ->
     case string:to_integer(Str) of
         {Int, []} -> Fun(Int);
         _ -> ok
+    end.
+
+%% Sliding-window rate limit, ?RATE_LIMIT_MAX_COMMANDS per
+%% ?RATE_LIMIT_WINDOW_MS (see chat.hrl), per connection. State lives in
+%% this connection process's own dictionary -- each WS connection is
+%% already its own Erlang process, so there's no cross-connection
+%% contention to worry about, and nothing else in this process uses the
+%% dictionary for anything that could collide with this key.
+check_rate_limit() ->
+    Now = erlang:monotonic_time(millisecond),
+    case get(rate_limit) of
+        undefined ->
+            put(rate_limit, {1, Now}),
+            ok;
+        {_Count, WindowStart} when Now - WindowStart > ?RATE_LIMIT_WINDOW_MS ->
+            put(rate_limit, {1, Now}),
+            ok;
+        {Count, WindowStart} when Count < ?RATE_LIMIT_MAX_COMMANDS ->
+            put(rate_limit, {Count + 1, WindowStart}),
+            ok;
+        {_Count, _WindowStart} ->
+            limited
     end.
 
 json_obj(Pairs) ->

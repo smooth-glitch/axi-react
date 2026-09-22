@@ -14,14 +14,32 @@
 -define(NAME, ?MODULE).
 
 start_link() ->
+    Host = get_env_str("REDIS_HOST", "127.0.0.1"),
+    Password = get_env_str("REDIS_PASSWORD", ""),
+    warn_if_insecure(Host, Password),
     Options = [
-        {host, get_env_str("REDIS_HOST", "127.0.0.1")},
+        {host, Host},
         {port, get_env_int("REDIS_PORT", 6379)},
-        {password, get_env_str("REDIS_PASSWORD", "")},
+        {password, Password},
         {reconnect_sleep, 1000},
         {name, {local, ?NAME}}
     ],
     eredis:start_link(Options).
+
+%% A non-loopback Redis host with no password is reachable over the
+%% network by anyone who can reach that host/port at all -- fine for a
+%% local dev Redis on 127.0.0.1, a real problem the moment REDIS_HOST
+%% points anywhere else (the VM). Loud, unmissable startup log rather than
+%% a silent misconfiguration.
+warn_if_insecure(Host, "") when Host =/= "127.0.0.1", Host =/= "localhost" ->
+    io:format(
+        "~n!!! WARNING: chat_redis is connecting to '~s' with NO PASSWORD SET. "
+        "Set REDIS_PASSWORD before this points at anything other than a local "
+        "dev Redis -- an unauthenticated Redis reachable over the network can "
+        "read/write every chat message stored in it. !!!~n~n",
+        [Host]);
+warn_if_insecure(_Host, _Password) ->
+    ok.
 
 %% Command is a list like ["HSET", Key, Field, Value, ...] -- eredis
 %% converts lists/atoms/binaries/integers/floats to Redis's wire format
