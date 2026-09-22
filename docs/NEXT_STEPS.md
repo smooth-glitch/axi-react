@@ -2,8 +2,8 @@
 
 Source: `AxpertChat.docx` (your boss's plan). This doc maps that vision onto the
 current AXI React app, lists what's genuinely missing, and tracks progress
-for a two-person frontend team (Owner A / Owner B) building against a
-separately-owned backend.
+for a three-person team — Arjun on the Erlang chat backend, Anish and Gunn
+on the React frontend.
 
 **How to use this file**: tick a box with `- [x]` as you finish that item,
 commit, push. This is the shared source of truth for progress — both owners
@@ -221,84 +221,130 @@ IA has no place for yet.
 
 ---
 
-## 6. Two-person GitHub workflow
+## 6. Three-person GitHub workflow
 
-Dividing by **feature ownership**, not by file type — two people editing the
-same file is where every conflict in this codebase has actually come from
-so far.
+Dividing by **feature ownership / layer**, not by file type — two people
+editing the same file is where every conflict in this codebase has actually
+come from so far, and the Erlang backend is a separate codebase entirely so
+it naturally avoids overlap with the React work.
 
 ### Split work by module, not by task type
 
-The codebase already has natural boundaries (`src/features/<name>/`,
-`src/services/<name>.js`) — assign whole modules to one owner so you're
-rarely editing the same file. First cut for Phase 1–2, adjust to actual
-strengths:
+**Arjun — Erlang chat backend**
+- [ ] Chat backend service in Erlang (the "separately-owned backend" this
+      doc's frontend work builds against) — connections, message routing,
+      real-time delivery (websocket/polling — see the open question in
+      Section 8), and the API contract the React app calls
+- [ ] Prompt-engine backend support: List (GetList API), Input (tstruct
+      save), Upload/Download file endpoints
+- [ ] Chat-host and external-user data access — reads/writes against the
+      existing schema (e.g. `erpdemo`); no new database or schema setup
+      needed, this plugs into the schema already in place
+- [ ] Publishing the API contract (endpoints, payload shapes) that Anish
+      and Gunn build the frontend against — do this early, before they're
+      blocked on real data
 
-**Owner A — Navigation & directory**
-- [ ] Associate/host directory (new feature module)
-- [ ] Conversation-list navigation shell
-- [ ] Routing between conversations
-- [ ] Wiring the existing LLM chat in as the first "host" type
-
-**Owner B — Cards & prompts**
-- [ ] Card-based message thread redesign
-- [ ] Prompt engine (List/Input first)
-- [ ] Prompt renderer components per type
-- [ ] Month-grouping / cascading logic
+**Anish & Gunn — React frontend**
+- Split Phase 1–2 work between the two of you by module, same principle as
+  before (natural boundaries: `src/features/<name>/`, `src/services/<name>.js`):
+  - [ ] Associate/host directory + conversation-list navigation shell +
+        routing (one owner)
+      - [ ] Card-based message thread redesign + prompt renderer
+        components per type (other owner)
+  - [ ] Both: wire against Arjun's published API contract rather than
+        against mocks once it's available
 
 > **The one shared file to watch**: `src/app/App.jsx` is the single root
 > component every feature mounts into, and every edit to it during this
 > project's own build triggered a full dev-server reload. Whoever needs an
 > App.jsx change flags it in standup before touching it; keep those edits
-> small and merge them fast so the other person isn't blocked long.
+> small and merge them fast so the others aren't blocked long.
+
+### Cross-testing (boss's requirement)
+
+Your boss wants each person testing the others' features to catch bugs
+before they reach the shared VM:
+
+- [ ] Before merging a PR, at least one of the *other two* people pulls the
+      branch and exercises the feature manually (not just a code review) —
+      Arjun tests Anish/Gunn's UI flows against real usage; Anish and Gunn
+      take turns exercising Arjun's backend endpoints/chat behavior.
+- [ ] Log what you tested and found (even informally, in the PR itself) so
+      there's a record of what's been verified beyond "it compiles."
+- [ ] Treat the live VM deployment (Section 7) as the shared integration
+      point — this is where cross-testing happens against the real,
+      deployed stack, not just against `localhost`.
 
 ### Branching & PRs
 
 - **Branch per feature, not per person**: `feat/directory-shell`,
-  `feat/card-thread` — makes ownership legible in the branch list itself.
+  `feat/card-thread`, `feat/erlang-chat-router` — makes ownership legible in
+  the branch list itself.
 - **Small, frequent PRs** (a few hundred lines, not a whole phase) — easier
   to review, less likely to go stale against `main`.
 - **Pull & rebase onto `main` daily**, before starting each day's work —
   catches conflicts while they're small.
-- **The other person reviews every PR** before merge — keeps you both
-  current on the parts you didn't build.
+- **At least one other person reviews (and cross-tests) every PR** before
+  merge — keeps everyone current on the parts they didn't build.
 - **Draft PRs for in-progress work** — signals "I'm working here" without
   waiting for a finished feature.
+- **Every push to `main` auto-deploys to the VM** (see Section 7) — so a
+  merged PR is live and testable within minutes, which is exactly what
+  makes the cross-testing step above practical.
 
 ### Before building a shared piece, agree the contract first
 
-Where your two modules meet — e.g. the directory hands off a "selected
-conversation" to the card thread, or the prompt engine needs to know the
-active host — write down the function signature or prop shape *before*
-either of you builds against it. Building against an agreed contract in
-parallel is what actually avoids conflicts, not just avoiding the same file.
+Where the backend and frontend meet — the Erlang API's endpoints/payload
+shapes, or where the directory hands off a "selected conversation" to the
+card thread — write down the contract *before* people build against it.
+Building against an agreed contract in parallel is what actually avoids
+conflicts, not just avoiding the same file.
 
 ### Daily sync
 
 A 5-minute async check-in (a Teams thread is fine) covering: what each of
-you is touching today, anything that needs the other's review, and any
-shared-file change coming up.
+you is touching today, anything that needs cross-testing, and any
+shared-file or API-contract change coming up.
 
 ---
 
 ## 7. Build & deploy
 
-Confirmed: local development, then the built app moves to your own server —
-no cloud PaaS (Vercel/Netlify-style) in the picture.
+Confirmed: local development, then every push to GitHub auto-deploys to a
+VM your boss provides — that VM is the shared production/test server for
+live testing. No cloud PaaS (Vercel/Netlify-style) in the picture.
 
-- **Local dev** stays exactly as now — both of you run `npm run dev` in
-  `axi-react-src/` against your own machines, each signing in to the real
-  ARM API standalone.
+- **Local dev** stays exactly as now — everyone runs `npm run dev` in
+  `axi-react-src/` (frontend) or the Erlang release locally (backend)
+  against their own machines, each signing in to the real ARM API
+  standalone.
 - **Build** — `npm run build` produces a static `dist/` (`index.html` +
   hashed JS/CSS) that needs nothing but a file server; no Node process
-  required at runtime.
-- **Ship to the server** — copy `dist/`'s contents to wherever it's served
-  from (confirm with the backend dev whether that's a folder behind their
-  existing web server, a container image, or something else).
+  required at runtime. The Erlang backend builds/releases separately
+  (e.g. via `rebar3 release`).
+- **CI/CD — auto-deploy on push**: a push to `main` on GitHub must trigger
+  an automatic deploy to the boss's VM so the team can test live changes
+  immediately.
+  - [ ] Get VM access details from the boss (IP/hostname, SSH access, and
+        whether it's one VM hosting both frontend + Erlang backend or two
+        separate targets).
+  - [ ] Set up a GitHub Actions workflow (or webhook-triggered script on
+        the VM) that: builds the React app (`npm run build`) and the
+        Erlang release, then ships both to the VM and restarts the Erlang
+        service.
+  - [ ] Decide the deploy mechanism: GitHub Actions `deploy` job over SSH
+        (`scp`/`rsync` + remote restart command) vs. a lightweight webhook
+        listener running on the VM that pulls and rebuilds on push —
+        either works, pick based on what access the boss grants.
+  - [ ] Store any VM credentials/SSH keys as GitHub Actions secrets, never
+        committed to the repo.
+  - [ ] Confirm whether deploys should trigger on every push to `main`, or
+        only on PR merge (recommended, so in-progress branch pushes don't
+        hit the shared VM before review).
 - [ ] **Confirm with backend**: does production still need
       `shared/axi-standalone-bridge.js`'s standalone sign-in screen? Its whole job
       is bridging to the real ARM API when there's no Axpert host around —
-      once this runs on your server (presumably inside Axpert, or behind
+      once this runs on the VM (presumably inside Axpert, or behind
       existing org auth), a different auth path may take over.
 - [ ] **Make environment-driven** (currently hardcoded in
       `shared/axi-standalone-bridge.js`): the ARM API base URL / project name, and
@@ -326,5 +372,11 @@ no cloud PaaS (Vercel/Netlify-style) in the picture.
 - [ ] **Existing AXI** — does "My work space" / LLM chat stay exactly as-is
       inside the new shell, or does the boss want changes to it as part of
       this pass?
-- [ ] **Deployment target** — confirm exactly how `dist/` gets served on
-      the org's server (see Section 7).
+- [ ] **Deployment target** — confirm exactly how `dist/` and the Erlang
+      release get served on the boss's VM (see Section 7): access method,
+      whether frontend and backend share the VM, and what web/reverse-proxy
+      server (if any) fronts them.
+- [ ] **Database/schema** — confirmed this plugs into an existing schema
+      (e.g. `erpdemo`) rather than needing a new DB setup; still need the
+      exact schema/table access details from the backend dev once Arjun
+      starts wiring the Erlang service to it.
