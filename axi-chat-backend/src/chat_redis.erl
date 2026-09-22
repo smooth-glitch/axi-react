@@ -8,6 +8,14 @@
 %%% unchanged from a laptop (defaults to a local Redis with no password) to
 %%% the VM (real host + a real requirepass) -- see docs/NEXT_STEPS.md's
 %%% deploy section for what the VM side needs.
+%%%
+%%% REDIS_DB (default 0) selects a logical Redis database index -- this is
+%%% what gives each feature-branch preview deployment its own isolated
+%%% keyspace on the *same* Redis server/password, rather than needing a
+%%% separate Redis instance per branch. Production always uses 0; preview
+%%% slots use 1-15 (Redis's default database count), assigned by the
+%%% preview-deploy workflow's slot registry -- see
+%%% docs/NEXT_STEPS.md's preview-environments section.
 -module(chat_redis).
 -export([start_link/0, q/1]).
 -include_lib("kernel/include/logger.hrl").
@@ -22,6 +30,7 @@ start_link() ->
         {host, Host},
         {port, get_env_int("REDIS_PORT", 6379)},
         {password, Password},
+        {database, get_env_int("REDIS_DB", 0)},
         {reconnect_sleep, 1000},
         {name, {local, ?NAME}}
     ],

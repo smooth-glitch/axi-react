@@ -1,0 +1,137 @@
+name: Deploy preview
+
+# Fully isolated preview environment per PR/branch, alongside the
+# production deploy (deploy-backend.yml/deploy-frontend.yml, which only
+# ever touch the main deployment). Each branch gets:
+#   - its own Redis logical database (0 = prod, 1-15 = previews -- see
+#     chat_redis.erl's REDIS_DB support)
+#   - its own backend process on its own port (systemd template unit
+#     axi-chat-backend-preview@<slot>.service)
+#   - its own URL path (/preview/<slug>/) for both the frontend build and
+#     the backend's WS/upload endpoints
+# so two people can have two different branches live at once without
+# colliding. Slot numbers are assigned by /opt/preview/allocate-slot.sh
+# (a small flock-guarded registry on the VM) and freed by
+# preview-cleanup.yml when the PR closes.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  preview:
+    runs-on: [self-hosted, axi-vm]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute slot and slug
+        id: slot
+        run: |
+          RAW="${{ github.head_ref }}"
+          SLUG=$(echo "$RAW" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g' | cut -c1-30)
+          SLOT=$(/opt/preview/allocate-slot.sh "$SLUG")
+          PORT=$((9000 + SLOT))
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "slot=$SLOT" >> "$GITHUB_OUTPUT"
+          echo "port=$PORT" >> "$GITHUB_OUTPUT"
+
+      - name: Fix SELinux context on the fresh checkout
+        run: sudo restorecon -R "$GITHUB_WORKSPACE"
+
+      - name: Build backend
+        working-directory: axi-chat-backend
+        run: |
+          export PATH=/opt/erlang/27.3.4.18/bin:$PATH
+          chmod +x tools/rebar3
+          ./tools/rebar3 compile
+
+      - name: Build frontend (base path scoped to this preview)
+        run: |
+          npm ci
+          npm run build -- --base=/preview/${{ steps.slot.outputs.slug }}/
+
+      - name: Copy build output into the slot's stable directory
+        run: |
+          SLOT="${{ steps.slot.outputs.slot }}"
+          mkdir -p "/opt/preview/$SLOT/backend" "/opt/preview/$SLOT/frontend"
+          rsync -a --delete axi-chat-backend/ "/opt/preview/$SLOT/backend/"
+          rsync -a --delete dist/ "/opt/preview/$SLOT/frontend/dist/"
+          sudo restorecon -R "/opt/preview/$SLOT"
+
+      - name: Write the slot's env file
+        run: |
+          SLOT="${{ steps.slot.outputs.slot }}"
+          PORT="${{ steps.slot.outputs.port }}"
+          sudo tee "/etc/axi-chat-backend-preview/$SLOT.env" > /dev/null <<EOF
+          REDIS_HOST=127.0.0.1
+          REDIS_PORT=6379
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          REDIS_DB=$SLOT
+          LOG_LEVEL=info
+          PORT=$PORT
+          EOF
+          sudo chown root:opc "/etc/axi-chat-backend-preview/$SLOT.env"
+          sudo chmod 640 "/etc/axi-chat-backend-preview/$SLOT.env"
+
+      - name: Write nginx routing for this slot
+        run: |
+          SLOT="${{ steps.slot.outputs.slot }}"
+          PORT="${{ steps.slot.outputs.port }}"
+          SLUG="${{ steps.slot.outputs.slug }}"
+          sudo tee "/etc/nginx/conf.d/preview-$SLOT.conf" > /dev/null <<EOF
+          location /preview/$SLUG/ws {
+              proxy_pass http://127.0.0.1:$PORT/;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection \$connection_upgrade;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+              proxy_read_timeout 3600s;
+              proxy_send_timeout 3600s;
+          }
+          location /preview/$SLUG/upload {
+              proxy_pass http://127.0.0.1:$PORT/upload;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+          }
+          location /preview/$SLUG/uploads/ {
+              proxy_pass http://127.0.0.1:$PORT/uploads/;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+          }
+          location /preview/$SLUG/ {
+              alias /opt/preview/$SLOT/frontend/dist/;
+              try_files \$uri \$uri/ /preview/$SLUG/index.html;
+          }
+          EOF
+          sudo restorecon -v "/etc/nginx/conf.d/preview-$SLOT.conf"
+          sudo nginx -t
+          sudo systemctl reload nginx
+
+      - name: Start the preview backend instance
+        run: |
+          SLOT="${{ steps.slot.outputs.slot }}"
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now "axi-chat-backend-preview@$SLOT.service"
+          sudo systemctl restart "axi-chat-backend-preview@$SLOT.service"
+
+      - name: Verify it actually came back up
+        run: |
+          sleep 3
+          SLUG="${{ steps.slot.outputs.slug }}"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/preview/$SLUG/")
+          echo "Preview responded with HTTP $code"
+          test "$code" = "200"
+
+      - name: Comment on the PR with the preview URL
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SLUG="${{ steps.slot.outputs.slug }}"
+          URL="http://10.0.2.146/preview/$SLUG/"
+          curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -d "{\"body\": \"Preview deployed: $URL (office network/VPN required to reach it).\"}"
