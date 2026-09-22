@@ -106,8 +106,8 @@ handle_call({register, Name, Pid}, _From, State = #state{users = Users, monitors
 handle_call({private, From, To, Text, ReplyTo}, _From, State = #state{users = Users}) ->
     case maps:find(To, Users) of
         {ok, Pid} ->
-            Id = chat_store:save_message(chat_store:dm_key(From, To), From, Text, chat, true, ReplyTo),
-            Pid ! {private_message, Id, From, Text, ReplyTo},
+            {Id, Ts} = chat_store:save_message(chat_store:dm_key(From, To), From, Text, chat, true, ReplyTo),
+            Pid ! {private_message, Id, Ts, From, Text, ReplyTo},
             chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
                 lists:foreach(
                     fun(N) ->
@@ -117,7 +117,7 @@ handle_call({private, From, To, Text, ReplyTo}, _From, State = #state{users = Us
                         end
                     end, [From, To])
             end),
-            {reply, {ok, Id}, State};
+            {reply, {ok, Id, Ts}, State};
         error ->
             {reply, {error, not_found}, State}
     end;
@@ -125,12 +125,12 @@ handle_call({host_message, From, HostKey, Text, ReplyTo}, _From, State = #state{
     case chat_hosts:resolve_host(HostKey, From) of
         {ok, ResolvedTo} ->
             ConvKey = host_conv_key(HostKey, From),
-            Id = chat_store:save_message(ConvKey, From, Text, chat, true, ReplyTo),
+            {Id, Ts} = chat_store:save_message(ConvKey, From, Text, chat, true, ReplyTo),
             case maps:find(ResolvedTo, Users) of
-                {ok, Pid} -> Pid ! {host_message, HostKey, Id, From, Text, ReplyTo};
+                {ok, Pid} -> Pid ! {host_message, HostKey, Id, Ts, From, Text, ReplyTo};
                 error -> ok
             end,
-            {reply, {ok, Id}, State};
+            {reply, {ok, Id, Ts}, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -151,17 +151,17 @@ handle_cast({unregister, Name}, State = #state{users = Users, monitors = Monitor
     notify_all(NewUsers, {system, io_lib:format("~s has left", [Name])}),
     {noreply, State#state{users = NewUsers, monitors = NewMonitors}};
 handle_cast({broadcast, From, Text, ReplyTo}, State = #state{users = Users}) ->
-    Id = chat_store:save_message("global", From, Text, chat, false, ReplyTo),
+    {Id, Ts} = chat_store:save_message("global", From, Text, chat, false, ReplyTo),
     %% The sender already rendered their own message optimistically and
     %% isn't in the broadcast recipient list below -- but they still need
-    %% to learn the assigned id, so their own message becomes react-able
+    %% to learn the assigned id/ts, so their own message becomes react-able
     %% and can receive reaction pushes from others.
     case maps:find(From, Users) of
-        {ok, SelfPid} -> SelfPid ! {own_message_id, Id};
+        {ok, SelfPid} -> SelfPid ! {own_message_id, Id, Ts};
         error -> ok
     end,
     Others = maps:remove(From, Users),
-    notify_all(Others, {chat_message, Id, From, Text, ReplyTo}),
+    notify_all(Others, {chat_message, Id, Ts, From, Text, ReplyTo}),
     chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
         notify_all(Users, {link_preview, "global", MsgId, Preview})
     end),

@@ -97,14 +97,14 @@ mirror the command that triggered them.
 | `type` | When | Key fields |
 |---|---|---|
 | `welcome` | Right after a successful handshake | `name` |
-| `history` | On connect, or after `/history ...` | `scope` (`global`/`dm`/`group`), `with`/`group` (if scoped), `list`: array of message objects (see below) |
+| `history` | On connect, or after `/history ...` | `scope` (`global`/`dm`/`group`/`host`), `with`/`group`/`host` (if scoped), `list`: array of message objects (see below) |
 | `hosts` | Reply to `/hosts` | `list`: array of `{key, name, kind}` — see "Host directory" below |
-| `host_ack` | Your `/hostmsg` was delivered | `host`, `status`, `id` |
-| `host_message` | You received a message via a department host | `host`, `id`, `from`, `text`, `replyTo` |
-| `chat` | Someone posted in the global room | `id`, `from`, `text`, `replyTo` (int or `null`) |
+| `host_ack` | Your `/hostmsg` was delivered | `host`, `status`, `id`, `ts` |
+| `host_message` | You received a message via a department host | `host`, `id`, `ts`, `from`, `text`, `replyTo` |
+| `chat` | Someone posted in the global room | `id`, `ts`, `from`, `text`, `replyTo` (int or `null`) |
 | `private` | You received a DM | same shape as `chat` |
 | `system` | A system notice (join/leave, etc.) | `text` |
-| `group_message` | A group message | `group`, `id`, `from`, `text`, `replyTo` |
+| `group_message` | A group message | `group`, `id`, `ts`, `from`, `text`, `replyTo` |
 | `group_system` | A group system notice | `group`, `text` |
 | `added_to_group` | You were added to a group | `name`, `members` (array), `by` |
 | `group_created` | Your `/creategroup` succeeded | `name`, `members` |
@@ -114,12 +114,12 @@ mirror the command that triggered them.
 | `typing_dm` | Someone's typing in your DM | `from` |
 | `group_typing` | Someone's typing in a group you're in | `group`, `from` |
 | `dm_read` | Your DM was marked read | `from` |
-| `dm_ack` | Your `/msg` was delivered | `with`, `status`, `id` |
-| `group_msg_ack` | Your `/groupmsg`/`/replygroup` was delivered | `group`, `id` |
+| `dm_ack` | Your `/msg` was delivered | `with`, `status`, `id`, `ts` |
+| `group_msg_ack` | Your `/groupmsg`/`/replygroup` was delivered | `group`, `id`, `ts` |
 | `reaction` / `dm_reaction` / `group_reaction` | A reaction changed | `messageId`, `reactions`: array of `{user, emoji}`; DM/group variants add `userA`/`userB` or `group` |
 | `profile` | Someone's avatar/status changed | `user`, `avatar` (or `null`), `status` (or `null`) |
 | `deleted` / `dm_deleted` / `group_deleted` | A message was deleted | `messageId`; DM/group variants add `userA`/`userB` or `group` |
-| `own_message_id` | Echo of your own broadcast's assigned id | `id` |
+| `own_message_id` | Echo of your own broadcast's assigned id/timestamp | `id`, `ts` |
 | `link_preview` / `dm_link_preview` / `group_link_preview` | A pasted link's preview finished fetching | `messageId`, `previewUrl`, `previewTitle`, `previewDescription`, `previewImage` (all `""` if none) |
 | `gif_results` / `sticker_results` | Reply to a search | `query`, `results`: array of `{id, url, preview, width, height}` |
 | `pubkey` | Reply to `/getpubkey` | `user`, `key` (or `null`) |
@@ -131,6 +131,7 @@ mirror the command that triggered them.
 ```json
 {
   "id": 123,
+  "ts": 1790071256909,
   "from": "arjun",
   "text": "hello",
   "private": false,
@@ -140,6 +141,10 @@ mirror the command that triggered them.
   "previewUrl": "", "previewTitle": "", "previewDescription": "", "previewImage": ""
 }
 ```
+
+`ts` is epoch milliseconds (`erlang:system_time(millisecond)` at the
+moment the message was saved) — this is what "Date & time" on a message
+card and any month-grouping should be computed from.
 
 History returns at most the last 50 messages for that conversation, oldest
 first.
@@ -211,8 +216,9 @@ revisiting once the frontend's actual attachment UX is designed.
 - Prompts (List/Input/Upload/Download/Payment/OTP) as a configurable
   interaction unit.
 - Real identity/auth on connect (see the note under "Connecting").
-- Month-grouping or any thread-organization metadata — `history` just
-  returns a flat, most-recent-50 list.
+- Month-grouping itself — `history` returns a flat, most-recent-50 list.
+  Every message now carries `ts` (epoch ms), so the client has what it
+  needs to compute month groups itself; the backend doesn't pre-group.
 
 These land once the backend dev's `AxExternalUsers`/chat-host/prompt
 tstructs exist and `chat_arm.erl` has real data to read — see

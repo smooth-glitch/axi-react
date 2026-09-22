@@ -142,12 +142,12 @@ handle_call({message, GroupName, From, Text, ReplyTo}, _From, State = #state{gro
                 false ->
                     {reply, {error, not_member}, State};
                 true ->
-                    Id = chat_store:save_message("group:" ++ GroupName, From, Text, group_message, false, ReplyTo),
-                    notify_members(Members, [From], {group_message, GroupName, Id, From, Text, ReplyTo}),
+                    {Id, Ts} = chat_store:save_message("group:" ++ GroupName, From, Text, group_message, false, ReplyTo),
+                    notify_members(Members, [From], {group_message, GroupName, Id, Ts, From, Text, ReplyTo}),
                     chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
                         notify_members(Members, [], {group_link_preview, GroupName, MsgId, Preview})
                     end),
-                    {reply, {ok, Id}, State}
+                    {reply, {ok, Id, Ts}, State}
             end
     end.
 

@@ -566,23 +566,24 @@ ws_loop(Socket, Name, Buf) ->
             chat_room:unregister_user(Name);
         {tcp_error, Socket, _Reason} ->
             chat_room:unregister_user(Name);
-        {chat_message, Id, From, Text, ReplyTo} ->
-            ws_send_chat(Socket, "chat", Id, From, Text, ReplyTo),
+        {chat_message, Id, Ts, From, Text, ReplyTo} ->
+            ws_send_chat(Socket, "chat", Id, Ts, From, Text, ReplyTo),
             ws_loop(Socket, Name, Buf);
-        {private_message, Id, From, Text, ReplyTo} ->
-            ws_send_chat(Socket, "private", Id, From, Text, ReplyTo),
+        {private_message, Id, Ts, From, Text, ReplyTo} ->
+            ws_send_chat(Socket, "private", Id, Ts, From, Text, ReplyTo),
             ws_loop(Socket, Name, Buf);
-        {host_message, HostKey, Id, From, Text, ReplyTo} ->
+        {host_message, HostKey, Id, Ts, From, Text, ReplyTo} ->
             ws_send(Socket, json_obj2([
                 {"type", {str, "host_message"}}, {"host", {str, HostKey}},
-                {"id", {raw, integer_to_list(Id)}}, {"from", {str, From}}, {"text", {str, Text}},
+                {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}},
+                {"from", {str, From}}, {"text", {str, Text}},
                 reply_field(ReplyTo)])),
             ws_loop(Socket, Name, Buf);
         {system, Text} ->
             ws_send_json(Socket, "system", Text),
             ws_loop(Socket, Name, Buf);
-        {group_message, GroupName, Id, From, Text, ReplyTo} ->
-            ws_send_group_message(Socket, GroupName, Id, From, Text, ReplyTo),
+        {group_message, GroupName, Id, Ts, From, Text, ReplyTo} ->
+            ws_send_group_message(Socket, GroupName, Id, Ts, From, Text, ReplyTo),
             ws_loop(Socket, Name, Buf);
         {group_system, GroupName, Text} ->
             ws_send_group_system(Socket, GroupName, Text),
@@ -636,8 +637,10 @@ ws_loop(Socket, Name, Buf) ->
                 {"type", {str, "group_deleted"}}, {"group", {str, GroupName}},
                 {"messageId", {raw, integer_to_list(MessageId)}}])),
             ws_loop(Socket, Name, Buf);
-        {own_message_id, Id} ->
-            ws_send(Socket, json_obj2([{"type", {str, "own_message_id"}}, {"id", {raw, integer_to_list(Id)}}])),
+        {own_message_id, Id, Ts} ->
+            ws_send(Socket, json_obj2([
+                {"type", {str, "own_message_id"}}, {"id", {raw, integer_to_list(Id)}},
+                {"ts", {raw, integer_to_list(Ts)}}])),
             ws_loop(Socket, Name, Buf);
         {group_reaction, GroupName, MessageId, Reactions} ->
             ws_send(Socket, json_obj2([
@@ -724,10 +727,10 @@ handle_line(Socket, Name, "/hostmsg " ++ Rest) ->
                 io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
         [HostKey, Text] when Text =/= "" ->
             case chat_room:send_host_message(Name, HostKey, Text) of
-                {ok, Id} ->
+                {ok, Id, Ts} ->
                     ws_send(Socket, json_obj2([
                         {"type", {str, "host_ack"}}, {"host", {str, HostKey}}, {"status", {str, "delivered"}},
-                        {"id", {raw, integer_to_list(Id)}}]));
+                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
                 {error, not_found} ->
                     ws_send_json(Socket, "error", "No such host, or it has no one assigned yet: " ++ HostKey)
             end;
@@ -741,10 +744,10 @@ handle_line(Socket, Name, "/msg " ++ Rest) ->
                 io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
         [To, Text] when Text =/= "" ->
             case chat_room:send_private(Name, To, Text) of
-                {ok, Id} ->
+                {ok, Id, Ts} ->
                     ws_send(Socket, json_obj2([
                         {"type", {str, "dm_ack"}}, {"with", {str, To}}, {"status", {str, "delivered"}},
-                        {"id", {raw, integer_to_list(Id)}}]));
+                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
                 {error, not_found} ->
                     ws_send_json(Socket, "error", "No such user: " ++ To)
             end;
@@ -775,10 +778,10 @@ handle_line(Socket, Name, "/replydm " ++ Rest) ->
                     case string:to_integer(IdStr) of
                         {ReplyTo, []} ->
                             case chat_room:send_private(Name, To, Text, ReplyTo) of
-                                {ok, Id} ->
+                                {ok, Id, Ts} ->
                                     ws_send(Socket, json_obj2([
                                         {"type", {str, "dm_ack"}}, {"with", {str, To}}, {"status", {str, "delivered"}},
-                                        {"id", {raw, integer_to_list(Id)}}]));
+                                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
                                 {error, not_found} ->
                                     ws_send_json(Socket, "error", "No such user: " ++ To)
                             end;
@@ -918,10 +921,10 @@ handle_line(Socket, Name, "/groupmsg " ++ Rest) ->
                 io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
         [GroupName, Text] when Text =/= "" ->
             case chat_groups:group_message(GroupName, Name, Text) of
-                {ok, Id} ->
+                {ok, Id, Ts} ->
                     ws_send(Socket, json_obj2([
                         {"type", {str, "group_msg_ack"}}, {"group", {str, GroupName}},
-                        {"id", {raw, integer_to_list(Id)}}]));
+                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
                 {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
                 {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group")
             end;
@@ -939,10 +942,10 @@ handle_line(Socket, Name, "/replygroup " ++ Rest) ->
                     case string:to_integer(IdStr) of
                         {ReplyTo, []} ->
                             case chat_groups:group_message(GroupName, Name, Text, ReplyTo) of
-                                {ok, Id} ->
+                                {ok, Id, Ts} ->
                                     ws_send(Socket, json_obj2([
                                         {"type", {str, "group_msg_ack"}}, {"group", {str, GroupName}},
-                                        {"id", {raw, integer_to_list(Id)}}]));
+                                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
                                 {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
                                 {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group")
                             end;
@@ -1053,9 +1056,9 @@ ws_send(Socket, Json) ->
 ws_send_json(Socket, Type, Text) ->
     ws_send(Socket, json_obj([{"type", Type}, {"text", lists:flatten(Text)}])).
 
-ws_send_chat(Socket, Type, Id, From, Text, ReplyTo) ->
+ws_send_chat(Socket, Type, Id, Ts, From, Text, ReplyTo) ->
     ws_send(Socket, json_obj2([
-        {"type", {str, Type}}, {"id", {raw, integer_to_list(Id)}},
+        {"type", {str, Type}}, {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}},
         {"from", {str, From}}, {"text", {str, Text}}, reply_field(ReplyTo)])).
 
 ws_send_users(Socket, Users) ->
@@ -1075,11 +1078,12 @@ ws_send_group_created(Socket, GroupName, Members) ->
         {"name", {str, GroupName}},
         {"members", {raw, json_string_array(Members)}}])).
 
-ws_send_group_message(Socket, GroupName, Id, From, Text, ReplyTo) ->
+ws_send_group_message(Socket, GroupName, Id, Ts, From, Text, ReplyTo) ->
     ws_send(Socket, json_obj2([
         {"type", {str, "group_message"}},
         {"group", {str, GroupName}},
         {"id", {raw, integer_to_list(Id)}},
+        {"ts", {raw, integer_to_list(Ts)}},
         {"from", {str, From}},
         {"text", {str, Text}},
         reply_field(ReplyTo)])).
@@ -1104,19 +1108,22 @@ ws_send_groups(Socket, Groups) ->
         {"type", {str, "groups"}},
         {"list", {raw, "[" ++ string:join(Items, ",") ++ "]"}}])).
 
-%% Scope is "global" | "dm" | "group"; ExtraFields identify which
+%% Scope is "global" | "dm" | "group" | "host"; ExtraFields identify which
 %% conversation (e.g. [{"with", Username}] for a dm, [{"group", Name}] for
-%% a group -- [] for global); Items are {Id, From, Text, Private, Reactions,
-%% Preview, ReplyTo} tuples from chat_store:load_history/1 (Preview/ReplyTo
-%% are [] if none).
+%% a group, [{"host", HostKey}] for a host -- [] for global); Items are
+%% {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted}
+%% tuples from chat_store:load_history/1 (Preview/ReplyTo are [] if none).
+%% Ts (epoch milliseconds) is what lets the client render "Date & time"
+%% and group threads by month, per the boss's spec.
 send_history_payload(Socket, Scope, ExtraFields, Items) ->
     ItemsJson = [json_obj2(
-        [{"id", {raw, integer_to_list(Id)}}, {"from", {str, From}}, {"text", {str, Text}},
+        [{"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}},
+         {"from", {str, From}}, {"text", {str, Text}},
          {"private", {raw, bool_str(Private)}}, {"reactions", {raw, reactions_json(Reactions)}},
          {"deleted", {raw, bool_str(Deleted)}},
          reply_field(ReplyTo)]
         ++ preview_fields(Preview))
-                 || {Id, From, Text, Private, Reactions, Preview, ReplyTo, Deleted} <- Items],
+                 || {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted} <- Items],
     ListJson = "[" ++ string:join(ItemsJson, ",") ++ "]",
     Fields = [{"type", {str, "history"}}, {"scope", {str, Scope}}] ++
              [{K, {str, V}} || {K, V} <- ExtraFields] ++

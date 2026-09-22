@@ -59,6 +59,10 @@ save_message(ConvKey, From, Text, Kind, Private) ->
     save_message(ConvKey, From, Text, Kind, Private, []).
 
 %% ReplyTo is [] (not a reply) or the id of the message being replied to.
+%% Returns {Id, Ts} -- Ts (epoch milliseconds) is what lets a client render
+%% "Date & time" on a message card and group threads by month, both
+%% explicitly called for in the boss's spec; callers thread it through to
+%% both the live push event and (via load_history/1) history.
 save_message(ConvKey, From, Text, Kind, Private, ReplyTo) ->
     Id = erlang:unique_integer([monotonic, positive]),
     Ts = erlang:system_time(millisecond),
@@ -76,14 +80,14 @@ save_message(ConvKey, From, Text, Kind, Private, ReplyTo) ->
         "deleted", bool_to_flag(false)
     ]),
     {ok, _} = chat_redis:q(["ZADD", conv_zset_key(ConvKey), integer_to_list(Id), integer_to_list(Id)]),
-    Id.
+    {Id, Ts}.
 
 %% Last ?HISTORY_LIMIT messages for a conversation, oldest first, as plain
-%% {Id, From, Text, Private, Reactions, Preview, ReplyTo, Deleted} tuples --
-%% callers never need to know these came from Redis hashes. Reactions is a
-%% [{User, Emoji}] list; Preview is [] (none yet, or never will be) or
-%% {Url, Title, Description, Image}; ReplyTo is [] (not a reply) or the id
-%% of the original message.
+%% {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted}
+%% tuples -- callers never need to know these came from Redis hashes.
+%% Ts is epoch milliseconds. Reactions is a [{User, Emoji}] list; Preview
+%% is [] (none yet, or never will be) or {Url, Title, Description, Image};
+%% ReplyTo is [] (not a reply) or the id of the original message.
 load_history(ConvKey) ->
     {ok, IdBins} = chat_redis:q(["ZRANGE", conv_zset_key(ConvKey), integer_to_list(-?HISTORY_LIMIT), "-1"]),
     [read_message(list_to_integer(binary_to_list(B))) || B <- IdBins].
@@ -92,6 +96,7 @@ read_message(Id) ->
     {ok, Fields} = chat_redis:q(["HGETALL", msg_key(Id)]),
     Map = fields_to_map(Fields),
     {Id,
+     list_to_integer(b2l(maps:get(<<"ts">>, Map))),
      b2l(maps:get(<<"from">>, Map)),
      b2l(maps:get(<<"text">>, Map)),
      flag_to_bool(maps:get(<<"private">>, Map)),
