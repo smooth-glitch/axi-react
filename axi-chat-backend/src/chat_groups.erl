@@ -175,7 +175,11 @@ handle_cast({delete, GroupName, MessageId, User}, State = #state{groups = Groups
         {ok, #group{members = Members}} ->
             case chat_store:delete_message(MessageId, User) of
                 {ok, deleted} -> notify_members(Members, [], {group_deleted, GroupName, MessageId});
-                _ -> ok
+                {error, Reason} ->
+                    case chat_room:get_pid(User) of
+                        {ok, Pid} -> Pid ! {delete_denied, MessageId, Reason};
+                        error -> ok
+                    end
             end;
         error ->
             ok

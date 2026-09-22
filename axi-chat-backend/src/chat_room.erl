@@ -206,7 +206,7 @@ handle_cast({react_dm, MessageId, User, Emoji, Other}, State = #state{users = Us
 handle_cast({delete_global, MessageId, User}, State = #state{users = Users}) ->
     case chat_store:delete_message(MessageId, User) of
         {ok, deleted} -> notify_all(Users, {deleted, MessageId});
-        _ -> ok
+        {error, Reason} -> notify_delete_denied(Users, User, MessageId, Reason)
     end,
     {noreply, State};
 handle_cast({delete_dm, MessageId, User, Other}, State = #state{users = Users}) ->
@@ -219,7 +219,7 @@ handle_cast({delete_dm, MessageId, User, Other}, State = #state{users = Users}) 
                         error -> ok
                     end
                 end, [User, Other]);
-        _ -> ok
+        {error, Reason} -> notify_delete_denied(Users, User, MessageId, Reason)
     end,
     {noreply, State};
 handle_cast({broadcast_profile, User}, State = #state{users = Users}) ->
@@ -245,3 +245,13 @@ code_change(_Old, State, _Extra) -> {ok, State}.
 
 notify_all(Users, Msg) ->
     maps:foreach(fun(_Name, Pid) -> Pid ! Msg end, Users).
+
+%% A rejected delete (not_found or forbidden -- not the message's own
+%% sender) previously failed completely silently: the requester had no way
+%% to tell "denied" apart from "just slow." Only the requester gets this,
+%% never broadcast -- it's not information anyone else needs.
+notify_delete_denied(Users, Requester, MessageId, Reason) ->
+    case maps:find(Requester, Users) of
+        {ok, Pid} -> Pid ! {delete_denied, MessageId, Reason};
+        error -> ok
+    end.

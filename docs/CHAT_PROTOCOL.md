@@ -132,6 +132,7 @@ mirror the command that triggered them.
 | `reaction` / `dm_reaction` / `group_reaction` | A reaction changed | `messageId`, `reactions`: array of `{user, emoji}`; DM/group variants add `userA`/`userB` or `group` |
 | `profile` | Someone's avatar/status changed | `user`, `avatar` (or `null`), `status` (or `null`) |
 | `deleted` / `dm_deleted` / `group_deleted` | A message was deleted | `messageId`; DM/group variants add `userA`/`userB` or `group` |
+| `delete_denied` | Your `/delete` was rejected (not your message, or it doesn't exist) | `messageId`, `reason` (`"forbidden"` or `"not_found"`) |
 | `own_message_id` | Echo of your own broadcast's assigned id/timestamp | `id`, `ts` |
 | `link_preview` / `dm_link_preview` / `group_link_preview` | A pasted link's preview finished fetching | `messageId`, `previewUrl`, `previewTitle`, `previewDescription`, `previewImage` (all `""` if none) |
 | `gif_results` / `sticker_results` | Reply to a search | `query`, `results`: array of `{id, url, preview, width, height}` |

@@ -679,6 +679,11 @@ ws_loop(Socket, Name, Buf) ->
                 {"type", {str, "deleted"}}, {"scope", {str, "global"}},
                 {"messageId", {raw, integer_to_list(MessageId)}}])),
             ws_loop(Socket, Name, Buf);
+        {delete_denied, MessageId, Reason} ->
+            ws_send(Socket, json_obj2([
+                {"type", {str, "delete_denied"}}, {"messageId", {raw, integer_to_list(MessageId)}},
+                {"reason", {str, atom_to_list(Reason)}}])),
+            ws_loop(Socket, Name, Buf);
         {dm_deleted, MessageId, UserA, UserB} ->
             ws_send(Socket, json_obj2([
                 {"type", {str, "dm_deleted"}},

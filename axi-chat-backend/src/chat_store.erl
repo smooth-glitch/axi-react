@@ -64,7 +64,15 @@ save_message(ConvKey, From, Text, Kind, Private) ->
 %% explicitly called for in the boss's spec; callers thread it through to
 %% both the live push event and (via load_history/1) history.
 save_message(ConvKey, From, Text, Kind, Private, ReplyTo) ->
-    Id = erlang:unique_integer([monotonic, positive]),
+    %% Id comes from Redis's own INCR, not erlang:unique_integer/1 -- the
+    %% latter resets to 1 on every VM restart, but Redis data survives
+    %% restarts, so a reused id would silently overwrite an old message's
+    %% hash and leave a stale ZADD reference pointing a *different*
+    %% conversation's history at it. INCR on a key that lives in Redis
+    %% itself is unique and monotonic across restarts, matching how
+    %% persistent this data actually is.
+    {ok, IdBin} = chat_redis:q(["INCR", "next_msg_id"]),
+    Id = list_to_integer(binary_to_list(IdBin)),
     Ts = erlang:system_time(millisecond),
     {ok, _} = chat_redis:q([
         "HSET", msg_key(Id),
