@@ -15,6 +15,21 @@ inspecting Redis directly, and the most common failure modes. This
 README covers setup and architecture; that doc covers "something's wrong,
 where do I look."
 
+Frontend devs integrating against this backend want
+[`../docs/CHAT_PROTOCOL.md`](../docs/CHAT_PROTOCOL.md) instead, not this
+file. The [root README](../README.md) has a full "start here, by role"
+table if you landed here looking for something else (frontend setup, CI/CD,
+the deploy VM).
+
+## Contents
+
+- [Architecture](#architecture)
+- [Data flow](#data-flow)
+- [Setup](#setup)
+- [Protocol](#protocol)
+- [Security posture](#security-posture-read-before-deploying-anywhere-real)
+- [Deploy & infrastructure](#deploy--infrastructure)
+
 ## Architecture
 
 ```
@@ -153,9 +168,73 @@ See `docs/DEBUGGING.md` §7.
 Full audit trail and reasoning: see the git log (search for "Security
 pass" and "spec audit") and `../docs/NEXT_STEPS.md`'s security checklist.
 
-## Deploy
+## Deploy & infrastructure
 
 Builds into a Docker image via `Dockerfile` (rebar3 compile, then run the
-compiled beams directly with `erl`) for deployment to the team's VM, with
-push-to-`main` auto-deploy -- see the CI/CD section of
-`../docs/NEXT_STEPS.md`.
+compiled beams directly with `erl`) -- useful for local container testing,
+but **not** what actually ships to the team's VM; the real deploy path
+below runs `rebar3` directly on the VM instead.
+
+### Production
+
+A push to `main` that touches `axi-chat-backend/**` runs
+[`../.github/workflows/deploy-backend.yml`](../.github/workflows/deploy-backend.yml)
+on a **self-hosted GitHub Actions runner installed on the deploy VM itself**
+(`10.0.2.146`, office-network-only, unreachable from GitHub's cloud
+runners -- the runner makes the outbound connection instead, so no inbound
+firewall changes are needed). That workflow:
+
+1. Checks out the repo, then runs `restorecon -R` on the checkout.
+   **SELinux (Oracle Linux, enforcing) blocks executing binaries out of a
+   user's home directory by default** -- the VM has a persistent fcontext
+   rule for this checkout path, but `restorecon` still has to run after
+   every fresh checkout to apply it to the newly-written files, or the
+   build silently fails to execute.
+2. Compiles with `rebar3` (`export PATH=/opt/erlang/27.3.4.18/bin:$PATH`
+   first -- the runner's non-interactive shell doesn't inherit a login
+   shell's PATH).
+3. Restarts the `axi-chat-backend` systemd service.
+4. Verifies it actually came back up by curling `http://127.0.0.1:8080/`
+   directly (bypassing nginx) and checking for `404` -- that's the
+   expected "no page-serving by design" response; anything else (`502`,
+   connection refused) means the restart didn't bring a healthy backend
+   up. Curling through nginx's `/` instead would say nothing, since that
+   path now serves the React frontend build, not this backend.
+
+On the VM, nginx is the single front door for real traffic: `/ws`,
+`/upload`, and `/uploads/*` are routed to this backend; everything else
+(the static frontend build) is handled separately -- see the root
+README's [Infrastructure & deployment](../README.md#infrastructure--deployment)
+section for the frontend side of this. Production always runs against
+Redis logical DB `0`.
+
+### PR previews
+
+Every PR gets a fully isolated preview stack
+([`preview-deploy.yml`](../.github/workflows/preview-deploy.yml)), torn
+down on close
+([`preview-cleanup.yml`](../.github/workflows/preview-cleanup.yml)), so
+two branches can run side by side without colliding:
+
+- Its own Redis logical DB, `1`-`15` (set via the `REDIS_DB` env var --
+  see `chat_redis.erl`), assigned per preview slot.
+- Its own backend process on its own port (`9000 + slot`), run via the
+  systemd **template unit** `axi-chat-backend-preview@<slot>.service`,
+  configured by a generated env file at
+  `/etc/axi-chat-backend-preview/<slot>.env` (`REDIS_DB`, `PORT`,
+  `LOG_LEVEL`, etc. -- see the workflow for the exact fields).
+- Its own URL path, `/preview/<branch-slug>/`, with nginx routing
+  `/preview/<slug>/ws`, `/upload`, and `/uploads/` to that slot's port,
+  and everything else to that slot's frontend build.
+- Slot numbers come from `/opt/preview/allocate-slot.sh` (a
+  flock-guarded registry script on the VM) and are freed by the cleanup
+  workflow when the PR closes.
+- Reachable only from the office network/VPN -- the cleanup and deploy
+  workflows post the preview URL as a PR comment.
+
+**Security note:** `REDIS_PASSWORD` for preview instances is pulled from
+a GitHub Actions secret and written into each slot's env file with
+`chmod 640`, owner `root:opc` -- never hardcode a Redis password in a
+workflow file or commit one to this repo. See
+[Security posture](#security-posture-read-before-deploying-anywhere-real)
+above for the rest of the security model.
