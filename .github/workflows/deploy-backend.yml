@@ -41,9 +41,13 @@ jobs:
         run: |
           sleep 3
           sudo systemctl is-active axi-chat-backend
-          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1/)
-          echo "nginx -> backend responded with HTTP $code"
-          # 404 is the expected response (no page-serving by design) --
-          # anything else (502, connection refused) means the restart
-          # didn't actually bring a healthy backend up.
+          # Hit the backend directly on its own port, not through nginx's
+          # "/" -- that now serves the React frontend build (see
+          # deploy-frontend.yml), so a 200 there says nothing about the
+          # backend's health. 404 direct-to-backend is the expected
+          # response (no page-serving by design); anything else (502,
+          # connection refused) means the restart didn't actually bring a
+          # healthy backend up.
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/)
+          echo "backend responded with HTTP $code"
           test "$code" = "404"
