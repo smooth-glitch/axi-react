@@ -5,7 +5,8 @@
 // can reach. Uses only Node's built-in WebSocket (Node 22+), no deps.
 //
 // Usage:
-//   node test/integration_test.mjs [port]        # default port 8080
+//   node test/integration_test.mjs [port]              # local dev, default port 8080
+//   node test/integration_test.mjs --url ws://<host>/ws   # any full WS URL (e.g. prod, a preview slot)
 //
 // This is deliberately a plain script, not a test framework, so it's
 // runnable with zero setup on any machine that already has Node --
@@ -17,8 +18,13 @@
 // raw TCP dev listener, and anything involving more than 2 concurrent
 // clients.
 
-const PORT = process.argv[2] || 8080;
-const URL = `ws://localhost:${PORT}`;
+let URL;
+if (process.argv[2] === "--url") {
+    URL = process.argv[3];
+} else {
+    const PORT = process.argv[2] || 8080;
+    URL = `ws://localhost:${PORT}`;
+}
 
 let passCount = 0, failCount = 0;
 const failures = [];

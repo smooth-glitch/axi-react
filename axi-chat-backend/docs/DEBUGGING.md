@@ -9,10 +9,15 @@ without having to read every module first.
 Before debugging anything, confirm the basics still work:
 
 ```bash
+# Local dev:
 # 1. Start Redis (see README.md if it's not already running)
 # 2. Start the backend: .\run.ps1 (Windows) or the erl command in README.md
 # 3. In another terminal:
 node test/integration_test.mjs 8080   # or whatever port you started on
+
+# Against a live deployment (prod or a preview slot):
+node test/integration_test.mjs --url ws://10.0.2.146/ws
+node test/integration_test.mjs --url ws://10.0.2.146/preview/<branch-slug>/ws
 ```
 
 This drives a real WebSocket connection (two simulated clients) through
@@ -100,6 +105,8 @@ redis-cli HGETALL profile:someuser         # one user's avatar/status/pubkey
 | `/hostmsg` always errors "No such host" for every key including real department names | Expected until the backend dev's chat-host tstruct exists — see `chat_hosts.erl`'s `CHAT_HOST_ADS_NAME` placeholder | `docs/CHAT_PROTOCOL.md`'s "Host directory" section |
 | ARM API calls (`chat_arm.erl`) always fail | Check the `?LOG_WARNING` for the HTTP status/reason (never the body) — could be network, could be an actually-invalid/expired token being forwarded from the frontend | `chat_arm.erl`'s `post_json/3` |
 | A message's reactions/history look wrong after a server restart during testing | If this is a *fresh dev Redis* that predates the message-id fix (see `chat_store.erl`'s `save_message/6` comment on why it uses Redis `INCR`, not `erlang:unique_integer/1`), old test data may have colliding ids — `redis-cli FLUSHDB` to reset (never do this against real data) | `chat_store.erl` |
+| A PR's preview never gets a URL comment / preview 404s at its path | Check the `Deploy preview` Actions run's logs for the actual failure — most likely a build error in that branch's code. If the run succeeded but the URL still 404s, check `cat /opt/preview/slots.tsv` on the VM for that branch's assigned slot, then `systemctl status axi-chat-backend-preview@<slot>.service` | `.github/workflows/preview-deploy.yml`, `/opt/preview/` on the VM |
+| Preview slots seem to be piling up / running out (max 15) | A PR that never got closed (or was closed without the cleanup workflow running) leaves its slot allocated forever | `cat /opt/preview/slots.tsv` to see what's allocated; `/opt/preview/teardown-slot.sh <branch-slug>` to manually free one |
 
 ## 6. Why message ids come from Redis, not the Erlang VM
 
