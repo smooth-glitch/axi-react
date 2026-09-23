@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "predev": "node scripts/sync-public-assets.mjs",
-    "dev": "vite",
+    "dev": "vite --host",
     "prebuild": "node scripts/sync-public-assets.mjs",
     "build": "vite build",
     "build:legacy": "npm run build:databin && npm run build:admin && npm run build:promptTemplates && npm run build:exportChat && npm run build:providerSwitcher && npm run build:messageThread && npm run build:systemPromptEditor && npm run build:composer",

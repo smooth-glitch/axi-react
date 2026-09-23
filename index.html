@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Axpert Insights (AXI)</title>
+    <title>Sandesh Insights</title>
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
@@ -20,8 +20,8 @@
     <!-- MUST be the first script tag: lets the app run standalone (its own
          tab, no Axpert iframe) against the real ARM REST API. Does nothing
          at all when actually embedded in Axpert. -->
-    <script src="/axi-standalone-bridge.js"></script>
-    <script src="/axi-foundation.js"></script>
+    <script src="/axi-standalone-bridge.jsx"></script>
+    <script src="/axi-foundation.jsx"></script>
 
     <!-- Shared React runtime — the app bundle below marks react/react-dom
          external (see vite.config.js) so it doesn't carry its own copy.
@@ -36,8 +36,8 @@
          React components (rendered inside App.jsx) call into these by their
          window.* names, same as the previous hybrid architecture did.
          Pure logic/state, no boot-time DOM queries — safe to load eagerly. -->
-    <script src="/axi-databin-services.js"></script>
-    <script src="/axi-admin-services.js"></script>
+    <script src="/axi-databin-services.jsx"></script>
+    <script src="/axi-admin-services.jsx"></script>
     <!-- axi-databin-core.js, axi-databin-extras.js, axi-ui-polish.js, and
          axi-push-to-tstruct.js are NOT loaded here — each has a
          document.readyState-gated boot routine that queries specific

@@ -44,9 +44,10 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
     setTimeout(() => {
       setLoading(false);
+      const cleanUsername = signInIdentifier.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "user_" + Math.floor(Math.random() * 8999 + 1000);
       onLoginSuccess({
         name: signInIdentifier === "arjun" ? "Arjun S." : signInIdentifier,
-        username: signInIdentifier.toLowerCase().replace(/\s+/g, ""),
+        username: cleanUsername,
         role: signInIdentifier === "arjun" ? "Enterprise Administrator" : "Enterprise Associate",
         org: "Agile Labs Enterprise",
         category: "employee",
@@ -81,9 +82,10 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
     setTimeout(() => {
       setLoading(false);
+      const cleanAdmin = adminName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "admin";
       onLoginSuccess({
         name: adminName,
-        username: adminName.toLowerCase().split(" ")[0] || "admin",
+        username: cleanAdmin,
         role: "Primary Enterprise Administrator",
         org: adminOrg,
         category: "employee",
@@ -111,9 +113,10 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
     setTimeout(() => {
       setLoading(false);
+      const cleanReg = regName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "associate";
       onLoginSuccess({
         name: regName,
-        username: regName.toLowerCase().replace(/\s+/g, ""),
+        username: cleanReg,
         role: regCategory === "employee" ? "Employee" : "Affiliate Member",
         org: regOrg,
         category: regCategory,

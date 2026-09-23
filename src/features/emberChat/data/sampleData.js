@@ -34,6 +34,7 @@ export const chats = [
   {
     id: "user-priya",
     name: "Priya Sharma",
+    username: "priya",
     isGroup: false,
     category: "associate",
     designation: "HR Manager (Host)",
@@ -55,6 +56,7 @@ export const chats = [
   {
     id: "user-ravi",
     name: "Ravi Kumar",
+    username: "ravi",
     isGroup: false,
     category: "associate",
     designation: "Lead Systems Engineer",
@@ -66,6 +68,7 @@ export const chats = [
   {
     id: "user-sam",
     name: "Sam Wilson",
+    username: "sam",
     isGroup: false,
     category: "associate",
     designation: "Affiliate SPOC • Transperfect",
@@ -99,10 +102,10 @@ export const chats = [
     unread: 0,
     topic: "Expense Claim",
   },
-  // AI & Preconfigured Hosts (per chat_hosts.erl and AxpertChat spec)
+  // AI & Preconfigured Hosts (per chat_hosts.erl and SandeshChat spec)
   {
     id: "host-workspace",
-    name: "My Workspace (Axpert)",
+    name: "My Workspace (Sandesh)",
     isGroup: false,
     isHost: true,
     category: "ai_host",
@@ -401,7 +404,7 @@ export const messagesByChat = {
     {
       id: 701,
       kind: "system",
-      text: "Connected to Axpert Workspace Smart Host",
+      text: "Connected to Sandesh Workspace Smart Host",
     },
     {
       id: 702,
@@ -410,7 +413,7 @@ export const messagesByChat = {
       from: "Workspace",
       color: "#5856d6",
       initials: "WS",
-      text: "You have 3 active tasks assigned today in the ERP demo project. Click 'Smart Prompts' above to interact with Axpert tstructs and smart views.",
+      text: "You have 3 active tasks assigned today in the ERP demo project. Click 'Smart Prompts' above to interact with Sandesh tstructs and smart views.",
       time: "Just now",
     },
   ],

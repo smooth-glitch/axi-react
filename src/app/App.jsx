@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import EmberChatScreen from '../features/emberChat/EmberChatScreen.jsx';
+import SandeshChatScreen from '../features/emberChat/SandeshChatScreen.jsx';
 
 import MessageThread from '../features/messageThread/components/MessageThread';
 import { registerGlobalNotifyHook as registerMessageThreadNotifyHook } from '../features/messageThread/store';
@@ -209,10 +209,10 @@ export default function App() {
     if (window._axiLegacyScriptsLoading) return undefined;
     window._axiLegacyScriptsLoading = true;
     const legacyScripts = [
-      '/axi-databin-core.js',
-      '/axi-databin-extras.js',
-      '/axi-ui-polish.js',
-      '/axi-push-to-tstruct.js',
+      '/axi-databin-core.jsx',
+      '/axi-databin-extras.jsx',
+      '/axi-ui-polish.jsx',
+      '/axi-push-to-tstruct.jsx',
     ];
     function loadNext(i) {
       if (i >= legacyScripts.length) {
@@ -306,7 +306,7 @@ export default function App() {
   return (
     <>
       <div style={{ display: view === 'ember' ? undefined : 'none' }}>
-        <EmberChatScreen onOpenAiChat={() => setView('ai')} />
+        <SandeshChatScreen onOpenAiChat={() => setView('ai')} />
       </div>
 
       <div style={{ display: view === 'ai' ? undefined : 'none' }}>
@@ -333,9 +333,9 @@ export default function App() {
           {/* 1. Global Logo Header (Slim, sticky top) */}
           <header className="globalBar">
             <div className="globalBar__inner">
-              <div className="globalBrand" role="banner" aria-label="Axi AI">
+              <div className="globalBrand" role="banner" aria-label="Sandesh AI">
                 <span className="globalBrandWordmark">
-                  <span className="globalBrandWordmark-main">Axi</span>
+                  <span className="globalBrandWordmark-main">Sandesh</span>
                   <span className="globalBrandWordmark-accent">AI</span>
                 </span>
               </div>

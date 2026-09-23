@@ -8,6 +8,7 @@ export default function Sidebar({
   activeChatId,
   isOpen,
   onSelectChat,
+  onSelectOnlineUser,
   onEditProfile,
   onClose,
   onNewGroup,
@@ -63,7 +64,7 @@ export default function Sidebar({
                 <span className="user-name">{me.name}</span>
                 {me.isAdmin && <span className="admin-tag">Admin</span>}
               </div>
-              <span className="user-role">{me.designation || me.role}</span>
+              <span className="user-role">{me.username ? `@${me.username} • ` : ""}{me.designation || me.role}</span>
             </div>
           </div>
           <div className="user-actions-right">
@@ -206,7 +207,11 @@ export default function Sidebar({
               key={user.id}
               className="sandesh-online-item-3d"
               onClick={() => {
-                onSelectChat?.(`user-${user.id}`);
+                if (onSelectOnlineUser) {
+                  onSelectOnlineUser(user);
+                } else {
+                  onSelectChat?.(`user-${user.id}`);
+                }
                 onClose?.();
               }}
             >
@@ -231,7 +236,7 @@ export default function Sidebar({
               <Avatar initials="AI" color="#5856d6" />
             </div>
             <div className="chat-meta">
-              <span className="chat-name">AXI AI Assistant</span>
+              <span className="chat-name">Sandesh AI Assistant</span>
               <span className="chat-preview">Switch to full AI workspace</span>
             </div>
             <span className="material-icons arrow-icon">arrow_forward</span>

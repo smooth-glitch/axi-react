@@ -109,7 +109,7 @@ export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
           <span className="material-icons modal-header-icon">{prompt.icon || "widgets"}</span>
           <div>
             <h3>{prompt.label}</h3>
-            <span className="modal-subtitle">Axpert Smart Structure • Single DC Lite Action</span>
+            <span className="modal-subtitle">Sandesh Smart Structure • Single DC Lite Action</span>
           </div>
         </div>
         <button type="button" className="close-btn-3d" onClick={onClose} aria-label="Close modal">

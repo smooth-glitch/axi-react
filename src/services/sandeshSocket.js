@@ -43,11 +43,11 @@ class SandeshSocketService {
     this.status = 'connecting';
     this.notify({ type: 'status_change', status: this.status });
 
-    // In local dev, backend runs at ws://localhost:8080.
+    // In local dev, backend runs at ws://${window.location.hostname}:8080.
     // In production behind nginx, it routes via /ws.
     const wsUrl = window.location.protocol === 'https:'
       ? `wss://${window.location.host}/ws`
-      : (window.location.port === '5173' ? 'ws://localhost:8080' : `ws://${window.location.host}/ws`);
+      : (window.location.port === '5173' ? `ws://${window.location.hostname}:8080` : `ws://${window.location.host}/ws`);
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -55,7 +55,7 @@ class SandeshSocketService {
       this.ws.onopen = () => {
         console.info('[SandeshSocket] WebSocket connected, sending handshake...');
         const handshake = {
-          username: user.username || user.name || 'User',
+          username: (user.username || user.name || 'user').toLowerCase().trim(),
           token: user.token || 'sandesh-token-' + Date.now(),
           armSessionId: user.armSessionId || 'sess-' + Date.now(),
         };
@@ -73,9 +73,10 @@ class SandeshSocketService {
         if (payload.type === 'welcome') {
           this.status = 'connected';
           this.notify({ type: 'status_change', status: this.status, name: payload.name });
-          // Fetch contacts and hosts once authenticated
+          // Fetch contacts, directory, inbox, and global history once authenticated
           this.send('/hosts');
           this.send('/list');
+          this.send('/conversations');
           this.send('/history global');
         }
 
