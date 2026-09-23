@@ -15,8 +15,8 @@
 %%% extra parameters).
 -module(chat_gif).
 -export([search_async/3]).
+-include_lib("kernel/include/logger.hrl").
 
--define(GIPHY_API_KEY, "8yONfoSWS51lRx1f0vpOVutdcwcLRkug").
 -define(GIF_SEARCH_URL, "https://api.giphy.com/v1/gifs/search").
 -define(GIF_TRENDING_URL, "https://api.giphy.com/v1/gifs/trending").
 -define(STICKER_SEARCH_URL, "https://api.giphy.com/v1/stickers/search").
@@ -47,21 +47,58 @@ search_async(Kind, Query, ReplyPid) ->
     end),
     ok.
 
-fetch(Kind, "") ->
+fetch(Kind, Query) ->
+    case giphy_api_key() of
+        undefined ->
+            {error, not_configured};
+        ApiKey ->
+            fetch(Kind, Query, ApiKey)
+    end.
+
+fetch(Kind, "", ApiKey) ->
     request(trending_url(Kind), [
-        {"api_key", ?GIPHY_API_KEY},
+        {"api_key", ApiKey},
         {"limit", integer_to_list(?MAX_RESULTS)},
         {"rating", "g"}
     ]);
-fetch(_Kind, Q) when length(Q) > ?MAX_QUERY_LEN ->
+fetch(_Kind, Q, _ApiKey) when length(Q) > ?MAX_QUERY_LEN ->
     {error, query_too_long};
-fetch(Kind, Q) ->
+fetch(Kind, Q, ApiKey) ->
     request(search_url(Kind), [
-        {"api_key", ?GIPHY_API_KEY},
+        {"api_key", ApiKey},
         {"q", Q},
         {"limit", integer_to_list(?MAX_RESULTS)},
         {"rating", "g"}
     ]).
+
+%% Was hardcoded in source (a real, live credential committed to version
+%% control) -- now read from GIPHY_API_KEY same as every other secret in
+%% this app. Cached in persistent_term after the first lookup + a one-time
+%% warning if unset, rather than re-reading the env on every single GIF/
+%% sticker search. Unset means GIF/sticker search just always returns no
+%% results (see search_async/3's doc) -- a missing key degrades a nice-to-
+%% have feature, it was never load-bearing for anything else.
+giphy_api_key() ->
+    case persistent_term:get({?MODULE, api_key}, not_loaded) of
+        not_loaded ->
+            Key = load_giphy_api_key(),
+            persistent_term:put({?MODULE, api_key}, Key),
+            Key;
+        Key ->
+            Key
+    end.
+
+load_giphy_api_key() ->
+    case os:getenv("GIPHY_API_KEY") of
+        false ->
+            ?LOG_WARNING("GIPHY_API_KEY is not set -- GIF/sticker search is disabled (will always return no results)."),
+            undefined;
+        "" ->
+            ?LOG_WARNING("GIPHY_API_KEY is not set -- GIF/sticker search is disabled (will always return no results)."),
+            undefined;
+        Key ->
+            Key
+    end.
 
 search_url(gif) -> ?GIF_SEARCH_URL;
 search_url(sticker) -> ?STICKER_SEARCH_URL.
