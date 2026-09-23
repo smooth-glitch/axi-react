@@ -11,7 +11,11 @@
 %%% Every function here keeps the exact same name/arity/return shape this
 %%% module had when it was Mnesia-backed, so chat_room.erl, chat_groups.erl,
 %%% chat_web.erl, and chat_link_preview.erl needed zero changes -- only the
-%%% storage underneath moved.
+%%% storage underneath moved. That contract still holds after adding at-rest
+%%% encryption and Redis-error logging below: every caller still gets
+%%% exactly the same return shapes on success, and still crashes (now with a
+%%% clear log line first) on a Redis failure, same as it always implicitly
+%%% did via the old bare `{ok, _} = ...` matches.
 %%%
 %%% Compound values (reactions, previews, group member lists) are JSON-
 %%% encoded into single Redis hash fields via the `json` module (built into
@@ -25,14 +29,17 @@
          delete_message/2,
          save_link_preview/2,
          set_pubkey/2, get_pubkey/1, set_avatar/2, set_status/2, get_profile/1]).
+-include_lib("kernel/include/logger.hrl").
 
 -define(HISTORY_LIMIT, 50).
 
-%% Connecting is chat_redis's job (started/supervised under chat_app_sup,
-%% see chat_app_sup.erl) -- nothing to do here anymore. Kept as a no-op so
-%% chat_app.erl's existing `ok = chat_store:init()` call doesn't need to
-%% change.
+%% Loads (and validates) the at-rest message-encryption key once at boot and
+%% caches it in persistent_term -- cheap to read on every single
+%% save_message/read_message call thereafter, unlike re-reading + re-
+%% decoding the env var each time. See encryption_key/0 and
+%% docs/DEBUGGING.md for what CHAT_ENCRYPTION_KEY does.
 init() ->
+    persistent_term:put({?MODULE, enc_key}, load_encryption_key()),
     ok.
 
 %% ---- Redis key helpers -------------------------------------------------
@@ -71,14 +78,14 @@ save_message(ConvKey, From, Text, Kind, Private, ReplyTo) ->
     %% conversation's history at it. INCR on a key that lives in Redis
     %% itself is unique and monotonic across restarts, matching how
     %% persistent this data actually is.
-    {ok, IdBin} = chat_redis:q(["INCR", "next_msg_id"]),
+    IdBin = q_ok(["INCR", "next_msg_id"]),
     Id = list_to_integer(binary_to_list(IdBin)),
     Ts = erlang:system_time(millisecond),
-    {ok, _} = chat_redis:q([
+    q_ok([
         "HSET", msg_key(Id),
         "conv_key", ConvKey,
         "from", From,
-        "text", Text,
+        "text", encrypt_text(Text),
         "kind", atom_to_list(Kind),
         "private", bool_to_flag(Private),
         "ts", integer_to_list(Ts),
@@ -87,7 +94,7 @@ save_message(ConvKey, From, Text, Kind, Private, ReplyTo) ->
         "reply_to", encode_reply_to(ReplyTo),
         "deleted", bool_to_flag(false)
     ]),
-    {ok, _} = chat_redis:q(["ZADD", conv_zset_key(ConvKey), integer_to_list(Id), integer_to_list(Id)]),
+    q_ok(["ZADD", conv_zset_key(ConvKey), integer_to_list(Id), integer_to_list(Id)]),
     {Id, Ts}.
 
 %% Last ?HISTORY_LIMIT messages for a conversation, oldest first, as plain
@@ -97,16 +104,16 @@ save_message(ConvKey, From, Text, Kind, Private, ReplyTo) ->
 %% is [] (none yet, or never will be) or {Url, Title, Description, Image};
 %% ReplyTo is [] (not a reply) or the id of the original message.
 load_history(ConvKey) ->
-    {ok, IdBins} = chat_redis:q(["ZRANGE", conv_zset_key(ConvKey), integer_to_list(-?HISTORY_LIMIT), "-1"]),
+    IdBins = q_ok(["ZRANGE", conv_zset_key(ConvKey), integer_to_list(-?HISTORY_LIMIT), "-1"]),
     [read_message(list_to_integer(binary_to_list(B))) || B <- IdBins].
 
 read_message(Id) ->
-    {ok, Fields} = chat_redis:q(["HGETALL", msg_key(Id)]),
+    Fields = q_ok(["HGETALL", msg_key(Id)]),
     Map = fields_to_map(Fields),
     {Id,
      list_to_integer(b2l(maps:get(<<"ts">>, Map))),
      b2l(maps:get(<<"from">>, Map)),
-     b2l(maps:get(<<"text">>, Map)),
+     decrypt_text(maps:get(<<"text">>, Map)),
      flag_to_bool(maps:get(<<"private">>, Map)),
      decode_reactions(maps:get(<<"reactions">>, Map)),
      decode_preview(maps:get(<<"preview">>, Map)),
@@ -120,13 +127,13 @@ read_message(Id) ->
 %% message was deleted" instead of the original content.
 delete_message(MessageId, User) ->
     Key = msg_key(MessageId),
-    case chat_redis:q(["HGET", Key, "from"]) of
-        {ok, undefined} ->
+    case q_ok(["HGET", Key, "from"]) of
+        undefined ->
             {error, not_found};
-        {ok, FromBin} ->
+        FromBin ->
             case b2l(FromBin) of
                 User ->
-                    {ok, _} = chat_redis:q(["HSET", Key, "text", "", "deleted", bool_to_flag(true)]),
+                    q_ok(["HSET", Key, "text", "", "deleted", bool_to_flag(true)]),
                     {ok, deleted};
                 _ ->
                     {error, forbidden}
@@ -138,11 +145,11 @@ delete_message(MessageId, User) ->
 %% message is somehow gone by the time the preview finishes fetching.
 save_link_preview(MessageId, Preview) ->
     Key = msg_key(MessageId),
-    case chat_redis:q(["EXISTS", Key]) of
-        {ok, <<"1">>} ->
-            {ok, _} = chat_redis:q(["HSET", Key, "preview", encode_preview(Preview)]),
+    case q_ok(["EXISTS", Key]) of
+        <<"1">> ->
+            q_ok(["HSET", Key, "preview", encode_preview(Preview)]),
             ok;
-        {ok, <<"0">>} ->
+        <<"0">> ->
             ok
     end.
 
@@ -152,40 +159,40 @@ save_link_preview(MessageId, Preview) ->
 %% style rather than one-reaction-replaces-the-last like WhatsApp.
 toggle_reaction(MessageId, User, Emoji) ->
     Key = msg_key(MessageId),
-    case chat_redis:q(["HGET", Key, "reactions"]) of
-        {ok, undefined} ->
+    case q_ok(["HGET", Key, "reactions"]) of
+        undefined ->
             {error, not_found};
-        {ok, Bin} ->
+        Bin ->
             Reactions = decode_reactions(Bin),
             Pair = {User, Emoji},
             NewReactions = case lists:member(Pair, Reactions) of
                 true -> lists:delete(Pair, Reactions);
                 false -> [Pair | Reactions]
             end,
-            {ok, _} = chat_redis:q(["HSET", Key, "reactions", encode_reactions(NewReactions)]),
+            q_ok(["HSET", Key, "reactions", encode_reactions(NewReactions)]),
             {ok, NewReactions}
     end.
 
 %% ---- Groups ----------------------------------------------------------------
 
 save_group(Name, Owner, Members) ->
-    {ok, _} = chat_redis:q(["HSET", group_key(Name), "owner", Owner, "members", encode_members(Members)]),
-    {ok, _} = chat_redis:q(["SADD", "groups", Name]),
+    q_ok(["HSET", group_key(Name), "owner", Owner, "members", encode_members(Members)]),
+    q_ok(["SADD", "groups", Name]),
     ok.
 
 delete_group(Name) ->
-    {ok, _} = chat_redis:q(["DEL", group_key(Name)]),
-    {ok, _} = chat_redis:q(["SREM", "groups", Name]),
+    q_ok(["DEL", group_key(Name)]),
+    q_ok(["SREM", "groups", Name]),
     ok.
 
 %% All persisted groups as {Name, Owner, Members} tuples, for chat_groups
 %% to repopulate its in-memory state from on startup.
 load_groups() ->
-    {ok, Names} = chat_redis:q(["SMEMBERS", "groups"]),
+    Names = q_ok(["SMEMBERS", "groups"]),
     [read_group(b2l(N)) || N <- Names].
 
 read_group(Name) ->
-    {ok, Fields} = chat_redis:q(["HGETALL", group_key(Name)]),
+    Fields = q_ok(["HGETALL", group_key(Name)]),
     Map = fields_to_map(Fields),
     Owner = b2l(maps:get(<<"owner">>, Map)),
     Members = decode_members(maps:get(<<"members">>, Map)),
@@ -198,27 +205,27 @@ read_group(Name) ->
 %% another call set moments earlier.
 
 set_pubkey(Username, Base64Key) ->
-    {ok, _} = chat_redis:q(["HSET", profile_key(Username), "pubkey", Base64Key]),
+    q_ok(["HSET", profile_key(Username), "pubkey", Base64Key]),
     ok.
 
 get_pubkey(Username) ->
-    case chat_redis:q(["HGET", profile_key(Username), "pubkey"]) of
-        {ok, undefined} -> undefined;
-        {ok, Bin} -> b2l(Bin)
+    case q_ok(["HGET", profile_key(Username), "pubkey"]) of
+        undefined -> undefined;
+        Bin -> b2l(Bin)
     end.
 
 set_avatar(Username, Url) ->
-    {ok, _} = chat_redis:q(["HSET", profile_key(Username), "avatar_url", Url]),
+    q_ok(["HSET", profile_key(Username), "avatar_url", Url]),
     ok.
 
 set_status(Username, Status) ->
-    {ok, _} = chat_redis:q(["HSET", profile_key(Username), "status", Status]),
+    q_ok(["HSET", profile_key(Username), "status", Status]),
     ok.
 
 %% {AvatarUrlOrUndefined, StatusOrUndefined} -- pubkey isn't included here,
 %% it's fetched separately (get_pubkey/1) only when actually starting a DM.
 get_profile(Username) ->
-    {ok, Fields} = chat_redis:q(["HGETALL", profile_key(Username)]),
+    Fields = q_ok(["HGETALL", profile_key(Username)]),
     Map = fields_to_map(Fields),
     {map_get_str(<<"avatar_url">>, Map), map_get_str(<<"status">>, Map)}.
 
@@ -227,6 +234,124 @@ map_get_str(Key, Map) ->
         {ok, Bin} -> b2l(Bin);
         error -> undefined
     end.
+
+%% ---- Redis call helper ------------------------------------------------
+
+%% Every Redis call in this module goes through here instead of a bare
+%% `{ok, _} = chat_redis:q(...)` match. On success this just unwraps to the
+%% reply, same value every caller above already expected -- but on a Redis
+%% failure (connection drop, OOM, wrong type, auth failure) it logs exactly
+%% which command failed and why *before* crashing the calling process,
+%% instead of that process dying with a bare, undiagnosable
+%% `{badmatch, {error, Reason}}` and no indication of which of several
+%% Redis calls in the same function caused it. The crash itself is
+%% unchanged -- chat_room/chat_groups still die and get restarted by
+%% chat_app_sup on a genuine Redis outage, same "let it crash" behavior as
+%% before, just debuggable now (see docs/DEBUGGING.md).
+q_ok(Command) ->
+    case chat_redis:q(Command) of
+        {ok, Reply} ->
+            Reply;
+        {error, Reason} ->
+            ?LOG_ERROR("Redis command failed: ~p -- command: ~p", [Reason, Command]),
+            error({redis_command_failed, Reason})
+    end.
+
+%% ---- At-rest message encryption ----------------------------------------
+%% Message text is AES-256-GCM encrypted before it's written to Redis and
+%% decrypted on the way back out, so anyone with raw Redis access -- a
+%% leaked REDIS_PASSWORD, an RDB/AOF backup file, or just `redis-cli HGETALL
+%% msg:42` (a normal debugging step per docs/DEBUGGING.md) -- can't read
+%% chat history in the clear. This is at-rest encryption only, not end-to-
+%% end: plaintext still passes through this Erlang process on every
+%% send/read, exactly as before, and every WS event this app sends a client
+%% carries plain, unencrypted text, exactly as documented in
+%% docs/CHAT_PROTOCOL.md -- nothing about the wire protocol changes.
+%%
+%% Key comes from CHAT_ENCRYPTION_KEY: 32 raw bytes, base64-encoded (e.g.
+%% `openssl rand -base64 32`). Unset (or invalid) means encryption is
+%% disabled and text is stored exactly as it always was -- plaintext, with a
+%% loud one-time startup warning, same "safe on a laptop, must be set on
+%% anything else" pattern chat_redis's REDIS_PASSWORD check already uses.
+%% Every stored value is tagged with a "v1:" prefix so a message written
+%% while encryption was on (or off) is still readable correctly if the
+%% setting later flips the other way -- decrypt_text/1 only attempts to
+%% decrypt values carrying that prefix, and passes anything else through
+%% unchanged.
+-define(ENC_PREFIX, <<"v1:">>).
+
+encrypt_text(Text) ->
+    case encryption_key() of
+        undefined ->
+            Text;
+        Key ->
+            PlainBin = unicode:characters_to_binary(Text),
+            Iv = crypto:strong_rand_bytes(12),
+            {CipherBin, Tag} = crypto:crypto_one_time_aead(aes_256_gcm, Key, Iv, PlainBin, <<>>, true),
+            Encoded = base64:encode(<<Iv/binary, Tag/binary, CipherBin/binary>>),
+            <<?ENC_PREFIX/binary, Encoded/binary>>
+    end.
+
+decrypt_text(Bin) when is_binary(Bin) ->
+    case Bin of
+        <<"v1:", Encoded/binary>> ->
+            decrypt_payload(Encoded);
+        _ ->
+            b2l(Bin)
+    end.
+
+decrypt_payload(Encoded) ->
+    case encryption_key() of
+        undefined ->
+            %% Data was encrypted by a previous run that had a key set, but
+            %% this run doesn't have one (removed, or a fresh env without
+            %% it) -- can't decrypt, surface that plainly instead of
+            %% crashing the whole history load over one row.
+            ?LOG_WARNING("Encrypted message found but CHAT_ENCRYPTION_KEY is not set -- cannot decrypt."),
+            "[unable to decrypt message]";
+        Key ->
+            try
+                <<Iv:12/binary, Tag:16/binary, Cipher/binary>> = base64:decode(Encoded),
+                case crypto:crypto_one_time_aead(aes_256_gcm, Key, Iv, Cipher, <<>>, Tag, false) of
+                    error ->
+                        ?LOG_WARNING("Failed to decrypt a stored message (bad tag/key mismatch)."),
+                        "[unable to decrypt message]";
+                    PlainBin ->
+                        unicode:characters_to_list(PlainBin)
+                end
+            catch
+                Class:Reason ->
+                    ?LOG_WARNING("Failed to decrypt a stored message: ~p:~p", [Class, Reason]),
+                    "[unable to decrypt message]"
+            end
+    end.
+
+encryption_key() ->
+    persistent_term:get({?MODULE, enc_key}, undefined).
+
+load_encryption_key() ->
+    case os:getenv("CHAT_ENCRYPTION_KEY") of
+        false -> warn_no_encryption(), undefined;
+        "" -> warn_no_encryption(), undefined;
+        B64 ->
+            case catch base64:decode(B64) of
+                Bin when is_binary(Bin), byte_size(Bin) =:= 32 ->
+                    ?LOG_INFO("chat_store: at-rest message encryption is ENABLED."),
+                    Bin;
+                _ ->
+                    ?LOG_WARNING(
+                        "CHAT_ENCRYPTION_KEY is set but is not valid base64-encoded 32 bytes "
+                        "(try `openssl rand -base64 32`) -- message encryption is DISABLED, "
+                        "storing plaintext."),
+                    undefined
+            end
+    end.
+
+warn_no_encryption() ->
+    ?LOG_WARNING(
+        "CHAT_ENCRYPTION_KEY is not set -- message text will be stored in Redis in "
+        "PLAINTEXT. Set it (32 random bytes, base64-encoded, e.g. `openssl rand -base64 32`) "
+        "before this points at anything other than a local dev Redis.").
 
 %% ---- Encoding helpers ------------------------------------------------------
 

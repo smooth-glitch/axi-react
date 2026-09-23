@@ -217,7 +217,9 @@ than splitting.
   (png/jpeg/gif/webp) and voice notes (webm/ogg/mp4 audio), max 8MB.
   Returns `{"url": "/uploads/<random-name>"}` on success. Content-type is
   verified against the file's actual magic bytes, not just the declared
-  header — a mismatch is rejected.
+  header — a mismatch is rejected. Rate-limited per client IP (20
+  uploads/60s) — a `429` with `{"error": "..."}` means slow down, same
+  error shape as every other rejection on this endpoint (400/413/415).
 - `GET /uploads/<name>` — serves it back. Supports HTTP Range requests
   (needed for `<audio>`/`<video>` elements to seek/preload correctly).
 
@@ -226,6 +228,16 @@ current pattern (inherited from the original single-page client this
 protocol was built for) is: upload the file, get the URL back, then send
 that URL as the `text` of an ordinary `/msg`/`/groupmsg`/broadcast. Worth
 revisiting once the frontend's actual attachment UX is designed.
+
+---
+
+## Health check (ops use, not for the frontend)
+
+- `GET /health` — plain HTTP, no WS upgrade. Returns JSON:
+  `{"status": "ok"|"degraded", "redis": "ok"|"unreachable", "uptime_ms": N}`,
+  with HTTP 200 when `status` is `"ok"` and 503 when `"degraded"` (Redis
+  unreachable). Meant for `curl`/uptime monitors/ops, not something the
+  chat UI calls — nothing about the frontend's flow depends on this route.
 
 ---
 

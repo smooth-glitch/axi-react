@@ -52,10 +52,17 @@ logger:set_module_level(chat_web, debug).
 ```
 
 **Never logged, anywhere in this codebase, by design:** ARM tokens/session
-ids, Redis passwords, raw HTTP request/response bodies from ARM API calls.
-If you're adding a new log line, keep it that way — log the *fact* that
-something happened and its non-sensitive parameters (a username, a status
-code), never the credential or payload itself.
+ids, Redis passwords, `CHAT_ENCRYPTION_KEY`, raw HTTP request/response
+bodies from ARM API calls, and message plaintext. If you're adding a new
+log line, keep it that way — log the *fact* that something happened and
+its non-sensitive parameters (a username, a status code, a message id),
+never the credential or payload itself.
+
+Every Redis call in `chat_store.erl` now logs at `error` level (via its
+`q_ok/1` helper) with the exact command that failed before the calling
+process crashes on a genuine Redis outage — check for these first if
+`chat_room`/`chat_groups` are restarting unexpectedly (§3's
+`sys:get_state/1` will show a freshly-restarted, emptied state if so).
 
 ## 3. Attaching to a live node
 
@@ -87,6 +94,12 @@ nothing exotic, so `redis-cli` alone gets you a long way:
 
 ```bash
 redis-cli HGETALL msg:42        # one message's full stored fields
+                                 # (the "text" field reads as opaque base64
+                                 # "v1:..." if CHAT_ENCRYPTION_KEY is set on
+                                 # this deployment -- that's expected, see
+                                 # chat_store.erl's encryption section; use
+                                 # the WS protocol or /health, not redis-cli,
+                                 # to check actual message content)
 redis-cli ZRANGE conv:global:msgs -10 -1   # last 10 message ids in the global room
 redis-cli SMEMBERS groups                  # every group name
 redis-cli HGETALL group:squad              # one group's owner/members
@@ -99,9 +112,13 @@ redis-cli HGETALL profile:someuser         # one user's avatar/status/pubkey
 | Symptom | Likely cause | Where to look |
 |---|---|---|
 | Server won't start, `{error,eaddrinuse}` in the crash log | Something else is already using that port (often a frontend dev server on 8080) | Pick a different port, or find what's using it (`netstat -ano \| findstr :8080` on Windows) |
-| Every command times out / nothing happens after connecting | Redis isn't running or isn't reachable | Check `redis-cli ping`; check `REDIS_HOST`/`REDIS_PORT` env vars match where Redis actually is |
+| Every command times out / nothing happens after connecting | Redis isn't running or isn't reachable | Check `redis-cli ping`; check `REDIS_HOST`/`REDIS_PORT` env vars match where Redis actually is; `curl http://<host>:<port>/health` gives the same answer without needing shell access to the box |
+| Message history shows `"[unable to decrypt message]"` for old rows | `CHAT_ENCRYPTION_KEY` changed, was removed, or a message was written by a different key (e.g. mixing a local dev key with the VM's) | `chat_store.erl`'s `decrypt_payload/1` — this is expected/non-fatal, only affects rows written under a key you no longer have; new messages are unaffected |
+| GIF/sticker search always returns nothing | `GIPHY_API_KEY` isn't set | `?LOG_WARNING` fires once at startup from `chat_gif.erl`; set the env var to enable it |
 | `chat_redis is connecting to '...' with NO PASSWORD SET` warning | Exactly what it says — `REDIS_PASSWORD` isn't set and the host isn't loopback | Set `REDIS_PASSWORD` before this points anywhere but a local dev Redis |
+| The whole backend keeps restart-looping (repeated `Chat server: web UI on...` boot lines in the journal, every connected client dropped) | A *sustained* Redis outage — `chat_store.erl`'s `q_ok/1` crashes the calling process on every Redis failure, and `chat_app_sup`'s restart budget (20 restarts/60s — see its `init/1` comment) eventually exhausts under continued chat activity, taking the whole node down; systemd's `Restart=on-failure`/`RestartSec=5` then keeps retrying it every 5s until Redis actually comes back | Fix Redis first (`redis-cli ping`); this is the intended fail-safe behavior for an outage that doesn't resolve on its own, not a bug — a brief blip (a few seconds) should NOT trigger this, only a real outage |
 | A client gets `"Too many commands -- slow down"` during normal use | Legitimate rate limiting (30 commands/10s) tripped by something sending faster than a human types — check for a client-side bug sending duplicate commands, not a server bug | `?LOG_WARNING` fires in `chat_room`'s logs with the username |
+| `POST /upload` returns `429 {"error":"Too many uploads -- slow down"}` | Legitimate per-IP upload rate limit (20/60s) tripped, OR every client is being seen as the same IP (check nginx's `X-Real-IP` is actually being set for `/upload` — see `chat_web.erl`'s `client_ip/2`; if it's missing, every request behind that proxy falls back to the proxy's own IP and shares one limit) | `?LOG_WARNING` fires in `chat_web`'s logs with the IP; `chat_upload_limiter.erl` |
 | `/hostmsg` always errors "No such host" for every key including real department names | Expected until the backend dev's chat-host tstruct exists — see `chat_hosts.erl`'s `CHAT_HOST_ADS_NAME` placeholder | `docs/CHAT_PROTOCOL.md`'s "Host directory" section |
 | ARM API calls (`chat_arm.erl`) always fail | Check the `?LOG_WARNING` for the HTTP status/reason (never the body) — could be network, could be an actually-invalid/expired token being forwarded from the frontend | `chat_arm.erl`'s `post_json/3` |
 | A message's reactions/history look wrong after a server restart during testing | If this is a *fresh dev Redis* that predates the message-id fix (see `chat_store.erl`'s `save_message/6` comment on why it uses Redis `INCR`, not `erlang:unique_integer/1`), old test data may have colliding ids — `redis-cli FLUSHDB` to reset (never do this against real data) | `chat_store.erl` |

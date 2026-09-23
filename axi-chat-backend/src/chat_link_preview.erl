@@ -18,6 +18,7 @@
 %%% tie up a fetch indefinitely.
 -module(chat_link_preview).
 -export([maybe_fetch_and_notify/3]).
+-include_lib("kernel/include/logger.hrl").
 
 -define(FETCH_TIMEOUT, 5000).
 -define(CONNECT_TIMEOUT, 3000).
@@ -57,6 +58,11 @@ maybe_fetch_and_notify(MessageId, Text, NotifyFun) ->
                                 chat_store:save_link_preview(MessageId, FullPreview),
                                 NotifyFun(MessageId, FullPreview);
                             error ->
+                                %% Still silent to the user by design (see
+                                %% module doc) -- but at debug level, so a
+                                %% dev chasing "why does no link ever
+                                %% preview" isn't flying blind.
+                                ?LOG_DEBUG("link preview fetch failed for msg ~p, url=~s", [MessageId, Url]),
                                 ok
                         end
                     end),
