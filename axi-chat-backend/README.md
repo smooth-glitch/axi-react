@@ -95,6 +95,17 @@ Defaults to `127.0.0.1:6379`, no password -- override via `REDIS_HOST`/
 warning fires automatically if `REDIS_HOST` isn't loopback and no
 password is set.
 
+Optionally set `CHAT_ENCRYPTION_KEY` (32 random bytes, base64-encoded --
+`openssl rand -base64 32`) to AES-256-GCM encrypt message text at rest in
+Redis (see `chat_store.erl`'s "At-rest message encryption" section). Unset
+means messages are stored in plaintext, same as before, with a startup
+warning. This is at-rest only -- it doesn't change the WebSocket protocol
+at all; clients still always receive plain, unencrypted text.
+
+Optionally set `GIPHY_API_KEY` for GIF/sticker search (`/gifsearch`,
+`/stickersearch`) to work -- unset just means that feature always returns
+no results, logged once at startup.
+
 ### 3. Build & run
 
 **Windows (PowerShell):**
@@ -164,6 +175,16 @@ See `docs/DEBUGGING.md` §7.
   optional hardening.
 - Redis has no password by default for local dev; a loud startup warning
   fires if a non-loopback `REDIS_HOST` has no `REDIS_PASSWORD` set.
+- **Message text is AES-256-GCM encrypted at rest in Redis** when
+  `CHAT_ENCRYPTION_KEY` is set -- protects against someone with raw Redis
+  access (a leaked password, a backup file, `redis-cli HGETALL`) reading
+  chat history. This is at-rest encryption, not end-to-end: the backend
+  process itself still sees plaintext on every send/read, and every WS
+  event a client receives is unencrypted, exactly as documented in
+  `docs/CHAT_PROTOCOL.md`. Real E2EE would need the client to hold the
+  keys and encrypt before sending -- the protocol already has a pubkey
+  exchange for this (`/pubkey`, `/getpubkey`) but per the protocol doc it's
+  only consumed by the iOS client today, not the web app.
 
 Full audit trail and reasoning: see the git log (search for "Security
 pass" and "spec audit") and `../docs/NEXT_STEPS.md`'s security checklist.

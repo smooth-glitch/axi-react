@@ -229,6 +229,16 @@ revisiting once the frontend's actual attachment UX is designed.
 
 ---
 
+## Health check (ops use, not for the frontend)
+
+- `GET /health` — plain HTTP, no WS upgrade. Returns JSON:
+  `{"status": "ok"|"degraded", "redis": "ok"|"unreachable", "uptime_ms": N}`,
+  with HTTP 200 when `status` is `"ok"` and 503 when `"degraded"` (Redis
+  unreachable). Meant for `curl`/uptime monitors/ops, not something the
+  chat UI calls — nothing about the frontend's flow depends on this route.
+
+---
+
 ## What's deliberately NOT here yet
 
 - Real department hosts — the directory mechanism exists (`/hosts`,

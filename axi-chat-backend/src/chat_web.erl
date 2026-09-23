@@ -123,7 +123,12 @@ parse_headers([Line | Rest], Acc) ->
 
 %% No page-serving here at all -- axi-react is the frontend and hosts its
 %% own build; this server is purely the WebSocket chat API plus the
-%% image/voice upload endpoints that frontend calls into.
+%% image/voice upload endpoints that frontend calls into. /health is the
+%% one exception -- a plain liveness/readiness probe for ops use (curl,
+%% uptime monitors), not something the frontend calls. New, additive route;
+%% doesn't change any existing endpoint's behavior. See docs/CHAT_PROTOCOL.md.
+dispatch(Socket, "GET", "/health", _QueryParams, _Headers, _BodyStart) ->
+    serve_health(Socket);
 dispatch(Socket, "GET", Path, _QueryParams, Headers, _BodyStart) ->
     case string:lowercase(maps:get("upgrade", Headers, "")) of
         "websocket" ->
@@ -141,6 +146,29 @@ dispatch(Socket, _Method, _Path, _QueryParams, _Headers, _BodyStart) ->
 
 serve_404(Socket) ->
     respond(Socket, 404, "Not Found", "text/plain", <<"Not found">>),
+    gen_tcp:close(Socket).
+
+%% Reports Redis reachability (the one external dependency this process
+%% has) rather than just "the process is scheduling," which the previous
+%% "curl / and expect a 404" health check (deploy-backend.yml) couldn't
+%% tell you at all -- a node that's up but can't reach Redis is not
+%% actually healthy. `catch` guards against chat_redis's gen_server not
+%% being alive/registered at all (a full Redis-outage crash loop), not
+%% just an ordinary query failure.
+serve_health(Socket) ->
+    {RedisOk, RedisStatus} = case catch chat_redis:q(["PING"]) of
+        {ok, <<"PONG">>} -> {true, "ok"};
+        _ -> {false, "unreachable"}
+    end,
+    {UptimeMs, _} = erlang:statistics(wall_clock),
+    {Code, Reason, OverallStatus} = case RedisOk of
+        true -> {200, "OK", "ok"};
+        false -> {503, "Service Unavailable", "degraded"}
+    end,
+    Json = io_lib:format(
+        "{\"status\":\"~s\",\"redis\":\"~s\",\"uptime_ms\":~p}",
+        [OverallStatus, RedisStatus, UptimeMs]),
+    respond(Socket, Code, Reason, "application/json", list_to_binary(Json)),
     gen_tcp:close(Socket).
 
 respond(Socket, Code, Reason, ContentType, Body) ->
@@ -364,6 +392,7 @@ store_upload_bytes(Socket, NormalizedType, Data) ->
     ok = filelib:ensure_dir(filename:join(UploadsDir, "x")),
     Path = filename:join(UploadsDir, RandomName),
     ok = file:write_file(Path, Data),
+    ?LOG_DEBUG("stored upload ~s (~p bytes, ~s)", [RandomName, byte_size(Data), NormalizedType]),
     Json = "{\"url\":\"/uploads/" ++ RandomName ++ "\"}",
     respond(Socket, 200, "OK", "application/json", list_to_binary(Json)).
 
@@ -565,7 +594,8 @@ handle_username_data(Socket, Buf) ->
         {ok, 9, Payload, Rest} ->
             gen_tcp:send(Socket, ws_encode(10, Payload)),
             handle_username_data(Socket, Rest);
-        {ok, _OtherOpcode, _Payload, Rest} ->
+        {ok, OtherOpcode, _Payload, Rest} ->
+            ?LOG_DEBUG("dropped unhandled WS opcode ~p during handshake", [OtherOpcode]),
             handle_username_data(Socket, Rest);
         {error, too_large} ->
             gen_tcp:close(Socket);
@@ -778,7 +808,8 @@ handle_ws_data(Socket, Name, Buf) ->
         {ok, 9, Payload, Rest} ->
             gen_tcp:send(Socket, ws_encode(10, Payload)),
             handle_ws_data(Socket, Name, Rest);
-        {ok, _OtherOpcode, _Payload, Rest} ->
+        {ok, OtherOpcode, _Payload, Rest} ->
+            ?LOG_DEBUG("~s: dropped unhandled WS opcode ~p", [Name, OtherOpcode]),
             handle_ws_data(Socket, Name, Rest);
         {error, too_large} ->
             chat_room:unregister_user(Name),
