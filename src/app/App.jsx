@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import EmberChatScreen from '../features/emberChat/EmberChatScreen.jsx';
+
 import MessageThread from '../features/messageThread/components/MessageThread';
 import { registerGlobalNotifyHook as registerMessageThreadNotifyHook } from '../features/messageThread/store';
 
@@ -48,6 +50,16 @@ registerDataBinRerenderHook(); // window.renderDataPinModal = notify
 // deployment index.html), and everything below still reaches them via
 // window.* reads, same as before.
 export default function App() {
+  // ── Top-level screen: the Ember chat UI is the first thing shown after
+  // sign-in; the existing AI assistant page ('ai') is reached from it via
+  // EmberChatScreen's onOpenAiChat and kept exactly as it was otherwise.
+  // Both screens stay mounted the whole time and are only toggled with
+  // CSS display — the AI page's effects (legacy script loading, the admin
+  // poll, the global-loader watchdog, etc.) all assume they mount once and
+  // never get torn down, so conditionally rendering it would be the risky
+  // path here, not this one.
+  const [view, setView] = useState('ember');
+
   // ── Data Bin wizard: used to be owned by databin/mount.jsx's own local
   // module state + its own createRoot(#dataBinPage). Now real React state
   // here, with window.openDataBinPage/closeDataBinPage/openExistingDataBin/
@@ -293,6 +305,26 @@ export default function App() {
 
   return (
     <>
+      <div style={{ display: view === 'ember' ? undefined : 'none' }}>
+        <EmberChatScreen onOpenAiChat={() => setView('ai')} />
+      </div>
+
+      <div style={{ display: view === 'ai' ? undefined : 'none' }}>
+      <button
+        type="button"
+        onClick={() => setView('ember')}
+        title="Back to chats"
+        aria-label="Back to chats"
+        style={{
+          position: 'fixed', left: 16, top: 16, zIndex: 100000,
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: 'rgba(15, 23, 42, 0.85)', color: '#fff', border: 'none',
+          borderRadius: 999, padding: '8px 14px', fontSize: 13, fontWeight: 600,
+          cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+        }}
+      >
+        ← Back to chats
+      </button>
       <div className="app">
         <main className="main">
           {/* Invisible hover-trigger: mousing over the top 10px of the page reveals the header */}
@@ -881,6 +913,7 @@ export default function App() {
           </div>
           <div id="axiSmartListContainer" />
         </div>
+      </div>
       </div>
     </>
   );

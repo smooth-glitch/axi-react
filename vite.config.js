@@ -110,7 +110,21 @@ export default defineConfig(() => {
         outDir: 'dist',
         rollupOptions: {
           external: reactExternals.external,
-          output: { globals: reactExternals.globals },
+          output: {
+            // Rollup only rewrites externalized imports to `globals` entries
+            // for 'iife'/'umd' output — for the default 'es' format (what a
+            // Vite SPA normally emits, loaded via <script type="module">),
+            // `globals` is silently ignored and the bundle keeps literal
+            // `import ... from "react"` statements, which the browser then
+            // fails to resolve at runtime ("Failed to resolve module
+            // specifier 'react'") since there's no import map for it.
+            // Forcing 'iife' here is what actually makes `globals` take
+            // effect, resolving react/react-dom to the UMD <script> tags in
+            // index.html instead. Safe as a single bundle (no code-splitting
+            // concerns) since nothing in src/ uses a dynamic import().
+            format: 'iife',
+            globals: reactExternals.globals,
+          },
         },
       },
     }
