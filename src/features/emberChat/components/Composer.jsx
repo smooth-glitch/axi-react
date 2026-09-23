@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ContentPanel from "./ContentPanel.jsx";
+import { smartPromptsByCategory } from "../data/sampleData.js";
 
 function formatElapsed(seconds) {
   const m = Math.floor(seconds / 60);
@@ -7,14 +8,24 @@ function formatElapsed(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export default function Composer({ replyingTo, onCancelReply, onSend, pushToast }) {
+export default function Composer({
+  replyingTo,
+  onCancelReply,
+  onSend,
+  onAttachFile,
+  onOpenSmartPromptModal,
+  pushToast,
+  userCategory = "employee",
+}) {
   const [text, setText] = useState("");
   const [contentPanelOpen, setContentPanelOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const hasText = text.trim().length > 0;
+  const activePrompts = smartPromptsByCategory[userCategory] || smartPromptsByCategory.employee;
 
   useEffect(() => {
     if (!recording) return undefined;
@@ -30,126 +41,187 @@ export default function Composer({ replyingTo, onCancelReply, onSend, pushToast 
     if (!hasText) return;
     onSend?.(text.trim());
     setText("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
   };
 
-  const notUnavailable = (feature) => pushToast?.(`${feature} — not available in this preview`);
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (loadEv) => {
+          onAttachFile?.({
+            kind: "image",
+            fileName: file.name,
+            imageUrl: loadEv.target.result,
+          });
+          pushToast(`Photo "${file.name}" sent`);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        onAttachFile?.({
+          kind: "file",
+          fileName: file.name,
+          fileSize: `${(file.size / 1024).toFixed(1)} KB`,
+        });
+        pushToast(`Document "${file.name}" shared`);
+      }
+    }
+    e.target.value = "";
+  };
 
   return (
-    <>
+    <div className="sandesh-composer-wrapper">
+      {/* 1. Smart Prompts Quick Bar */}
+      <div className="sandesh-smart-prompts-bar">
+        <span className="prompts-label">
+          <span className="material-icons prompt-icon">bolt</span> Smart Prompts:
+        </span>
+        <div className="prompts-chips-scroll">
+          {activePrompts.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="sandesh-prompt-chip-3d"
+              onClick={() => onOpenSmartPromptModal?.(p)}
+              title={p.desc}
+            >
+              <span className="material-icons prompt-chip-icon">{p.icon}</span>
+              <span>{p.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. Replying-to Banner */}
       {replyingTo && (
-        <div id="ember-reply-banner">
-          <div id="ember-reply-banner-bar" />
-          <div id="ember-reply-banner-body">
-            <div id="ember-reply-banner-from">{replyingTo.from ?? "You"}</div>
-            <div id="ember-reply-banner-text">{replyingTo.text}</div>
+        <div className="sandesh-reply-banner-3d">
+          <div className="reply-accent-bar" />
+          <div className="reply-text-col">
+            <span className="reply-from">{replyingTo.from ?? "You"}</span>
+            <span className="reply-preview">{replyingTo.text}</span>
           </div>
-          <button id="ember-reply-banner-cancel" type="button" title="Cancel reply" aria-label="Cancel reply" onClick={onCancelReply}>
+          <button
+            type="button"
+            className="reply-cancel-btn"
+            onClick={onCancelReply}
+            title="Cancel reply"
+          >
             ✕
           </button>
         </div>
       )}
 
-      <div id="ember-composer">
+      {/* 3. Floating 3D Glass Composer Bar */}
+      <div className="sandesh-composer-3d">
+        {/* Hidden native file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept="image/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
+          style={{ display: "none" }}
+        />
+
         <button
-          className="icon-btn"
-          id="ember-attach-btn"
-          title="Attach"
-          aria-label="Attach a photo"
-          onClick={() => notUnavailable("Attachments")}
+          type="button"
+          className="composer-action-btn-3d"
+          title="Attach Document or Image"
+          onClick={() => fileInputRef.current?.click()}
         >
-          +
+          <span className="material-icons">attach_file</span>
         </button>
 
         {recording ? (
-          <div id="ember-recording-bar">
-            <span id="ember-recording-dot" />
-            <span id="ember-recording-time">{formatElapsed(elapsed)}</span>
-            <div id="ember-recording-wave" aria-hidden="true">
-              {Array.from({ length: 8 }).map((_, i) => (
+          <div className="sandesh-recording-bar-3d">
+            <span className="recording-pulsing-dot" />
+            <span className="recording-timer">{formatElapsed(elapsed)}</span>
+            <div className="recording-wave">
+              {Array.from({ length: 12 }).map((_, i) => (
                 <span key={i} />
               ))}
             </div>
             <button
-              id="ember-recording-cancel"
               type="button"
-              title="Discard"
-              aria-label="Discard voice note"
+              className="recording-cancel-btn"
+              title="Discard Voice Note"
               onClick={() => {
                 setRecording(false);
                 setElapsed(0);
               }}
             >
-              🗑
+              <span className="material-icons">delete</span>
             </button>
             <button
-              id="ember-recording-send"
               type="button"
-              title="Send"
-              aria-label="Send voice note"
+              className="recording-send-btn"
+              title="Send Voice Note"
               onClick={() => {
                 setRecording(false);
+                onSend?.(`🎙️ Voice Message (${formatElapsed(elapsed)})`);
                 setElapsed(0);
-                notUnavailable("Voice messages");
+                pushToast("Voice note sent");
               }}
             >
-              ➤
+              <span className="material-icons">send</span>
             </button>
           </div>
         ) : (
           <>
-            <div id="ember-input-pill">
+            <div className="composer-input-pill-3d">
               <textarea
                 ref={textareaRef}
-                id="ember-msg-input"
+                className="sandesh-msg-input"
                 rows={1}
-                placeholder="Type a message"
-                autoComplete="off"
-                maxLength={2000}
-                enterKeyHint="send"
+                placeholder="Type a message or press '/' for commands..."
                 value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
+                onChange={(e) => {
+                  setText(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
                 }}
+                onKeyDown={handleKeyDown}
+                maxLength={2000}
               />
               <button
-                className="icon-btn"
-                id="ember-content-btn"
-                title="Emoji, GIFs & stickers"
-                aria-label="Open emoji, GIF, and sticker picker"
+                type="button"
+                className="composer-emoji-btn"
+                title="Add Emoji / Reactions"
                 onClick={() => setContentPanelOpen((v) => !v)}
               >
                 😀
               </button>
             </div>
-            <button
-              className="icon-btn"
-              id="ember-camera-btn"
-              title="Take a photo"
-              aria-label="Take a photo"
-              onClick={() => notUnavailable("The camera")}
-            >
-              📷
-            </button>
+
             {hasText ? (
-              <button id="ember-send-btn" title="Send" aria-label="Send message" onClick={handleSend}>
-                ➤
+              <button
+                type="button"
+                className="sandesh-send-btn-3d"
+                title="Send Message"
+                onClick={handleSend}
+              >
+                <span className="material-icons">send</span>
               </button>
             ) : (
               <button
-                className="icon-btn"
-                id="ember-mic-btn"
-                title="Record a voice note"
-                aria-label="Record a voice note"
+                type="button"
+                className="composer-mic-btn-3d"
+                title="Record Voice Note"
                 onClick={() => {
                   setElapsed(0);
                   setRecording(true);
                 }}
               >
-                🎤
+                <span className="material-icons">mic</span>
               </button>
             )}
           </>
@@ -159,10 +231,21 @@ export default function Composer({ replyingTo, onCancelReply, onSend, pushToast 
           <ContentPanel
             onPickEmoji={(emoji) => {
               setText((t) => t + emoji);
+              setContentPanelOpen(false);
+              textareaRef.current?.focus();
             }}
+            onPickGif={(url) => {
+              onSend?.(url);
+              setContentPanelOpen(false);
+            }}
+            onPickSticker={(url) => {
+              onSend?.(url);
+              setContentPanelOpen(false);
+            }}
+            pushToast={pushToast}
           />
         )}
       </div>
-    </>
+    </div>
   );
 }
