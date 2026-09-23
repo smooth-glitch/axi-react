@@ -181,27 +181,55 @@ uploads_dir() ->
 %%   - a matching check on the *serving* side, so a crafted GET can't walk
 %%     out of the uploads directory either
 
+%% Rate-limit check comes first, before reading the (up to 8MB) body at
+%% all -- a client that's already over the limit gets a cheap, immediate
+%% 429 instead of the server spending time/memory reading a body it's
+%% just going to reject anyway. See chat_upload_limiter.erl.
 handle_upload(Socket, Headers, BodyStart) ->
-    ContentType = maps:get("content-type", Headers, ""),
-    case extract_boundary(ContentType) of
-        {ok, Boundary} ->
-            case read_body(Socket, Headers, BodyStart) of
-                {ok, Body} ->
-                    case find_file_part(Body, Boundary) of
-                        {ok, _Filename, PartContentType, Data} ->
-                            store_upload(Socket, PartContentType, Data);
-                        error ->
-                            respond_json_error(Socket, 400, "No file found in upload")
+    Ip = client_ip(Socket, Headers),
+    case chat_upload_limiter:check(Ip) of
+        limited ->
+            ?LOG_WARNING("~s hit the upload rate limit", [Ip]),
+            respond_json_error(Socket, 429, "Too many uploads -- slow down");
+        ok ->
+            ContentType = maps:get("content-type", Headers, ""),
+            case extract_boundary(ContentType) of
+                {ok, Boundary} ->
+                    case read_body(Socket, Headers, BodyStart) of
+                        {ok, Body} ->
+                            case find_file_part(Body, Boundary) of
+                                {ok, _Filename, PartContentType, Data} ->
+                                    store_upload(Socket, PartContentType, Data);
+                                error ->
+                                    respond_json_error(Socket, 400, "No file found in upload")
+                            end;
+                        {error, too_large} ->
+                            respond_json_error(Socket, 413, "File too large (max 8 MB)");
+                        {error, _} ->
+                            respond_json_error(Socket, 400, "Bad request")
                     end;
-                {error, too_large} ->
-                    respond_json_error(Socket, 413, "File too large (max 8 MB)");
-                {error, _} ->
-                    respond_json_error(Socket, 400, "Bad request")
-            end;
-        error ->
-            respond_json_error(Socket, 400, "Expected multipart/form-data")
+                error ->
+                    respond_json_error(Socket, 400, "Expected multipart/form-data")
+            end
     end,
     gen_tcp:close(Socket).
+
+%% Behind nginx (production and every preview slot -- see
+%% docs/CHAT_PROTOCOL.md and the deploy workflows), the TCP socket's peer
+%% is always nginx itself (127.0.0.1), not the real client -- nginx sets
+%% X-Real-IP for both /upload and /uploads/* specifically so this backend
+%% can still tell clients apart. Falls back to the raw socket peer address
+%% when there's no proxy in front at all (plain local dev).
+client_ip(Socket, Headers) ->
+    case maps:find("x-real-ip", Headers) of
+        {ok, Ip} ->
+            Ip;
+        error ->
+            case inet:peername(Socket) of
+                {ok, {Addr, _Port}} -> inet:ntoa(Addr);
+                {error, _} -> "unknown"
+            end
+    end.
 
 read_body(Socket, Headers, BodyStart) ->
     case maps:find("content-length", Headers) of
@@ -493,6 +521,7 @@ respond_json_error(Socket, Code, Message) ->
 http_reason(400) -> "Bad Request";
 http_reason(413) -> "Payload Too Large";
 http_reason(415) -> "Unsupported Media Type";
+http_reason(429) -> "Too Many Requests";
 http_reason(_) -> "Error".
 
 %% ---- WebSocket handshake ----------------------------------------------

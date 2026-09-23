@@ -157,6 +157,7 @@ See `docs/DEBUGGING.md` §7.
   `docs/CHAT_PROTOCOL.md`'s "Connecting" section for the exact trust
   model.
 - **Per-connection rate limiting** (30 commands/10s) against flooding.
+- **Per-IP rate limiting on `POST /upload`** (20 uploads/60s, `chat_upload_limiter.erl`) — behind nginx, keyed off the `X-Real-IP` header nginx sets, not the raw socket peer (which is always nginx itself in production/preview).
 - **No TLS in this backend.** Plain `ws://`, not `wss://`, by design --
   see the comment in `chat_web.erl`'s module doc for why native TLS
   wasn't attempted here. **A reverse proxy (nginx) terminating HTTPS/WSS
