@@ -217,7 +217,9 @@ than splitting.
   (png/jpeg/gif/webp) and voice notes (webm/ogg/mp4 audio), max 8MB.
   Returns `{"url": "/uploads/<random-name>"}` on success. Content-type is
   verified against the file's actual magic bytes, not just the declared
-  header — a mismatch is rejected.
+  header — a mismatch is rejected. Rate-limited per client IP (20
+  uploads/60s) — a `429` with `{"error": "..."}` means slow down, same
+  error shape as every other rejection on this endpoint (400/413/415).
 - `GET /uploads/<name>` — serves it back. Supports HTTP Range requests
   (needed for `<audio>`/`<video>` elements to seek/preload correctly).
 

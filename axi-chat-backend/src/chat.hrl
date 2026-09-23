@@ -12,3 +12,13 @@
 %% chat_room/chat_groups/Redis or spamming every other connected client.
 -define(RATE_LIMIT_MAX_COMMANDS, 30).
 -define(RATE_LIMIT_WINDOW_MS, 10000).
+
+%% POST /upload rate limit -- 20 uploads per 60s window, per client IP.
+%% Unlike WS commands, an upload is a brand-new plain-HTTP connection every
+%% time (no persistent per-connection process to hold state in), and each
+%% one can be up to 8MB -- with nothing else stopping repeated uploads, one
+%% client could otherwise hammer disk I/O and space indefinitely. 20/60s is
+%% generous for real use (sharing a handful of images/voice notes in quick
+%% succession) and well below anything resembling abuse.
+-define(UPLOAD_RATE_LIMIT_MAX, 20).
+-define(UPLOAD_RATE_LIMIT_WINDOW_MS, 60000).

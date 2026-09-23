@@ -36,6 +36,12 @@ init([TcpPort, WebPort]) ->
                    shutdown => 5000,
                    type => worker,
                    modules => [chat_groups]},
+    UploadLimiter = #{id => chat_upload_limiter,
+                       start => {chat_upload_limiter, start_link, []},
+                       restart => permanent,
+                       shutdown => 5000,
+                       type => worker,
+                       modules => [chat_upload_limiter]},
     WebListener = #{id => chat_web_listener,
                     start => {chat_web_listener, start_link, [WebPort]},
                     restart => permanent,
@@ -48,7 +54,7 @@ init([TcpPort, WebPort]) ->
     %% just unused.
     Children = case TcpPort of
         undefined ->
-            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, WebListener];
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, UploadLimiter, WebListener];
         _ ->
             Listener = #{id => chat_listener,
                          start => {chat_listener, start_link, [TcpPort]},
@@ -56,6 +62,6 @@ init([TcpPort, WebPort]) ->
                          shutdown => 5000,
                          type => worker,
                          modules => [chat_listener]},
-            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, Listener, WebListener]
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, UploadLimiter, Listener, WebListener]
     end,
     {ok, {SupFlags, Children}}.
