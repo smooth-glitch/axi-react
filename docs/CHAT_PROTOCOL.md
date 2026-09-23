@@ -74,7 +74,8 @@ consume client-side.
 | `/list` | Server replies with `{"type":"users","list":[...]}` — currently-online usernames. |
 | `/hosts` | Server replies with `{"type":"hosts","list":[...]}` — the full host directory (see "Host directory" below). |
 | `/hostmsg <hostKey> <text>` | Send a message to a **department** host (see below — do NOT use this for `llm`/`workspace`-kind hosts). Reply: `host_ack` event, or an error if the host doesn't exist or has no one assigned yet. |
-| `/msg <username> <text>` | Send a DM to another associate directly. Reply: `dm_ack` event, or an error if the user doesn't exist. |
+| `/msg <username> <text>` | Send a DM to another associate. Reply: `dm_ack` event with `status` `"delivered"` (recipient online, pushed live) or `"queued"` (recipient offline but has connected before — stored, and they read it after reconnecting via `/conversations` + `/history dm`). Error `No such user` only if that username has never connected. |
+| `/conversations` | Reply: `conversations` event — every DM thread you have, newest first, each with the last message. How a client discovers who messaged it while it was offline. |
 | `/reply <messageId> <text>` | Reply to a message in the **global** room. |
 | `/replydm <username> <messageId> <text>` | Reply to a message within a DM thread. |
 | `/history global` | Re-fetch global room history (also sent automatically on connect). |
@@ -137,7 +138,8 @@ mirror the command that triggered them.
 | `typing_dm` | Someone's typing in your DM | `from` |
 | `group_typing` | Someone's typing in a group you're in | `group`, `from` |
 | `dm_read` | Your DM was marked read | `from` |
-| `dm_ack` | Your `/msg` was delivered | `with`, `status`, `id`, `ts` |
+| `dm_ack` | Your `/msg` was accepted | `with`, `status` (`delivered`/`queued`), `id`, `ts` |
+| `conversations` | Reply to `/conversations` | `list`: array of `{with, id, ts, from, text}` (last message per DM thread; `text` is `""` if it was deleted) |
 | `group_msg_ack` | Your `/groupmsg`/`/replygroup` was delivered | `group`, `id`, `ts` |
 | `reaction` / `dm_reaction` / `group_reaction` | A reaction changed | `messageId`, `reactions`: array of `{user, emoji}`; DM/group variants add `userA`/`userB` or `group` |
 | `profile` | Someone's avatar/status changed | `user`, `avatar` (or `null`), `status` (or `null`) |

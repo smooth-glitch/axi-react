@@ -155,6 +155,36 @@ async function main() {
     const hrResp = await clientA.waitFor(m => m.type === "error" && m.text.includes("hr"));
     ok("/hostmsg to an unconfigured department host errors cleanly", hrResp.text.includes("No such host"));
 
+    console.log("=== Offline DMs & conversations ===");
+    const nameC = `clientCtest${suffix}`;
+    const ghost = `nobodyever${suffix}`;
+    // A user who has connected once, then goes offline.
+    const tmpC = new Client(nameC);
+    await tmpC.open();
+    tmpC.send({ username: nameC, token: "tok-c", armSessionId: "sess-c" });
+    await tmpC.waitFor(m => m.type === "welcome");
+    tmpC.close();
+    await new Promise(r => setTimeout(r, 300));
+    clientA.send(`/msg ${nameC} are you there`);
+    const queuedAck = await clientA.waitFor(m => m.type === "dm_ack" && m.with === nameC, 2000, "queued dm_ack");
+    ok("DM to an offline known user is accepted with status 'queued'", queuedAck.status === "queued" && typeof queuedAck.id === "number", JSON.stringify(queuedAck));
+    clientA.send(`/msg ${ghost} hi`);
+    const ghostErr = await clientA.waitFor(m => m.type === "error" && m.text.includes(ghost), 2000, "unknown-user error");
+    ok("DM to a never-seen username still errors", ghostErr.text.includes("No such user"));
+    // The offline user reconnects and can discover + read it.
+    const clientC = new Client(nameC);
+    await clientC.open();
+    clientC.send({ username: nameC, token: "tok-c", armSessionId: "sess-c" });
+    await clientC.waitFor(m => m.type === "welcome");
+    clientC.send("/conversations");
+    const convs = await clientC.waitFor(m => m.type === "conversations", 2000, "conversations");
+    const fromA = convs.list.find(c => c.with === nameA);
+    ok("/conversations lists the sender with the last message", !!fromA && fromA.text === "are you there" && fromA.from === nameA, JSON.stringify(convs));
+    clientC.send(`/history dm ${nameA}`);
+    const offlineHist = await clientC.waitFor(m => m.type === "history" && m.scope === "dm", 2000, "offline dm history");
+    ok("queued DM is in history after reconnect", offlineHist.list.some(m => m.text === "are you there"));
+    clientC.close();
+
     console.log("=== Groups ===");
     const groupName = `squadtest${suffix}`;
     clientB.send(`/creategroup ${groupName}`);
