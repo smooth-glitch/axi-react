@@ -6,18 +6,35 @@ import MessageActionMenu from "./MessageActionMenu.jsx";
 const LONG_PRESS_MS = 450;
 
 function TicksIcon({ state }) {
-  return <span className={`ticks${state === "read" ? " read" : ""}`}>{state === "read" ? "✓✓" : "✓"}</span>;
+  return (
+    <span className={`sandesh-ticks ${state === "read" ? "read" : "sent"}`}>
+      {state === "read" ? (
+        <svg width="15" height="11" viewBox="0 0 16 11" fill="none">
+          <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M5 5.5L8.5 9L15 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ) : (
+        <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
+          <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )}
+    </span>
+  );
 }
 
-function MessageRow({ msg, onReact, onReply, onOpenActionMenu }) {
+function MessageRow({ msg, onReact, onReply, onOpenActionMenu, onActionCardClick }) {
   const longPressTimer = useRef(null);
 
   if (msg.kind === "system") {
-    return <div className="system-line">{msg.text}</div>;
+    return (
+      <div className="sandesh-system-bubble">
+        <span className="material-icons info-icon">info</span>
+        <span>{msg.text}</span>
+      </div>
+    );
   }
 
   const isOut = msg.dir === "out";
-  const bubbleClass = `msg ${isOut ? "out" : "in"}${msg.kind === "image" ? " image-msg" : ""}`;
 
   const startLongPress = (e) => {
     const { clientX, clientY } = e;
@@ -31,12 +48,17 @@ function MessageRow({ msg, onReact, onReply, onOpenActionMenu }) {
   };
 
   return (
-    <div className={`row ${isOut ? "out" : "in"}${msg.grouped ? " grouped" : ""}`}>
-      {!isOut && (msg.grouped ? <span className="avatar-spacer" /> : <Avatar initials={msg.initials} color={msg.color} />)}
+    <div className={`sandesh-msg-row ${isOut ? "out" : "in"}${msg.grouped ? " grouped" : ""}`}>
+      {!isOut && (
+        msg.grouped ? (
+          <span className="sandesh-avatar-spacer" />
+        ) : (
+          <Avatar initials={msg.initials} color={msg.color || "#ff7a59"} />
+        )
+      )}
 
       <div
-        className={bubbleClass}
-        style={{ "--sender-color": msg.color }}
+        className={`sandesh-bubble-3d ${isOut ? "bubble-out" : "bubble-in"}${msg.kind === "card" ? " bubble-card" : ""}`}
         onContextMenu={(e) => {
           e.preventDefault();
           onOpenActionMenu?.(msg, { x: e.clientX, y: e.clientY });
@@ -46,69 +68,154 @@ function MessageRow({ msg, onReact, onReply, onOpenActionMenu }) {
         onPointerLeave={cancelLongPress}
         onPointerMove={cancelLongPress}
       >
-        {!isOut && !msg.grouped && <span className="from">{msg.from}</span>}
-
-        {msg.replyTo && (
-          <div className="reply-quote">
-            <div className="reply-quote-from">{msg.replyTo.from}</div>
-            <div className="reply-quote-text">{msg.replyTo.text}</div>
+        {!isOut && !msg.grouped && (
+          <div className="msg-sender-line">
+            <span className="sender-name">{msg.from}</span>
           </div>
         )}
 
-        {msg.kind === "image" ? (
-          <img src={msg.imageUrl} alt="" />
-        ) : (
-          <span>{msg.text}</span>
+        {/* Quoted reply banner */}
+        {msg.replyTo && (
+          <div className="sandesh-reply-quote-3d">
+            <div className="quote-from">{msg.replyTo.from}</div>
+            <div className="quote-text">{msg.replyTo.text}</div>
+          </div>
         )}
 
-        {isOut && (
-          <span style={{ float: "right", marginTop: 2 }}>
-            <TicksIcon state={msg.ticks} />
-          </span>
+        {/* 1. Smart Structure Interactive Card */}
+        {msg.kind === "card" && (
+          <div className="sandesh-interactive-card">
+            <div className="card-top-badge">
+              <span className="material-icons card-icon">assignment</span>
+              <strong className="card-title">{msg.title}</strong>
+              {msg.actionStatus && (
+                <span className={`card-status-pill status-${msg.actionStatus.toLowerCase().replace(/\s+/g, "-")}`}>
+                  {msg.actionStatus}
+                </span>
+              )}
+            </div>
+
+            {msg.details && (
+              <div className="card-details-grid">
+                {Object.entries(msg.details).map(([key, val]) => (
+                  <div key={key} className="detail-item">
+                    <span className="detail-key">{key}:</span>
+                    <span className="detail-val">{String(val)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {msg.actions && msg.actions.length > 0 && (
+              <div className="card-action-bar">
+                {msg.actions.map((act) => (
+                  <button
+                    key={act}
+                    type="button"
+                    className={`card-act-btn ${act === "Approve" ? "btn-approve" : act === "Reject" ? "btn-reject" : "btn-secondary"}`}
+                    onClick={() => onActionCardClick?.(msg, act)}
+                  >
+                    {act}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
+        {/* 2. File / Document Message */}
+        {msg.kind === "file" && (
+          <div className="sandesh-file-card">
+            <span className="material-icons file-icon">description</span>
+            <div className="file-info">
+              <span className="file-name">{msg.fileName}</span>
+              <span className="file-size">{msg.fileSize || "Document"}</span>
+            </div>
+            <button type="button" className="file-download-btn" title="Download">
+              <span className="material-icons">download</span>
+            </button>
+          </div>
+        )}
+
+        {/* 3. Image Message */}
+        {msg.kind === "image" && (
+          <div className="sandesh-img-card">
+            <img src={msg.imageUrl} alt="Shared preview" />
+            {msg.text && <p className="img-caption">{msg.text}</p>}
+          </div>
+        )}
+
+        {/* 4. Normal Text Message */}
+        {(!msg.kind || msg.kind === "text") && (
+          <div className="sandesh-text-body">{msg.text}</div>
+        )}
+
+        {/* Timestamp and Ticks */}
+        <div className="sandesh-bubble-footer">
+          <span className="msg-time">{msg.time || "now"}</span>
+          {isOut && <TicksIcon state={msg.ticks || "read"} />}
+        </div>
+
+        {/* Reaction Badges */}
         {msg.reactions && msg.reactions.length > 0 && (
-          <div className="reactions">
+          <div className="sandesh-reactions-row">
             {msg.reactions.map((r) => (
               <button
                 key={r.emoji}
                 type="button"
-                className={`reaction-pill${r.mine ? " mine" : ""}`}
+                className={`reaction-pill-3d ${r.mine ? "active" : ""}`}
                 onClick={() => onReact?.(msg.id, r.emoji)}
               >
-                {r.emoji} {r.count}
+                <span>{r.emoji}</span>
+                <span className="count">{r.count}</span>
               </button>
             ))}
           </div>
         )}
       </div>
 
-      <button
-        className="react-trigger"
-        aria-label="React"
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          onOpenActionMenu?.(msg, { x: rect.left, y: rect.top }, "react");
-        }}
-      >
-        😊
-      </button>
-      <button className="reply-trigger" aria-label="Reply" onClick={() => onReply?.(msg)}>
-        ↩
-      </button>
+      {/* Floating Action Triggers */}
+      <div className="sandesh-msg-hover-actions">
+        <button
+          type="button"
+          className="msg-action-btn"
+          aria-label="React"
+          title="React with Emoji"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            onOpenActionMenu?.(msg, { x: rect.left, y: rect.top }, "react");
+          }}
+        >
+          <span className="material-icons">add_reaction</span>
+        </button>
+        <button
+          type="button"
+          className="msg-action-btn"
+          aria-label="Reply"
+          title="Reply"
+          onClick={() => onReply?.(msg)}
+        >
+          <span className="material-icons">reply</span>
+        </button>
+      </div>
     </div>
   );
 }
 
-export default function MessageList({ messages, onReact, onReply, onDelete, pushToast, listRef, onScroll }) {
+export default function MessageList({
+  messages,
+  onReact,
+  onReply,
+  onDelete,
+  onActionCardClick,
+  pushToast,
+  listRef,
+  onScroll,
+}) {
   const [popup, setPopup] = useState(null); // { msg, kind: "react" | "menu", x, y }
-  const containerRef = useRef(null);
 
   useEffect(() => {
     if (!popup) return undefined;
-    // Close on outside click/scroll/escape, same as any transient popover --
-    // but not on a click *inside* the popup itself, which would unmount it
-    // (and its buttons) before their own onClick ever gets to fire.
     const closeIfOutside = (e) => {
       if (e.target.closest("#ember-quick-react-popup, #ember-message-action-menu")) return;
       setPopup(null);
@@ -139,20 +246,19 @@ export default function MessageList({ messages, onReact, onReply, onDelete, push
     : null;
 
   return (
-    <div
-      id="ember-messages"
-      role="log"
-      aria-live="polite"
-      aria-relevant="additions"
-      ref={(el) => {
-        containerRef.current = el;
-        if (listRef) listRef.current = el;
-      }}
-      onScroll={onScroll}
-    >
-      {messages.map((msg) => (
-        <MessageRow key={msg.id} msg={msg} onReact={onReact} onReply={onReply} onOpenActionMenu={openPopup} />
-      ))}
+    <div id="sandesh-message-stream" ref={listRef} onScroll={onScroll}>
+      <div className="sandesh-stream-inner">
+        {messages.map((m) => (
+          <MessageRow
+            key={m.id}
+            msg={m}
+            onReact={onReact}
+            onReply={onReply}
+            onOpenActionMenu={openPopup}
+            onActionCardClick={onActionCardClick}
+          />
+        ))}
+      </div>
 
       {popup && popup.kind === "react" && (
         <QuickReactPopup
@@ -161,26 +267,23 @@ export default function MessageList({ messages, onReact, onReply, onDelete, push
             onReact?.(popup.msg.id, emoji);
             setPopup(null);
           }}
-          onMore={() => {
-            pushToast?.("More reactions coming soon");
-            setPopup(null);
-          }}
         />
       )}
 
       {popup && popup.kind === "menu" && (
         <MessageActionMenu
           style={popupStyle}
-          canDelete={popup.msg.dir === "out"}
+          msg={popup.msg}
+          onReact={() => setPopup({ ...popup, kind: "react" })}
           onReply={() => {
             onReply?.(popup.msg);
             setPopup(null);
           }}
           onCopy={() => {
-            navigator.clipboard
-              ?.writeText(popup.msg.text ?? "")
-              .then(() => pushToast?.("Copied to clipboard"))
-              .catch(() => pushToast?.("Couldn't copy text", true));
+            if (popup.msg.text) {
+              navigator.clipboard?.writeText(popup.msg.text);
+              pushToast?.("Message copied");
+            }
             setPopup(null);
           }}
           onDelete={() => {

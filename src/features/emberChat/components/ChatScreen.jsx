@@ -2,19 +2,28 @@ import { useEffect, useRef, useState } from "react";
 import TopBar from "./TopBar.jsx";
 import MessageList from "./MessageList.jsx";
 import Composer from "./Composer.jsx";
+import TopicsEpisodesView from "./TopicsEpisodesView.jsx";
 
 const NEAR_BOTTOM_PX = 120;
 
 export default function ChatScreen({
   chat,
   messages,
+  userCategory,
+  isAdmin,
   onMenuClick,
   onMembersClick,
   onSend,
+  onAttachFile,
   onToggleReaction,
   onDeleteMessage,
+  onActionCardClick,
+  onOpenSmartPrompts,
+  onOpenAdminConsole,
+  onOpenAiChat,
   pushToast,
 }) {
+  const [activeView, setActiveView] = useState("messages"); // "messages" | "episodes"
   const [replyingTo, setReplyingTo] = useState(null);
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   const listRef = useRef(null);
@@ -26,9 +35,6 @@ export default function ChatScreen({
     el.scrollTo({ top: el.scrollHeight, behavior });
   };
 
-  // Auto-scroll on new messages, but only if the user is already near the
-  // bottom — otherwise let them keep reading older messages and surface the
-  // "jump to latest" button instead.
   useEffect(() => {
     const grew = messages.length > prevMessageCount.current;
     prevMessageCount.current = messages.length;
@@ -44,8 +50,10 @@ export default function ChatScreen({
   }, [messages]);
 
   useEffect(() => {
-    scrollToBottom("auto");
-  }, []);
+    if (activeView === "messages") {
+      scrollToBottom("auto");
+    }
+  }, [activeView]);
 
   const handleScroll = () => {
     const el = listRef.current;
@@ -61,38 +69,66 @@ export default function ChatScreen({
   };
 
   return (
-    <div id="ember-main">
+    <main id="sandesh-main-panel" className="sandesh-main-panel-3d">
       <TopBar
-        title={chat.name}
-        subtitle={chat.isGroup ? "3 members" : "Online"}
-        isGroup={chat.isGroup}
+        chat={chat}
+        activeView={activeView}
+        onChangeView={setActiveView}
         onMenuClick={onMenuClick}
         onMembersClick={onMembersClick}
+        onOpenSmartPrompts={onOpenSmartPrompts}
+        onOpenAdminConsole={onOpenAdminConsole}
+        onOpenAiChat={onOpenAiChat}
+        isAdmin={isAdmin}
       />
 
-      <MessageList
-        listRef={listRef}
-        onScroll={handleScroll}
-        messages={messages}
-        onReply={(msg) => setReplyingTo({ from: msg.from ?? "You", text: msg.text })}
-        onReact={onToggleReaction}
-        onDelete={onDeleteMessage}
-        pushToast={pushToast}
-      />
+      {activeView === "episodes" ? (
+        <TopicsEpisodesView
+          chat={chat}
+          onSelectTopic={(ep) => {
+            pushToast(`Switched to episode: ${ep.title}`);
+            setActiveView("messages");
+          }}
+          onNewEpisode={(ep) => {
+            pushToast(`New topic "${ep.title}" initialized`);
+          }}
+        />
+      ) : (
+        <div className="sandesh-chat-body">
+          <MessageList
+            listRef={listRef}
+            onScroll={handleScroll}
+            messages={messages}
+            onReply={(msg) => setReplyingTo({ from: msg.from ?? "You", text: msg.text || msg.title || "Message" })}
+            onReact={onToggleReaction}
+            onDelete={onDeleteMessage}
+            onActionCardClick={onActionCardClick}
+            pushToast={pushToast}
+          />
 
-      <button
-        id="ember-jump-latest"
-        type="button"
-        className={showJumpLatest ? "show" : ""}
-        onClick={() => {
-          scrollToBottom();
-          setShowJumpLatest(false);
-        }}
-      >
-        ↓ New messages
-      </button>
+          <button
+            id="sandesh-jump-latest"
+            type="button"
+            className={`sandesh-jump-latest-3d ${showJumpLatest ? "show" : ""}`}
+            onClick={() => {
+              scrollToBottom();
+              setShowJumpLatest(false);
+            }}
+          >
+            ↓ Jump to latest
+          </button>
 
-      <Composer replyingTo={replyingTo} onCancelReply={() => setReplyingTo(null)} onSend={handleSend} pushToast={pushToast} />
-    </div>
+          <Composer
+            replyingTo={replyingTo}
+            onCancelReply={() => setReplyingTo(null)}
+            onSend={handleSend}
+            onAttachFile={onAttachFile}
+            onOpenSmartPromptModal={onOpenSmartPrompts}
+            pushToast={pushToast}
+            userCategory={userCategory}
+          />
+        </div>
+      )}
+    </main>
   );
 }
