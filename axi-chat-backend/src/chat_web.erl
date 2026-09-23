@@ -883,10 +883,8 @@ handle_line(Socket, Name, "/msg " ++ Rest) ->
                 io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
         [To, Text] when Text =/= "" ->
             case chat_room:send_private(Name, To, Text) of
-                {ok, Id, Ts} ->
-                    ws_send(Socket, json_obj2([
-                        {"type", {str, "dm_ack"}}, {"with", {str, To}}, {"status", {str, "delivered"}},
-                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
+                {Status, Id, Ts} when Status =:= ok; Status =:= queued ->
+                    ws_send(Socket, dm_ack_json(To, Status, Id, Ts));
                 {error, not_found} ->
                     ws_send_json(Socket, "error", "No such user: " ++ To)
             end;
@@ -917,10 +915,8 @@ handle_line(Socket, Name, "/replydm " ++ Rest) ->
                     case string:to_integer(IdStr) of
                         {ReplyTo, []} ->
                             case chat_room:send_private(Name, To, Text, ReplyTo) of
-                                {ok, Id, Ts} ->
-                                    ws_send(Socket, json_obj2([
-                                        {"type", {str, "dm_ack"}}, {"with", {str, To}}, {"status", {str, "delivered"}},
-                                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
+                                {Status, Id, Ts} when Status =:= ok; Status =:= queued ->
+                                    ws_send(Socket, dm_ack_json(To, Status, Id, Ts));
                                 {error, not_found} ->
                                     ws_send_json(Socket, "error", "No such user: " ++ To)
                             end;
@@ -932,6 +928,16 @@ handle_line(Socket, Name, "/replydm " ++ Rest) ->
         _ ->
             ws_send_json(Socket, "error", "Usage: /replydm <username> <messageId> <message>")
     end;
+handle_line(Socket, Name, "/conversations") ->
+    %% Every DM thread this user has, newest first, with the last message --
+    %% how a client learns who messaged it while it was offline.
+    Items = [json_obj2([
+                 {"with", {str, Other}}, {"id", {raw, integer_to_list(Id)}},
+                 {"ts", {raw, integer_to_list(Ts)}}, {"from", {str, From}},
+                 {"text", {str, case Deleted of true -> ""; false -> Text end}}])
+             || {Other, {Id, Ts, From, Text, _P, _R, _Pr, _Rt, Deleted}} <- chat_store:list_dm_conversations(Name)],
+    ws_send(Socket, json_obj2([{"type", {str, "conversations"}},
+                               {"list", {raw, "[" ++ string:join(Items, ",") ++ "]"}}]));
 handle_line(Socket, Name, "/history " ++ Rest) ->
     case string:split(Rest, " ") of
         ["global"] ->
@@ -1120,6 +1126,14 @@ handle_line(_Socket, _Name, Text) when
     ok;
 handle_line(_Socket, Name, Text) ->
     chat_room:broadcast(Name, Text).
+
+%% "delivered" = recipient was online and got it live; "queued" = recipient
+%% is offline, stored for when they reconnect (see chat_room's private call).
+dm_ack_json(To, Status, Id, Ts) ->
+    StatusStr = case Status of ok -> "delivered"; queued -> "queued" end,
+    json_obj2([
+        {"type", {str, "dm_ack"}}, {"with", {str, To}}, {"status", {str, StatusStr}},
+        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]).
 
 %% ---- WebSocket framing (RFC 6455) --------------------------------------
 

@@ -25,6 +25,7 @@
 %%% there's nothing to gain from decomposing them further.
 -module(chat_store).
 -export([init/0, save_message/5, save_message/6, load_history/1, dm_key/2,
+         register_user/1, user_known/1, record_dm_partners/2, list_dm_conversations/1,
          save_group/3, delete_group/1, load_groups/0, toggle_reaction/3,
          delete_message/2,
          save_link_preview/2,
@@ -56,6 +57,40 @@ profile_key(Username) -> "profile:" ++ Username.
 dm_key(A, B) ->
     [First, Second] = lists:sort([A, B]),
     "dm:" ++ First ++ "|" ++ Second.
+
+%% ---- Known users & DM partners ---------------------------------------------
+
+%% Every username that has ever completed a handshake. This is what lets a
+%% DM to someone who is offline *right now* be stored for later instead of
+%% rejected, while still catching a typo'd username (never seen -> not
+%% known -> "No such user").
+register_user(Name) ->
+    q_ok(["SADD", "known_users", Name]),
+    ok.
+
+user_known(Name) ->
+    q_ok(["SISMEMBER", "known_users", Name]) =:= <<"1">>.
+
+%% Remembers, on both sides, that A and B have a DM thread -- the index
+%% list_dm_conversations/1 reads, so a user reconnecting can discover who
+%% messaged them while they were away.
+record_dm_partners(A, B) ->
+    q_ok(["SADD", "dm_partners:" ++ A, B]),
+    q_ok(["SADD", "dm_partners:" ++ B, A]),
+    ok.
+
+%% [{Other, LastMessage}] for every DM thread User has, newest first.
+%% LastMessage is the same tuple shape load_history/1 returns.
+list_dm_conversations(User) ->
+    Others = [b2l(B) || B <- q_ok(["SMEMBERS", "dm_partners:" ++ User])],
+    Convs = lists:filtermap(
+        fun(Other) ->
+            case q_ok(["ZRANGE", conv_zset_key(dm_key(User, Other)), "-1", "-1"]) of
+                [IdBin] -> {true, {Other, read_message(list_to_integer(binary_to_list(IdBin)))}};
+                [] -> false
+            end
+        end, Others),
+    lists:sort(fun({_, A}, {_, B}) -> element(2, A) >= element(2, B) end, Convs).
 
 %% ---- Messages -------------------------------------------------------------
 

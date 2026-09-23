@@ -116,7 +116,7 @@ handle_line(Socket, Name, "/msg " ++ Rest) ->
                 "Message too long (max ~p chars).~n", [?MAX_MESSAGE_LEN]));
         [To, Text] when Text =/= "" ->
             case chat_room:send_private(Name, To, Text) of
-                ok -> ok;
+                {Status, _Id, _Ts} when Status =:= ok; Status =:= queued -> ok;
                 {error, not_found} ->
                     gen_tcp:send(Socket, io_lib:format("No such user: ~s~n", [To]))
             end;

@@ -99,6 +99,7 @@ handle_call({register, Name, Pid}, _From, State = #state{users = Users, monitors
             ?LOG_DEBUG("registration rejected, username already taken: ~s", [Name]),
             {reply, {error, taken}, State};
         false ->
+            chat_store:register_user(Name),
             Ref = erlang:monitor(process, Pid),
             NewUsers = maps:put(Name, Pid, Users),
             NewMonitors = maps:put(Ref, Name, Monitors),
@@ -107,10 +108,19 @@ handle_call({register, Name, Pid}, _From, State = #state{users = Users, monitors
             {reply, ok, State#state{users = NewUsers, monitors = NewMonitors}}
     end;
 handle_call({private, From, To, Text, ReplyTo}, _From, State = #state{users = Users}) ->
-    case maps:find(To, Users) of
-        {ok, Pid} ->
+    %% Online recipient: save + push live. Offline but previously-seen
+    %% recipient: save anyway ({queued, ...}) -- they find it via
+    %% /conversations + /history dm after reconnecting. Never-seen name:
+    %% not_found, so a typo doesn't silently create a ghost conversation.
+    Recipient = maps:find(To, Users),
+    case Recipient =/= error orelse chat_store:user_known(To) of
+        true ->
             {Id, Ts} = chat_store:save_message(chat_store:dm_key(From, To), From, Text, chat, true, ReplyTo),
-            Pid ! {private_message, Id, Ts, From, Text, ReplyTo},
+            chat_store:record_dm_partners(From, To),
+            case Recipient of
+                {ok, Pid} -> Pid ! {private_message, Id, Ts, From, Text, ReplyTo};
+                error -> ok
+            end,
             chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
                 lists:foreach(
                     fun(N) ->
@@ -120,8 +130,8 @@ handle_call({private, From, To, Text, ReplyTo}, _From, State = #state{users = Us
                         end
                     end, [From, To])
             end),
-            {reply, {ok, Id, Ts}, State};
-        error ->
+            {reply, {case Recipient of {ok, _} -> ok; error -> queued end, Id, Ts}, State};
+        false ->
             {reply, {error, not_found}, State}
     end;
 handle_call({host_message, From, HostKey, Text, ReplyTo}, _From, State = #state{users = Users}) ->
