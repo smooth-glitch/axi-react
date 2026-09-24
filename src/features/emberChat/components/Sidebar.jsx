@@ -17,6 +17,7 @@ export default function Sidebar({
   onSignOut,
   socketStatus,
   onReconnectSocket,
+  onDeleteChat,
 }) {
   const [categoryFilter, setCategoryFilter] = useState("all"); // "all" | "hosts" | "direct"
   const [searchTerm, setSearchTerm] = useState("");
@@ -195,6 +196,19 @@ export default function Sidebar({
                   {chat.unread > 0 && <span className="sandesh-unread-badge-3d">{chat.unread}</span>}
                 </div>
               </div>
+              <button
+                type="button"
+                className="sandesh-chat-delete-btn"
+                title="Delete conversation"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm(`Delete conversation "${chat.name}"?`)) {
+                    onDeleteChat?.(chat.id);
+                  }
+                }}
+              >
+                <span className="material-icons">delete_outline</span>
+              </button>
             </li>
           ))}
         </ul>

@@ -41,7 +41,87 @@ function TicksIcon({ state }) {
   );
 }
 
-function MessageRow({ msg, onReact, onReply, onOpenActionMenu, onActionCardClick }) {
+function VoiceNoteBubble({ msg }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const audioRef = useRef(null);
+
+  const togglePlay = () => {
+    if (!audioRef.current) {
+      setIsPlaying(!isPlaying);
+      return;
+    }
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {
+        setIsPlaying(true);
+        setTimeout(() => setIsPlaying(false), 3000);
+      });
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current && audioRef.current.duration) {
+      setProgress((audioRef.current.currentTime / audioRef.current.duration) * 100);
+    }
+  };
+
+  const handleEnded = () => {
+    setIsPlaying(false);
+    setProgress(0);
+  };
+
+  return (
+    <div className="sandesh-voice-bubble-3d">
+      {msg.audioUrl && (
+        <audio
+          ref={audioRef}
+          src={msg.audioUrl}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleEnded}
+          style={{ display: "none" }}
+        />
+      )}
+      <button
+        type="button"
+        className="sandesh-voice-play-btn"
+        onClick={togglePlay}
+        aria-label={isPlaying ? "Pause" : "Play"}
+        title={isPlaying ? "Pause voice note" : "Play voice note"}
+      >
+        <span className="material-icons">{isPlaying ? "pause" : "play_arrow"}</span>
+      </button>
+      <div className="sandesh-voice-track">
+        <div className="sandesh-voice-wave-bars">
+          {Array.from({ length: 24 }).map((_, i) => {
+            const barProgress = (i / 24) * 100;
+            const isFilled = barProgress <= progress;
+            return (
+              <span
+                key={i}
+                className={`wave-bar ${isFilled ? "filled" : ""} ${isPlaying ? "playing" : ""}`}
+                style={{
+                  height: `${7 + ((i * 5 + 7) % 17)}px`,
+                  animationDelay: `${(i % 6) * 0.12}s`,
+                }}
+              />
+            );
+          })}
+        </div>
+        <div className="sandesh-voice-meta">
+          <span className="voice-duration">{msg.duration || "0:05"}</span>
+          <span className="voice-badge">
+            <span className="material-icons" style={{ fontSize: "12px", verticalAlign: "middle" }}>mic</span> Voice Note
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageRow({ msg, onReact, onReply, onDelete, onOpenActionMenu, onActionCardClick }) {
   const longPressTimer = useRef(null);
 
   if (msg.kind === "system") {
@@ -164,7 +244,20 @@ function MessageRow({ msg, onReact, onReply, onOpenActionMenu, onActionCardClick
           </div>
         )}
 
-        {/* 4. Normal Text Message */}
+        {/* 4. Video Message */}
+        {msg.kind === "video" && (
+          <div className="sandesh-video-card">
+            <video src={msg.videoUrl} controls className="sandesh-inline-video" />
+            {msg.text && <p className="video-caption">{msg.text}</p>}
+          </div>
+        )}
+
+        {/* 5. Voice Note Audio Message */}
+        {msg.kind === "audio" && (
+          <VoiceNoteBubble msg={msg} />
+        )}
+
+        {/* 6. Normal Text Message */}
         {(!msg.kind || msg.kind === "text") && (
           <div className="sandesh-text-body">{msg.text}</div>
         )}
@@ -193,7 +286,7 @@ function MessageRow({ msg, onReact, onReply, onOpenActionMenu, onActionCardClick
         )}
       </div>
 
-      {/* Floating Action Triggers */}
+      {/* Floating Action Triggers with Delete Message button */}
       <div className="sandesh-msg-hover-actions">
         <button
           type="button"
@@ -215,6 +308,15 @@ function MessageRow({ msg, onReact, onReply, onOpenActionMenu, onActionCardClick
           onClick={() => onReply?.(msg)}
         >
           <span className="material-icons">reply</span>
+        </button>
+        <button
+          type="button"
+          className="msg-action-btn delete-btn"
+          aria-label="Delete message"
+          title="Delete message"
+          onClick={() => onDelete?.(msg.id)}
+        >
+          <span className="material-icons">delete_outline</span>
         </button>
       </div>
     </div>
@@ -274,6 +376,7 @@ export default function MessageList({
             msg={m}
             onReact={onReact}
             onReply={onReply}
+            onDelete={onDelete}
             onOpenActionMenu={openPopup}
             onActionCardClick={onActionCardClick}
           />

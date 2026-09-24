@@ -17,6 +17,7 @@ export default function ChatScreen({
   onAttachFile,
   onToggleReaction,
   onDeleteMessage,
+  onDeleteChat,
   onActionCardClick,
   onOpenSmartPrompts,
   onOpenAdminConsole,
@@ -82,6 +83,7 @@ export default function ChatScreen({
         onOpenSmartPrompts={onOpenSmartPrompts}
         onOpenAdminConsole={onOpenAdminConsole}
         onOpenAiChat={onOpenAiChat}
+        onDeleteChat={onDeleteChat}
         isAdmin={isAdmin}
       />
 

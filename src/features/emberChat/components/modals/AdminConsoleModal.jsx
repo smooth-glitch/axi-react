@@ -5,7 +5,7 @@ export default function AdminConsoleModal({ onClose, pushToast }) {
   const [activeTab, setActiveTab] = useState("users"); // "users" | "affiliates" | "setup" | "invite"
   const [adminData, setAdminData] = useState(initialAdminData);
   const [reassignTargetUser, setReassignTargetUser] = useState(null);
-  const [selectedNewHost, setSelectedNewHost] = useState("Priya Sharma");
+  const [selectedNewHost, setSelectedNewHost] = useState("Nageshwari");
 
   // Invite user form state
   const [inviteForm, setInviteForm] = useState({
@@ -197,8 +197,8 @@ export default function AdminConsoleModal({ onClose, pushToast }) {
                       value={selectedNewHost}
                       onChange={(e) => setSelectedNewHost(e.target.value)}
                     >
-                      <option value="Arjun S. (Admin Host)">Arjun S. (Chief Architect)</option>
-                      <option value="Priya Sharma (HR Host)">Priya Sharma (HR Operations)</option>
+                      <option value="Sabarish (Admin Host)">Sabarish (Enterprise Administrator)</option>
+                      <option value="Nageshwari (HR Host)">Nageshwari (HR Operations)</option>
                       <option value="Central IT Operations">Central IT Operations</option>
                       <option value="Corporate Finance Host">Corporate Finance Host</option>
                     </select>
