@@ -16,8 +16,11 @@ README covers setup and architecture; that doc covers "something's wrong,
 where do I look."
 
 Frontend devs integrating against this backend want
-[`../docs/CHAT_PROTOCOL.md`](../docs/CHAT_PROTOCOL.md) instead, not this
-file. The [root README](../README.md) has a full "start here, by role"
+[`../docs/CHAT_PROTOCOL.md`](../docs/CHAT_PROTOCOL.md) (plain chat) and
+[`../docs/SANDESH_API.md`](../docs/SANDESH_API.md) (login, org, users, hosts,
+approvals, cards, forms, admin console) instead, not this file. Running,
+configuring or debugging the Sandesh layer:
+[`docs/SANDESH.md`](docs/SANDESH.md). The [root README](../README.md) has a full "start here, by role"
 table if you landed here looking for something else (frontend setup, CI/CD,
 the deploy VM).
 
@@ -51,6 +54,10 @@ chat_arm                  ARM API client: reads (GetList/AxList) and
                            using the {token, ARMSessionId} the frontend
                            already holds after its own ARM sign-in
 chat_gif / chat_link_preview   Giphy search, link-preview fetching
+sd_*                      the Sandesh layer (org, users, hosts, approvals,
+                           host-only messaging, cards, forms, admin console)
+                           -- additive, off-by-default rules; see
+                           docs/SANDESH.md
 ```
 
 Each connected user is its own lightweight Erlang process -- one user's
@@ -127,6 +134,9 @@ erl -noshell -pa _build/default/lib/axi_chat_backend/ebin -pa _build/default/lib
 ```bash
 node test/integration_test.mjs 8080
 ```
+
+For the Sandesh layer (strict mode, scratch Redis DB) see `docs/SANDESH.md`
+"Testing" -- `node test/sandesh_test.mjs`.
 
 Drives a real WebSocket connection through the full protocol (handshake,
 DMs, groups, host directory, reactions, deletes, rate limiting) and

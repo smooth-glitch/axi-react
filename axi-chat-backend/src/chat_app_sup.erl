@@ -58,6 +58,14 @@ init([TcpPort, WebPort]) ->
                    shutdown => 5000,
                    type => worker,
                    modules => [chat_groups]},
+    %% Sandesh: fires due reminders (see sd_scheduler.erl). Needs chat_redis,
+    %% so it is listed after it.
+    SdScheduler = #{id => sd_scheduler,
+                    start => {sd_scheduler, start_link, []},
+                    restart => permanent,
+                    shutdown => 5000,
+                    type => worker,
+                    modules => [sd_scheduler]},
     UploadLimiter = #{id => chat_upload_limiter,
                        start => {chat_upload_limiter, start_link, []},
                        restart => permanent,
@@ -76,7 +84,7 @@ init([TcpPort, WebPort]) ->
     %% just unused.
     Children = case TcpPort of
         undefined ->
-            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, UploadLimiter, WebListener];
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, SdScheduler, UploadLimiter, WebListener];
         _ ->
             Listener = #{id => chat_listener,
                          start => {chat_listener, start_link, [TcpPort]},
@@ -84,6 +92,6 @@ init([TcpPort, WebPort]) ->
                          shutdown => 5000,
                          type => worker,
                          modules => [chat_listener]},
-            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, UploadLimiter, Listener, WebListener]
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, SdScheduler, UploadLimiter, Listener, WebListener]
     end,
     {ok, {SupFlags, Children}}.

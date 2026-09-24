@@ -4,6 +4,15 @@ What the frontend team builds the frontend chat UI against today. Source
 of truth is `axi-chat-backend/src/chat_web.erl` — if this doc and the code
 ever disagree, the code wins; flag it to the backend owner to fix the doc.
 
+> **Sandesh (organisation, users, hosts, approvals, login, cards, forms, admin
+> console) is documented separately in [`SANDESH_API.md`](SANDESH_API.md).**
+> It adds one WebSocket command (`/sd <action> {json}`), a small REST API
+> under `/api/sd/`, and — only when the backend runs with
+> `SANDESH_MODE=strict` — extra rules on the commands below. In the default
+> `open` mode everything in *this* document behaves exactly as written.
+> New here: refused chat commands may carry a machine-readable
+> `{"type":"error","code":"not_associated"|"not_allowed","text":…}`.
+
 **Scope note, read this first:** this documents the real-time messaging
 transport plus the host directory — connect, DM, group chat, host
 messaging, reactions, typing, uploads. The **directory itself** is real
@@ -33,12 +42,20 @@ interaction unit) doesn't exist at all yet — that's separate, future work
      runtime.
 2. The **first text frame you send must be JSON**, not a bare string:
    ```json
-   {"username": "alice", "token": "<ARM token>", "armSessionId": "<ARM session id>"}
+   {"username": "alice", "token": "<session token>"}
    ```
-   `token` and `armSessionId` are exactly what you already have after
-   your own ARM Signin (`session.token`/`session.armSessionId` in
-   `shared/axi-standalone-bridge.js`) — forward them as-is, don't
-   re-derive anything. `username` max 24 chars.
+   **Updated 24 Sep 2026 — the ARM sign-in is no longer part of this
+   handshake.** The app signs in with its own Sandesh login
+   ([`SANDESH_API.md`](SANDESH_API.md)) and `token` is the session token that
+   login returns. **`armSessionId` is now optional** (omitted or empty → the
+   backend uses `"app"` and never interprets it); a client that still forwards
+   the old ARM values (`token` = ARM token, `armSessionId` = ARM session id
+   from `shared/axi-standalone-bridge.js`) keeps working unchanged. In the
+   default `open` mode any non-empty `token` is accepted for **plain chat**; in
+   `strict` mode it must be a live Sandesh session for exactly this username. A
+   Sandesh session ends after **14 days** — an open connection is then sent
+   `{"type":"sd_event","event":"session_expired",…}` and closed.
+   `username` max 24 chars, **no spaces or control characters** (rejected at handshake — a name with a space can never be addressed by `/msg`). Usernames are **case-sensitive** (`Alice` and `alice` are different users), so pick one casing on the client and use it everywhere.
 3. Server replies:
    - Success: `{"type":"welcome","name":"alice"}`, immediately followed by
      a `history` event for the global room (see below).
@@ -46,7 +63,10 @@ interaction unit) doesn't exist at all yet — that's separate, future work
      empty/too-long username, or username already taken. Connection stays
      open, retry with a corrected payload on the same socket.
 
-**Security note — read this before assuming more than it claims.** This
+**Security note — read this before assuming more than it claims.** *(This
+paragraph describes the earlier ARM-token handshake and still applies to plain
+chat in `open` mode. In `strict` mode the backend verifies identity itself with
+sessions it issued — see `SANDESH_API.md` §1–§3.)* This
 is **not** independent cryptographic re-verification of the token.
 `ARMToken` is an HMAC-signed JWT (confirmed from the real `AXput` release
 notes' worked example), which by construction can't be verified by
@@ -85,7 +105,7 @@ consume client-side.
 | `/typing global` | Broadcast a typing indicator to the global room. |
 | `/typing dm <username>` | Broadcast a typing indicator to that DM. |
 | `/typing group <groupName>` | Broadcast a typing indicator to that group. |
-| `/read dm <username>` | Mark a DM thread as read (triggers `dm_read` to the other party). |
+| `/read dm <username>` | Mark a DM thread as read (triggers `dm_read` to the other party). For a signed-in Sandesh user it also clears that sender's *personal/priority* notifications and pushes `notifications_changed` ([`SANDESH_API.md`](SANDESH_API.md) "Notifications"). |
 | `/pubkey <base64Key>` | Publish your E2EE public key (for DM encryption support — currently only consumed by the iOS client's crypto, not yet by any web/React flow). |
 | `/getpubkey <username>` | Fetch another user's public key. |
 | `/setavatar <url>` | Set your avatar URL. Broadcasts a `profile` event to contacts. |
@@ -99,13 +119,14 @@ consume client-side.
 | `/delete global <messageId>` | Delete your own message (sender-only, enforced server-side). |
 | `/delete dm <username> <messageId>` | Same, for a DM. |
 | `/delete group <groupName> <messageId>` | Same, for a group message. |
-| `/creategroup <name>` | Create a group (you become the sole/owner member). Max 32 chars. |
+| `/creategroup <name>` | Create a group (you become the sole/owner member). Max 32 chars, **no spaces** (use e.g. `design_team`) — `/groupmsg <group> <text>` splits on the first space. |
 | `/addmember <group> <username>` | Add an online user to a group you're in. |
 | `/leavegroup <group>` | Leave a group. |
 | `/groupmsg <group> <text>` | Send a message to a group. |
 | `/replygroup <group> <messageId> <text>` | Reply within a group thread. |
 | `/groups` | List the groups you're in. Reply: `groups` event. |
 | `/quit` | Clean disconnect. |
+| Anything else starting with `/` + a letter | **`error` event** `Unknown command: /xyz` — never broadcast (a typo used to post publicly to the global room). |
 | Anything else (no leading `/`) | Broadcast as a plain message to the **global** room. |
 
 Messages are capped at 2000 chars — longer ones get an `error` event back

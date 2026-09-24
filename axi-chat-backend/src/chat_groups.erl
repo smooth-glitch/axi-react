@@ -17,7 +17,7 @@
 -behaviour(gen_server).
 
 -export([start_link/0]).
--export([create_group/2, add_member/3, leave_group/2, list_groups_for/1,
+-export([create_group/2, add_member/3, force_add/3, leave_group/2, list_groups_for/1,
          list_members/1, group_message/3, group_message/4, typing/2, react/4, delete/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -35,6 +35,13 @@ create_group(Name, Owner) ->
 %% "no accounts" simplicity).
 add_member(GroupName, Requester, NewMember) ->
     gen_server:call(?MODULE, {add_member, GroupName, Requester, NewMember}).
+
+%% Adds an already-approved member even if they're offline right now (the
+%% Sandesh approval flow -- see sd_reqs -- can complete long after the
+%% invitee last connected). Doesn't require Requester to be a member, since
+%% by the time this runs the approval, not membership, is the authority.
+force_add(GroupName, Requester, NewMember) ->
+    gen_server:call(?MODULE, {force_add, GroupName, Requester, NewMember}).
 
 leave_group(GroupName, Username) ->
     gen_server:call(?MODULE, {leave, GroupName, Username}).
@@ -94,6 +101,27 @@ handle_call({add_member, GroupName, Requester, NewMember}, _From, State = #state
                             notify_members(Members, [], {group_system, GroupName, SystemText}),
                             {reply, {ok, NewMembers}, State#state{groups = NewGroups}}
                     end
+            end
+    end;
+handle_call({force_add, GroupName, Requester, NewMember}, _From, State = #state{groups = Groups}) ->
+    case maps:find(GroupName, Groups) of
+        error ->
+            {reply, {error, not_found}, State};
+        {ok, Group = #group{members = Members}} ->
+            case lists:member(NewMember, Members) of
+                true ->
+                    {reply, {error, already_member}, State};
+                false ->
+                    NewMembers = lists:usort([NewMember | Members]),
+                    chat_store:save_group(GroupName, Group#group.owner, NewMembers),
+                    case chat_room:get_pid(NewMember) of
+                        {ok, Pid} -> Pid ! {added_to_group, GroupName, NewMembers, Requester};
+                        error -> ok
+                    end,
+                    SystemText = io_lib:format("~s added ~s to the group", [Requester, NewMember]),
+                    notify_members(Members, [], {group_system, GroupName, SystemText}),
+                    {reply, {ok, NewMembers},
+                     State#state{groups = maps:put(GroupName, Group#group{members = NewMembers}, Groups)}}
             end
     end;
 handle_call({leave, GroupName, Username}, _From, State = #state{groups = Groups}) ->

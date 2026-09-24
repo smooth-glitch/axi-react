@@ -228,6 +228,69 @@ async function main() {
     const tooLongMsg = await clientA.waitFor(m => m.type === "error" && /too long/i.test(m.text));
     ok("over-length message rejected", !!tooLongMsg);
 
+    console.log("=== Input hardening (unaddressable names, unknown commands) ===");
+    const spaced = new Client("spaced");
+    await spaced.open();
+    spaced.send({ username: `has space${suffix}`, token: "t", armSessionId: "s" });
+    const spacedResp = await spaced.waitFor(m => m.type === "error", 2000, "space-in-username rejection");
+    ok("username containing a space is rejected", /spaces/i.test(spacedResp.text), spacedResp.text);
+    spaced.close();
+
+    clientA.send(`/creategroup two words ${suffix}`);
+    const badGroup = await clientA.waitFor(m => m.type === "error" && /group name cannot contain spaces/i.test(m.text), 2000, "space-in-group-name rejection");
+    ok("group name containing a space is rejected", !!badGroup);
+
+    const marker = `/nosuchcommand${suffix}`;
+    clientA.send(`${marker} arg`);
+    const unknownCmd = await clientA.waitFor(m => m.type === "error" && m.text.includes(marker), 2000, "unknown command error");
+    ok("unknown /command returns an error naming it", /Unknown command/.test(unknownCmd.text), unknownCmd.text);
+    await new Promise(r => setTimeout(r, 300));
+    ok("unknown /command was NOT broadcast to the global room",
+        !clientB.inbox.some(m => m.type === "chat" && typeof m.text === "string" && m.text.includes(marker)));
+
+    console.log("=== Sandesh in open mode (default): additive, never required ===");
+    // clientA connected with a made-up token and chatted freely above -- proof
+    // that plain chat needs no Sandesh session. The /sd surface is there, but
+    // grants nothing without a real session (run test/sandesh_test.mjs for
+    // the full Sandesh suite against a SANDESH_MODE=strict backend).
+    clientA.send("/sd me");
+    const sdMe = await clientA.waitFor(m => m.type === "sd" && m.action === "me", 2000, "/sd me reply");
+    ok("/sd me on a plain chat connection reports authenticated:false in open mode",
+        sdMe.ok === true && sdMe.data.authenticated === false && sdMe.data.mode === "open", JSON.stringify(sdMe));
+    clientA.send('/sd admin.cfg.list {"kind":"branches","reqId":9}');
+    const sdDenied = await clientA.waitFor(m => m.type === "sd" && m.reqId === 9, 2000, "/sd admin reply");
+    ok("Sandesh admin actions refuse a connection with no Sandesh session",
+        sdDenied.ok === false && sdDenied.error.code === "unauthenticated", JSON.stringify(sdDenied));
+    clientA.send("/sd nosuchaction");
+    const sdUnknown = await clientA.waitFor(m => m.type === "sd" && m.action === "nosuchaction", 2000, "/sd unknown reply");
+    ok("unknown /sd action returns a structured unknown_action error",
+        sdUnknown.ok === false && sdUnknown.error.code === "unknown_action", JSON.stringify(sdUnknown));
+
+    console.log("=== Handshake: armSessionId is optional ===");
+    // The app has its own login now; there is no ARM session id to forward.
+    const noArm = new Client("noarm");
+    await noArm.open();
+    noArm.send({ username: `noarm${suffix}`, token: "any-token" });
+    const noArmWelcome = await noArm.waitFor(m => m.type === "welcome" || m.type === "error", 2000, "handshake without armSessionId");
+    ok("connect with just {username, token} (no armSessionId) is accepted", noArmWelcome.type === "welcome", JSON.stringify(noArmWelcome));
+    noArm.close();
+    const noToken = new Client("notoken");
+    await noToken.open();
+    noToken.send({ username: `notoken${suffix}`, armSessionId: "s" });
+    const noTokenResp = await noToken.waitFor(m => m.type === "error", 2000, "missing token rejection");
+    ok("...but a missing token is still rejected", noTokenResp.type === "error", JSON.stringify(noTokenResp));
+    noToken.close();
+
+    console.log("=== Rate limit keeps /sd replies matchable ===");
+    // A caller awaiting a reply by reqId must never hang just because the
+    // per-connection limiter (30 commands / 10s) refused its command.
+    for (let i = 0; i < 45; i++) clientB.send(`/sd me {"reqId":"rl-${i}"}`);
+    await new Promise(r => setTimeout(r, 800));
+    const limitedReplies = clientB.inbox.filter(m => m.type === "sd" && m.ok === false && m.error && m.error.code === "rate_limited");
+    ok("over-limit /sd commands get a structured rate_limited reply carrying their reqId",
+        limitedReplies.length > 0 && typeof limitedReplies[0].reqId === "string" && limitedReplies[0].reqId.startsWith("rl-"),
+        JSON.stringify(limitedReplies[0]));
+
     console.log("\n=== SUMMARY ===");
     console.log(`${passCount} passed, ${failCount} failed`);
     if (failures.length) {
