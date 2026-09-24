@@ -247,8 +247,9 @@ Sandesh spec replaced it with lite tstructs + options.
 
 ### Open decision: the backend's ARM identity
 
-The app signs in with its own Sandesh login and the ARM sign-in page is being
-removed from the app. `chat_arm` (Axpert reads/writes) needs an ARM session
+The app signs in with its own Sandesh login and the ARM sign-in page **has
+been removed from the app** (PR #10, 24 Sep 2026; it survives only as the
+on-demand `window.AxShowArmSignIn()`). `chat_arm` (Axpert reads/writes) needs an ARM session
 `{token, ARMSessionId}` that the frontend used to forward at connect time. Now
 the handshake stores the Sandesh token and `"app"` in `arm_identity`
 (`chat_web:complete_registration_checked/4`), which ARM would reject. **Nothing
