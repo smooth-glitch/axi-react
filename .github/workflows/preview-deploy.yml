@@ -103,6 +103,15 @@ jobs:
               proxy_set_header Host \$host;
               proxy_set_header X-Real-IP \$remote_addr;
           }
+          # Sandesh REST API (first-time setup, register, OTP, login, session --
+          # see docs/SANDESH_API.md). Longer prefix than the frontend block
+          # below, so nginx picks this one for /api/sd/... X-Real-IP matters:
+          # the per-visitor limits on codes/logins/registrations key off it.
+          location /preview/$SLUG/api/sd/ {
+              proxy_pass http://127.0.0.1:$PORT/api/sd/;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+          }
           location /preview/$SLUG/ {
               alias /opt/preview/$SLOT/frontend/dist/;
               try_files \$uri \$uri/ /preview/$SLUG/index.html;
@@ -126,6 +135,11 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/preview/$SLUG/")
           echo "Preview responded with HTTP $code"
           test "$code" = "200"
+          # Informational only (never fails the deploy): is the Sandesh REST
+          # route wired? 200 = yes. Anything else on a branch that predates
+          # the Sandesh backend is expected, so this must not gate previews.
+          sd=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/preview/$SLUG/api/sd/public" || true)
+          echo "Sandesh REST route /api/sd/public responded with HTTP $sd (200 expected once the branch has the Sandesh backend)"
 
       - name: Comment on the PR with the preview URL
         env:

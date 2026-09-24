@@ -64,6 +64,13 @@ process crashes on a genuine Redis outage — check for these first if
 `chat_room`/`chat_groups` are restarting unexpectedly (§3's
 `sys:get_state/1` will show a freshly-restarted, emptied state if so).
 
+**Sandesh layer:** `/sd` and `/api/sd/*` failures carry a stable
+`error.code`; unexpected ones are `internal` with the full stacktrace in the
+log (`sd_cmds … crashed` / `sd_http … crashed`), and `LOG_LEVEL=debug` adds
+one line per `/sd` call (never the arguments). There is a symptom → cause
+table, Redis inspection commands and admin-recovery steps in
+[`SANDESH.md`](SANDESH.md#debugging-cookbook).
+
 ## 3. Attaching to a live node
 
 By default this runs `-noshell` with no node name, which keeps things

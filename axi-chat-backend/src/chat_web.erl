@@ -129,6 +129,10 @@ parse_headers([Line | Rest], Acc) ->
 %% doesn't change any existing endpoint's behavior. See docs/CHAT_PROTOCOL.md.
 dispatch(Socket, "GET", "/health", _QueryParams, _Headers, _BodyStart) ->
     serve_health(Socket);
+%% Sandesh pre-login JSON API (setup, registration, OTP, login) -- see
+%% sd_http.erl. Purely additive: nothing above or below changes.
+dispatch(Socket, Method, "/api/sd/" ++ _ = Path, QueryParams, Headers, BodyStart) ->
+    sd_http:handle(Socket, Method, Path, QueryParams, Headers, BodyStart);
 dispatch(Socket, "GET", Path, _QueryParams, Headers, _BodyStart) ->
     case string:lowercase(maps:get("upgrade", Headers, "")) of
         "websocket" ->
@@ -633,29 +637,53 @@ handle_username_data(Socket, Buf) ->
             ws_username_loop(Socket, Buf)
     end.
 
+%% `armSessionId` is now OPTIONAL. The app signs in with its own Sandesh
+%% login (POST /api/sd/login) and sends that session as `token`; there is no
+%% ARM session to forward any more, so demanding one would force the
+%% frontend to invent a value. When it is absent (or empty) it defaults to
+%% "app". A client that still sends the ARM values keeps working unchanged.
 parse_connect_payload(Payload) ->
     try json:decode(Payload) of
-        #{<<"username">> := UsernameBin, <<"token">> := TokenBin, <<"armSessionId">> := ArmSessionIdBin}
-                when is_binary(UsernameBin), is_binary(TokenBin), is_binary(ArmSessionIdBin) ->
+        #{<<"username">> := UsernameBin, <<"token">> := TokenBin} = Map
+                when is_binary(UsernameBin), is_binary(TokenBin) ->
             Name = string:trim(unicode:characters_to_list(UsernameBin)),
             Token = binary_to_list(TokenBin),
-            ArmSessionId = binary_to_list(ArmSessionIdBin),
+            ArmSessionId = case maps:get(<<"armSessionId">>, Map, <<>>) of
+                               A when is_binary(A), A =/= <<>> -> binary_to_list(A);
+                               _ -> "app"
+                           end,
             validate_connect_fields(Name, Token, ArmSessionId);
         _ ->
-            {error, "Expected {\"username\":..,\"token\":..,\"armSessionId\":..}"}
+            {error, "Expected {\"username\":..,\"token\":..} (armSessionId is optional)"}
     catch
-        _:_ -> {error, "Expected {\"username\":..,\"token\":..,\"armSessionId\":..}"}
+        _:_ -> {error, "Expected {\"username\":..,\"token\":..} (armSessionId is optional)"}
     end.
 
 validate_connect_fields("", _Token, _ArmSessionId) ->
     {error, "Username cannot be empty"};
 validate_connect_fields(Name, _Token, _ArmSessionId) when length(Name) > ?MAX_USERNAME_LEN ->
     {error, io_lib:format("Username too long (max ~p chars)", [?MAX_USERNAME_LEN])};
-validate_connect_fields(_Name, "", _ArmSessionId) ->
-    {error, "Missing ARM token -- sign in before connecting"};
-validate_connect_fields(_Name, _Token, "") ->
-    {error, "Missing ARM session id -- sign in before connecting"};
 validate_connect_fields(Name, Token, ArmSessionId) ->
+    case has_whitespace_or_control(Name) of
+        true -> {error, "Username cannot contain spaces or control characters"};
+        false -> validate_connect_secrets(Name, Token, ArmSessionId)
+    end.
+
+%% A username (or group name) with a space in it can never be addressed:
+%% "/msg a b hi" splits into user "a" + text "b hi", and "/groupmsg" splits
+%% the same way. Reject at the door instead of creating an unreachable name.
+has_whitespace_or_control(Str) ->
+    lists:any(fun(C) ->
+        C =< 32 orelse C =:= 127 orelse (C >= 16#80 andalso C =< 16#A0)
+            orelse (C >= 16#2000 andalso C =< 16#200F)
+            orelse (C >= 16#2028 andalso C =< 16#202F) orelse C =:= 16#3000
+    end, Str).
+
+validate_connect_secrets(_Name, "", _ArmSessionId) ->
+    {error, "Missing ARM token -- sign in before connecting"};
+validate_connect_secrets(_Name, _Token, "") ->
+    {error, "Missing ARM session id -- sign in before connecting"};
+validate_connect_secrets(Name, Token, ArmSessionId) ->
     {ok, Name, #{token => Token, arm_session_id => ArmSessionId, username => Name}}.
 
 %% Load global history *before* registering: this user isn't in
@@ -663,6 +691,26 @@ validate_connect_fields(Name, Token, ArmSessionId) ->
 %% here on can already be both in this snapshot and in a live push racing
 %% it in -- closes off a rare duplicate-line-on-login window.
 complete_registration(Socket, Name, Identity, Rest) ->
+    %% Sandesh: does this connection carry a real Sandesh session? In
+    %% SANDESH_MODE=strict it must; in the default open mode a plain chat
+    %% connection is still welcome, it just gets no Sandesh powers.
+    %% Cleared first so a session from an earlier, failed attempt on this
+    %% same socket (e.g. "username taken") can't carry over to a retry
+    %% under a different username.
+    erase(sd_session),
+    case sd_policy:handshake(Name, maps:get(token, Identity)) of
+        {error, Why} ->
+            ws_send_json(Socket, "error", Why),
+            handle_username_data(Socket, Rest);
+        SdSession ->
+            case SdSession of
+                {ok, Session} -> put(sd_session, Session);
+                legacy -> ok
+            end,
+            complete_registration_checked(Socket, Name, Identity, Rest)
+    end.
+
+complete_registration_checked(Socket, Name, Identity, Rest) ->
     GlobalHistory = chat_store:load_history("global"),
     case chat_room:register_user(Name, self()) of
         ok ->
@@ -694,6 +742,13 @@ ws_loop(Socket, Name, Buf) ->
             chat_room:unregister_user(Name);
         {tcp_error, Socket, _Reason} ->
             chat_room:unregister_user(Name);
+        %% Sandesh live pushes (approval requests, new cards) and the forced
+        %% disconnect used when an administrator deactivates an account.
+        {sd_push, JsonBin} ->
+            gen_tcp:send(Socket, ws_encode(1, JsonBin)),
+            ws_loop(Socket, Name, Buf);
+        sd_disconnect ->
+            sd_end_connection(Socket, Name, "disconnected", "account_deactivated");
         {chat_message, Id, Ts, From, Text, ReplyTo} ->
             ws_send_chat(Socket, "chat", Id, Ts, From, Text, ReplyTo),
             ws_loop(Socket, Name, Buf);
@@ -812,6 +867,15 @@ ws_loop(Socket, Name, Buf) ->
             ws_loop(Socket, Name, Buf)
     end.
 
+%% Tells the client why (an `sd_event` its UI can act on -- e.g. show the
+%% sign-in screen), then ends this connection cleanly.
+sd_end_connection(Socket, Name, Event, Reason) ->
+    ws_send(Socket, json_obj2([{"type", {str, "sd_event"}}, {"event", {str, Event}},
+                               {"reason", {str, Reason}}])),
+    chat_room:unregister_user(Name),
+    gen_tcp:send(Socket, ws_encode(8, <<>>)),
+    gen_tcp:close(Socket).
+
 %% See handle_username_data/2 for why this recurses on Rest rather than
 %% going back through ws_loop's blocking receive.
 handle_ws_data(Socket, Name, Buf) ->
@@ -823,13 +887,28 @@ handle_ws_data(Socket, Name, Buf) ->
                     gen_tcp:send(Socket, ws_encode(8, <<>>)),
                     gen_tcp:close(Socket);
                 Line ->
-                    case check_rate_limit() of
-                        ok -> handle_line(Socket, Name, Line);
-                        limited ->
-                            ?LOG_WARNING("~s hit the rate limit", [Name]),
-                            ws_send_json(Socket, "error", "Too many commands -- slow down")
-                    end,
-                    handle_ws_data(Socket, Name, Rest)
+                    %% Sandesh: a connection opened with a Sandesh session ends
+                    %% when that session does (the two-week login). Checked at
+                    %% most every 30 s per connection -- see sd_policy.
+                    case sd_policy:session_alive() of
+                        expired ->
+                            sd_end_connection(Socket, Name, "session_expired", "two_week_login");
+                        ok ->
+                            case check_rate_limit() of
+                                ok -> handle_line(Socket, Name, Line);
+                                limited ->
+                                    ?LOG_WARNING("~s hit the rate limit", [Name]),
+                                    case Line of
+                                        %% /sd callers wait on a reply keyed by reqId; answer in
+                                        %% that envelope so they don't hang (see sd_cmds).
+                                        "/sd" ++ _ ->
+                                            gen_tcp:send(Socket, ws_encode(1, sd_cmds:rate_limited(Line)));
+                                        _ ->
+                                            ws_send_json(Socket, "error", "Too many commands -- slow down")
+                                    end
+                            end,
+                            handle_ws_data(Socket, Name, Rest)
+                    end
             end;
         {ok, 8, _Payload, _Rest} ->
             chat_room:unregister_user(Name),
@@ -882,11 +961,17 @@ handle_line(Socket, Name, "/msg " ++ Rest) ->
             ws_send_json(Socket, "error",
                 io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
         [To, Text] when Text =/= "" ->
-            case chat_room:send_private(Name, To, Text) of
-                {Status, Id, Ts} when Status =:= ok; Status =:= queued ->
-                    ws_send(Socket, dm_ack_json(To, Status, Id, Ts));
-                {error, not_found} ->
-                    ws_send_json(Socket, "error", "No such user: " ++ To)
+            case sd_policy:can_message(Name, To) of
+                {false, Why} ->
+                    ws_send_error(Socket, "not_associated", Why);
+                true ->
+                    case chat_room:send_private(Name, To, Text) of
+                        {Status, Id, Ts} when Status =:= ok; Status =:= queued ->
+                            ws_send(Socket, dm_ack_json(To, Status, Id, Ts)),
+                            sd_policy:after_dm(Name, To, Id, Ts, Text);
+                        {error, not_found} ->
+                            ws_send_json(Socket, "error", "No such user: " ++ To)
+                    end
             end;
         _ ->
             ws_send_json(Socket, "error", "Usage: /msg <username> <message>")
@@ -898,7 +983,11 @@ handle_line(Socket, Name, "/reply " ++ Rest) ->
                 io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
         [IdStr, Text] when Text =/= "" ->
             case string:to_integer(IdStr) of
-                {ReplyTo, []} -> chat_room:broadcast(Name, Text, ReplyTo);
+                {ReplyTo, []} ->
+                    case sd_policy:can_broadcast(Name) of
+                        true -> chat_room:broadcast(Name, Text, ReplyTo);
+                        {false, Why} -> ws_send_error(Socket, "not_allowed", Why)
+                    end;
                 _ -> ws_send_json(Socket, "error", "Usage: /reply <messageId> <message>")
             end;
         _ ->
@@ -914,11 +1003,17 @@ handle_line(Socket, Name, "/replydm " ++ Rest) ->
                 [IdStr, Text] when Text =/= "" ->
                     case string:to_integer(IdStr) of
                         {ReplyTo, []} ->
-                            case chat_room:send_private(Name, To, Text, ReplyTo) of
-                                {Status, Id, Ts} when Status =:= ok; Status =:= queued ->
-                                    ws_send(Socket, dm_ack_json(To, Status, Id, Ts));
-                                {error, not_found} ->
-                                    ws_send_json(Socket, "error", "No such user: " ++ To)
+                            case sd_policy:can_message(Name, To) of
+                                {false, Why} ->
+                                    ws_send_error(Socket, "not_associated", Why);
+                                true ->
+                                    case chat_room:send_private(Name, To, Text, ReplyTo) of
+                                        {Status, Id, Ts} when Status =:= ok; Status =:= queued ->
+                                            ws_send(Socket, dm_ack_json(To, Status, Id, Ts)),
+                                            sd_policy:after_dm(Name, To, Id, Ts, Text);
+                                        {error, not_found} ->
+                                            ws_send_json(Socket, "error", "No such user: " ++ To)
+                                    end
                             end;
                         _ -> ws_send_json(Socket, "error", "Usage: /replydm <username> <messageId> <message>")
                     end;
@@ -963,7 +1058,9 @@ handle_line(_Socket, Name, "/typing " ++ Rest) ->
     end;
 handle_line(_Socket, Name, "/read " ++ Rest) ->
     case string:split(Rest, " ") of
-        ["dm", Other] -> chat_room:mark_read(Name, Other);
+        ["dm", Other] ->
+            chat_room:mark_read(Name, Other),
+            sd_policy:after_read(Name, Other);
         _ -> ok
     end;
 %% ---- DM end-to-end encryption: public key exchange ----
@@ -1034,20 +1131,43 @@ handle_line(Socket, Name, "/creategroup " ++ Rest) ->
             ws_send_json(Socket, "error",
                 io_lib:format("Group name too long (max ~p chars)", [?MAX_GROUP_NAME_LEN]));
         GroupName ->
-            case chat_groups:create_group(GroupName, Name) of
-                {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
-                {error, exists} -> ws_send_json(Socket, "error", "A group with that name already exists")
+            case has_whitespace_or_control(GroupName) of
+                true ->
+                    ws_send_json(Socket, "error",
+                        "Group name cannot contain spaces (use e.g. design_team)");
+                false ->
+                    case sd_policy:can_create_group(Name) of
+                        {false, Why} ->
+                            ws_send_error(Socket, "not_allowed", Why);
+                        true ->
+                            case chat_groups:create_group(GroupName, Name) of
+                                {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
+                                {error, exists} -> ws_send_json(Socket, "error", "A group with that name already exists")
+                            end
+                    end
             end
     end;
 handle_line(Socket, Name, "/addmember " ++ Rest) ->
     case string:split(Rest, " ") of
         [GroupName, NewMember] when NewMember =/= "" ->
-            case chat_groups:add_member(GroupName, Name, NewMember) of
-                {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
-                {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
-                {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group");
-                {error, already_member} -> ws_send_json(Socket, "error", NewMember ++ " is already in the group");
-                {error, user_offline} -> ws_send_json(Socket, "error", NewMember ++ " isn't online right now")
+            %% Sandesh: in strict mode a group invite for someone outside your
+            %% own users waits for THEIR host's approval (see sd_policy).
+            case sd_policy:group_add(GroupName, Name, NewMember) of
+                {deny, Why} ->
+                    ws_send_error(Socket, "not_allowed", Why);
+                {pending, View} ->
+                    ws_send(Socket, binary_to_list(sd_util:jenc(#{
+                        <<"type">> => <<"group_invite_pending">>,
+                        <<"group">> => sd_util:b(GroupName), <<"user">> => sd_util:b(NewMember),
+                        <<"request">> => View})));
+                allow ->
+                    case chat_groups:add_member(GroupName, Name, NewMember) of
+                        {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
+                        {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
+                        {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group");
+                        {error, already_member} -> ws_send_json(Socket, "error", NewMember ++ " is already in the group");
+                        {error, user_offline} -> ws_send_json(Socket, "error", NewMember ++ " isn't online right now")
+                    end
             end;
         _ ->
             ws_send_json(Socket, "error", "Usage: /addmember <group> <username>")
@@ -1069,7 +1189,8 @@ handle_line(Socket, Name, "/groupmsg " ++ Rest) ->
                 {ok, Id, Ts} ->
                     ws_send(Socket, json_obj2([
                         {"type", {str, "group_msg_ack"}}, {"group", {str, GroupName}},
-                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
+                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}])),
+                    sd_policy:after_group(Name, GroupName, Id, Ts, Text);
                 {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
                 {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group")
             end;
@@ -1090,7 +1211,8 @@ handle_line(Socket, Name, "/replygroup " ++ Rest) ->
                                 {ok, Id, Ts} ->
                                     ws_send(Socket, json_obj2([
                                         {"type", {str, "group_msg_ack"}}, {"group", {str, GroupName}},
-                                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
+                                        {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}])),
+                                    sd_policy:after_group(Name, GroupName, Id, Ts, Text);
                                 {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
                                 {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group")
                             end;
@@ -1104,6 +1226,14 @@ handle_line(Socket, Name, "/replygroup " ++ Rest) ->
     end;
 handle_line(Socket, Name, "/groups") ->
     ws_send_groups(Socket, chat_groups:list_groups_for(Name));
+%% Sandesh: "/sd <action> [json]" -- everything from the Sandesh spec that
+%% isn't plain chat (org, users, hosts, approvals, cards, forms, admin
+%% console). One command, one reply envelope; see sd_cmds.erl and
+%% docs/SANDESH_API.md. A bare "/sd" is shorthand for "/sd me".
+handle_line(Socket, Name, "/sd " ++ Rest) ->
+    gen_tcp:send(Socket, ws_encode(1, sd_cmds:handle(Name, Rest)));
+handle_line(Socket, Name, "/sd") ->
+    gen_tcp:send(Socket, ws_encode(1, sd_cmds:handle(Name, "me")));
 handle_line(Socket, _Name, Text) when length(Text) > ?MAX_MESSAGE_LEN ->
     ws_send_json(Socket, "error",
         io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
@@ -1124,8 +1254,20 @@ handle_line(_Socket, _Name, Text) when
     Text =:= "/addmember"; Text =:= "/leavegroup"; Text =:= "/groupmsg";
     Text =:= "/replygroup"; Text =:= "/hostmsg" ->
     ok;
-handle_line(_Socket, Name, Text) ->
-    chat_room:broadcast(Name, Text).
+%% Any other "/word" is a typo or an unsupported command, not chat text.
+%% Without this it was broadcast to the whole global room as a message, so a
+%% frontend typo (e.g. "/convesations") posted publicly and looked like a
+%% working send. Answer with an error naming the command instead. A "/" not
+%% followed by a letter (e.g. a file path, "/ 5") is still ordinary chat text.
+handle_line(Socket, _Name, [$/, C | _] = Text) when (C >= $a andalso C =< $z); (C >= $A andalso C =< $Z) ->
+    [Cmd | _] = string:split(Text, " "),
+    ws_send_json(Socket, "error",
+        "Unknown command: " ++ Cmd ++ " (see docs/CHAT_PROTOCOL.md for the command list)");
+handle_line(Socket, Name, Text) ->
+    case sd_policy:can_broadcast(Name) of
+        true -> chat_room:broadcast(Name, Text);
+        {false, Why} -> ws_send_error(Socket, "not_allowed", Why)
+    end.
 
 %% "delivered" = recipient was online and got it live; "queued" = recipient
 %% is offline, stored for when they reconnect (see chat_room's private call).
@@ -1208,6 +1350,12 @@ ws_send(Socket, Json) ->
 
 ws_send_json(Socket, Type, Text) ->
     ws_send(Socket, json_obj([{"type", Type}, {"text", lists:flatten(Text)}])).
+
+%% Same shape as an ordinary "error" event plus a machine-readable `code`,
+%% so a client can branch on it instead of matching the text. Used by the
+%% newer (Sandesh) checks; older errors keep their text-only shape.
+ws_send_error(Socket, Code, Text) ->
+    ws_send(Socket, json_obj([{"type", "error"}, {"code", Code}, {"text", lists:flatten(Text)}])).
 
 ws_send_chat(Socket, Type, Id, Ts, From, Text, ReplyTo) ->
     ws_send(Socket, json_obj2([
@@ -1338,6 +1486,7 @@ with_int(Str, Fun) ->
 %% dictionary for anything that could collide with this key.
 check_rate_limit() ->
     Now = erlang:monotonic_time(millisecond),
+    Max = rate_limit_max(),
     case get(rate_limit) of
         undefined ->
             put(rate_limit, {1, Now}),
@@ -1345,11 +1494,24 @@ check_rate_limit() ->
         {_Count, WindowStart} when Now - WindowStart > ?RATE_LIMIT_WINDOW_MS ->
             put(rate_limit, {1, Now}),
             ok;
-        {Count, WindowStart} when Count < ?RATE_LIMIT_MAX_COMMANDS ->
+        {Count, WindowStart} when Count < Max ->
             put(rate_limit, {Count + 1, WindowStart}),
             ok;
         {_Count, _WindowStart} ->
             limited
+    end.
+
+%% Commands per window. Defaults to ?RATE_LIMIT_MAX_COMMANDS (30 per 10s);
+%% CHAT_RATE_LIMIT_MAX raises/lowers it for a deployment (an admin console
+%% that loads many lists at once, or automated tests) without a rebuild.
+rate_limit_max() ->
+    case os:getenv("CHAT_RATE_LIMIT_MAX") of
+        false -> ?RATE_LIMIT_MAX_COMMANDS;
+        S ->
+            case string:to_integer(S) of
+                {N, []} when N > 0 -> N;
+                _ -> ?RATE_LIMIT_MAX_COMMANDS
+            end
     end.
 
 json_obj(Pairs) ->
