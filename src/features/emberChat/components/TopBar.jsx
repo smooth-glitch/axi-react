@@ -27,7 +27,7 @@ export default function TopBar({
             {chat.isGroup && <span className="group-pill">GROUP</span>}
           </div>
           <span className="chat-subtitle">
-            {chat.designation || (chat.isGroup ? "3 enterprise members" : "Active Now")}
+            {chat.designation || (chat.isGroup ? (chat.members?.length ? `${chat.members.length} members` : (chat.id === "room-general" ? "Enterprise Global Channel" : "Group Channel")) : "Active Now")}
           </span>
         </div>
       </div>

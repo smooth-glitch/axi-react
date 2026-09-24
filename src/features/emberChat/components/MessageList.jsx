@@ -6,8 +6,27 @@ import MessageActionMenu from "./MessageActionMenu.jsx";
 const LONG_PRESS_MS = 450;
 
 function TicksIcon({ state }) {
+  if (state === "sending") {
+    return (
+      <span className="sandesh-ticks sending" title="Sending..." style={{ opacity: 0.6, display: "inline-flex", verticalAlign: "middle" }}>
+        <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
+          <circle cx="6" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 2" />
+        </svg>
+      </span>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <span className="sandesh-ticks failed" title="Failed to deliver" style={{ color: "#ef4444", display: "inline-flex", verticalAlign: "middle" }}>
+        <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
+          <circle cx="6" cy="5.5" r="4.5" stroke="#ef4444" strokeWidth="1.2" />
+          <path d="M6 3.2v2.6M6 7.6v.4" stroke="#ef4444" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
   return (
-    <span className={`sandesh-ticks ${state === "read" ? "read" : "sent"}`}>
+    <span className={`sandesh-ticks ${state === "read" ? "read" : "sent"}`} title={state === "read" ? "Read" : "Sent"}>
       {state === "read" ? (
         <svg width="15" height="11" viewBox="0 0 16 11" fill="none">
           <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -153,7 +172,7 @@ function MessageRow({ msg, onReact, onReply, onOpenActionMenu, onActionCardClick
         {/* Timestamp and Ticks */}
         <div className="sandesh-bubble-footer">
           <span className="msg-time">{msg.time || "now"}</span>
-          {isOut && <TicksIcon state={msg.ticks || "read"} />}
+          {isOut && <TicksIcon state={msg.ticks || msg.status || "sent"} />}
         </div>
 
         {/* Reaction Badges */}
@@ -204,6 +223,7 @@ function MessageRow({ msg, onReact, onReply, onOpenActionMenu, onActionCardClick
 
 export default function MessageList({
   messages,
+  typingUser,
   onReact,
   onReply,
   onDelete,
@@ -258,6 +278,16 @@ export default function MessageList({
             onActionCardClick={onActionCardClick}
           />
         ))}
+
+        {typingUser && (
+          <div className="sandesh-msg-row in sandesh-typing-row" style={{ marginTop: "4px" }}>
+            <div className="sandesh-bubble-3d bubble-in sandesh-typing-bubble-3d" style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "8px 14px", fontStyle: "italic", opacity: 0.9 }}>
+              <span className="typing-text" style={{ fontSize: "13px", color: "var(--sandesh-text-muted)" }}>
+                {typingUser} is typing...
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {popup && popup.kind === "react" && (

@@ -21,6 +21,9 @@ export default function ChatScreen({
   onOpenSmartPrompts,
   onOpenAdminConsole,
   onOpenAiChat,
+  typingUser,
+  onTyping,
+  disabled = false,
   pushToast,
 }) {
   const [activeView, setActiveView] = useState("messages"); // "messages" | "episodes"
@@ -95,10 +98,35 @@ export default function ChatScreen({
         />
       ) : (
         <div className="sandesh-chat-body">
+          {disabled && (
+            <div
+              className="sandesh-disconnected-banner"
+              style={{
+                background: "rgba(239, 68, 68, 0.12)",
+                border: "1px solid rgba(239, 68, 68, 0.35)",
+                backdropFilter: "blur(12px)",
+                color: "#b91c1c",
+                padding: "8px 16px",
+                margin: "10px 16px 0 16px",
+                borderRadius: "12px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "13px",
+                fontWeight: "500",
+                zIndex: 10,
+              }}
+            >
+              <span className="material-icons" style={{ fontSize: "18px" }}>wifi_off</span>
+              <span>Disconnected from Sandesh backend. Reconnecting in the background...</span>
+            </div>
+          )}
+
           <MessageList
             listRef={listRef}
             onScroll={handleScroll}
             messages={messages}
+            typingUser={typingUser}
             onReply={(msg) => setReplyingTo({ from: msg.from ?? "You", text: msg.text || msg.title || "Message" })}
             onReact={onToggleReaction}
             onDelete={onDeleteMessage}
@@ -124,6 +152,8 @@ export default function ChatScreen({
             onSend={handleSend}
             onAttachFile={onAttachFile}
             onOpenSmartPromptModal={onOpenSmartPrompts}
+            onTyping={onTyping}
+            disabled={disabled}
             pushToast={pushToast}
             userCategory={userCategory}
           />

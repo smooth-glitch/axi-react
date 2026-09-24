@@ -14,6 +14,8 @@ export default function Composer({
   onSend,
   onAttachFile,
   onOpenSmartPromptModal,
+  onTyping,
+  disabled = false,
   pushToast,
   userCategory = "employee",
 }) {
@@ -23,6 +25,7 @@ export default function Composer({
   const [elapsed, setElapsed] = useState(0);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const lastTypingTime = useRef(0);
 
   const hasText = text.trim().length > 0;
   const activePrompts = smartPromptsByCategory[userCategory] || smartPromptsByCategory.employee;
@@ -38,7 +41,7 @@ export default function Composer({
   }, [replyingTo]);
 
   const handleSend = () => {
-    if (!hasText) return;
+    if (!hasText || disabled) return;
     onSend?.(text.trim());
     setText("");
     if (textareaRef.current) {
@@ -53,6 +56,18 @@ export default function Composer({
     }
   };
 
+  const handleInputChange = (e) => {
+    setText(e.target.value);
+    e.target.style.height = "auto";
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+
+    const now = Date.now();
+    if (now - lastTypingTime.current > 2500) {
+      lastTypingTime.current = now;
+      onTyping?.();
+    }
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -64,7 +79,7 @@ export default function Composer({
             fileName: file.name,
             imageUrl: loadEv.target.result,
           });
-          pushToast(`Photo "${file.name}" sent`);
+          pushToast?.(`Photo "${file.name}" sent`);
         };
         reader.readAsDataURL(file);
       } else {
@@ -73,14 +88,14 @@ export default function Composer({
           fileName: file.name,
           fileSize: `${(file.size / 1024).toFixed(1)} KB`,
         });
-        pushToast(`Document "${file.name}" shared`);
+        pushToast?.(`Document "${file.name}" shared`);
       }
     }
     e.target.value = "";
   };
 
   return (
-    <div className="sandesh-composer-wrapper">
+    <div className={`sandesh-composer-wrapper ${disabled ? "composer-disabled" : ""}`}>
       {/* 1. Smart Prompts Quick Bar */}
       <div className="sandesh-smart-prompts-bar">
         <span className="prompts-label">
@@ -92,8 +107,9 @@ export default function Composer({
               key={p.id}
               type="button"
               className="sandesh-prompt-chip-3d"
-              onClick={() => onOpenSmartPromptModal?.(p)}
+              onClick={() => !disabled && onOpenSmartPromptModal?.(p)}
               title={p.desc}
+              disabled={disabled}
             >
               <span className="material-icons prompt-chip-icon">{p.icon}</span>
               <span>{p.label}</span>
@@ -130,13 +146,15 @@ export default function Composer({
           onChange={handleFileChange}
           accept="image/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
           style={{ display: "none" }}
+          disabled={disabled}
         />
 
         <button
           type="button"
           className="composer-action-btn-3d"
           title="Attach Document or Image"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => !disabled && fileInputRef.current?.click()}
+          disabled={disabled}
         >
           <span className="material-icons">attach_file</span>
         </button>
@@ -169,7 +187,7 @@ export default function Composer({
                 setRecording(false);
                 onSend?.(`🎙️ Voice Message (${formatElapsed(elapsed)})`);
                 setElapsed(0);
-                pushToast("Voice note sent");
+                pushToast?.("Voice note sent");
               }}
             >
               <span className="material-icons">send</span>
@@ -182,21 +200,18 @@ export default function Composer({
                 ref={textareaRef}
                 className="sandesh-msg-input"
                 rows={1}
-                placeholder="Type a message or press '/' for commands..."
+                placeholder={disabled ? "Connecting to Sandesh server..." : "Type a message or press '/' for commands..."}
                 value={text}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-                }}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                maxLength={2000}
+                disabled={disabled}
               />
               <button
                 type="button"
                 className="composer-emoji-btn"
                 title="Add Emoji / Reactions"
-                onClick={() => setContentPanelOpen((v) => !v)}
+                onClick={() => !disabled && setContentPanelOpen((v) => !v)}
+                disabled={disabled}
               >
                 😀
               </button>
@@ -208,6 +223,7 @@ export default function Composer({
                 className="sandesh-send-btn-3d"
                 title="Send Message"
                 onClick={handleSend}
+                disabled={disabled}
               >
                 <span className="material-icons">send</span>
               </button>
@@ -217,9 +233,11 @@ export default function Composer({
                 className="composer-mic-btn-3d"
                 title="Record Voice Note"
                 onClick={() => {
+                  if (disabled) return;
                   setElapsed(0);
                   setRecording(true);
                 }}
+                disabled={disabled}
               >
                 <span className="material-icons">mic</span>
               </button>
@@ -227,7 +245,7 @@ export default function Composer({
           </>
         )}
 
-        {contentPanelOpen && (
+        {contentPanelOpen && !disabled && (
           <ContentPanel
             onPickEmoji={(emoji) => {
               setText((t) => t + emoji);

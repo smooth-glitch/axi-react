@@ -4,8 +4,8 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [activeTab, setActiveTab] = useState("signin"); // "signin" | "first_admin" | "self_reg"
 
   // Sign In State
-  const [signInIdentifier, setSignInIdentifier] = useState("arjun");
-  const [signInPassword, setSignInPassword] = useState("Sandesh123");
+  const [signInIdentifier, setSignInIdentifier] = useState("");
+  const [signInPassword, setSignInPassword] = useState("");
   const [signInWithOtp, setSignInWithOtp] = useState(false);
   const [signInOtp, setSignInOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -44,20 +44,21 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
     setTimeout(() => {
       setLoading(false);
-      const cleanUsername = signInIdentifier.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "user_" + Math.floor(Math.random() * 8999 + 1000);
+      const raw = signInIdentifier.trim();
+      const cleanUsername = raw.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "user_" + Math.floor(Math.random() * 8999 + 1000);
       onLoginSuccess({
-        name: signInIdentifier === "arjun" ? "Arjun S." : signInIdentifier,
+        name: raw,
         username: cleanUsername,
-        role: signInIdentifier === "arjun" ? "Enterprise Administrator" : "Enterprise Associate",
+        role: cleanUsername === "arjun" ? "Enterprise Administrator" : "Enterprise Associate",
         org: "Agile Labs Enterprise",
         category: "employee",
         branch: "Bangalore HQ",
         department: "Product Architecture",
-        designation: "Chief Enterprise Architect",
+        designation: cleanUsername === "arjun" ? "Chief Enterprise Architect" : "Enterprise Associate",
         status: "Available",
-        initials: (signInIdentifier[0] + (signInIdentifier[1] || "")).toUpperCase(),
+        initials: (raw.slice(0, 2)).toUpperCase(),
         color: "#ff7a59",
-        isAdmin: signInIdentifier === "arjun",
+        isAdmin: cleanUsername === "arjun",
         token: "sandesh-jwt-" + Date.now(),
         armSessionId: "arm-sess-" + Date.now(),
       });
@@ -201,7 +202,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                   <span className="material-icons input-icon">person</span>
                   <input
                     type="text"
-                    placeholder="e.g. arjun, priya@agilelabs.com"
+                    placeholder="e.g. alice, bob, arjun"
                     value={signInIdentifier}
                     onChange={(e) => setSignInIdentifier(e.target.value)}
                     required

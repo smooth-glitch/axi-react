@@ -97,7 +97,7 @@ export default function Sidebar({
           <span className="connection-text">
             {socketStatus === "connected"
               ? "Live Sync (Erlang 8080)"
-              : "Active Local Fallback"}
+              : "Disconnected (Reconnecting...)"}
           </span>
           {socketStatus !== "connected" && (
             <button
