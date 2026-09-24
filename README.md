@@ -49,9 +49,18 @@ npm install
 npm run dev
 ```
 
-Then open the printed local URL. You'll be prompted to sign in against the
-real ARM REST API on load (see `shared/axi-standalone-bridge.js`, copied
-into `public/` at dev/build time — see [Shared files](#shared-files)).
+Then open the printed local URL. You land on the **Sandesh sign-in screen** —
+Sandesh's own login is the app's only front door. (The old ARM sign-in page is
+**no longer shown at start-up**; the ARM sign-in code is still in
+`shared/axi-standalone-bridge.js` — copied into `public/` at dev/build time,
+see [Shared files](#shared-files) — and can be opened on demand with
+`window.AxShowArmSignIn()` for anything that needs an ARM session, such as
+Axpert data. Without one, ARM-backed features like the AI provider key from
+Axpert and Data Bin have nothing to load; nothing freezes.)
+
+Chat needs the Erlang backend on port 8080 in dev (`axi-chat-backend/README.md`).
+**Rebuild it after pulling** (`build.ps1`, then `run.ps1`): a stale backend
+build shows "Disconnected from Sandesh backend" in the chat.
 
 ### Building for deployment
 

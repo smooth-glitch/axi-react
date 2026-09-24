@@ -53,8 +53,11 @@ name).
 **There is no ARM sign-in in this flow.** The app signs in with its own
 Sandesh login (step 1) and the token from it *is* the identity.
 `armSessionId` used to be a required handshake field; it is now **optional**
-(defaults to `"app"`, not interpreted), so drop the ARM sign-in page and stop
-sending it. A client that still sends the ARM values keeps working.
+(defaults to `"app"`, not interpreted), so stop sending it. **The ARM sign-in
+page has already been removed from the app** (PR #10, 24 Sep 2026): Sandesh
+sign-in is the only front door, and the ARM sign-in is kept only as an
+on-demand function (`window.AxShowArmSignIn()`). A client that still sends the
+ARM values keeps working.
 
 ### The two-week login (sessions)
 
