@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Avatar from "../Avatar.jsx";
 
 export default function MembersModal({
@@ -13,73 +13,184 @@ export default function MembersModal({
     addableUsers[0]?.username || addableUsers[0]?.id || ""
   );
 
+  useEffect(() => {
+    if (addableUsers.length > 0 && !selectedUser) {
+      setSelectedUser(addableUsers[0].username || addableUsers[0].id || "");
+    }
+  }, [addableUsers, selectedUser]);
+
   const handleAdd = () => {
     if (!selectedUser) return;
     onAdd?.(selectedUser);
   };
 
   return (
-    <div id="ember-members-modal" className="modal">
-      <div className="modal-header" id="ember-members-modal-title">
-        {title} ({members.length} members)
-      </div>
-      <div className="modal-body">
-        <div className="section-label" style={{ paddingLeft: 0 }}>
-          Current Group Members
+    <div id="ember-members-modal" className="sandesh-modal-card-3d" style={{ maxWidth: "500px", width: "100%" }}>
+      {/* 1. Modal Header */}
+      <div className="sandesh-modal-header">
+        <div className="modal-title-with-icon">
+          <div className="new-group-icon-badge" style={{ background: "rgba(16, 185, 129, 0.15)", borderColor: "rgba(16, 185, 129, 0.3)", color: "#059669" }}>
+            <span className="material-icons">groups</span>
+          </div>
+          <div>
+            <h3>{title}</h3>
+            <span className="modal-subtitle">{members.length} team members in channel</span>
+          </div>
         </div>
-        <ul id="ember-members-list" style={{ maxHeight: "160px", overflowY: "auto", margin: "8px 0 16px 0", padding: 0 }}>
-          {members.map((m) => {
-            const name = typeof m === "string" ? m : m.name || m.username || "Member";
-            const initials = typeof m === "string" ? m.slice(0, 2).toUpperCase() : m.initials || name.slice(0, 2).toUpperCase();
-            const color = typeof m === "string" ? "#34c759" : m.color || "#34c759";
-            return (
-              <li className="member-row" key={typeof m === "string" ? m : m.id || name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "6px 0" }}>
-                <Avatar initials={initials} color={color} />
-                <span className="name" style={{ fontWeight: 500 }}>{name}</span>
-              </li>
-            );
-          })}
-        </ul>
-
-        {addableUsers.length > 0 ? (
-          <div className="add-member-row" style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "12px" }}>
-            <select
-              id="ember-add-member-select"
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
-              style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--sandesh-glass-border)", background: "rgba(255,255,255,0.8)" }}
-            >
-              <option value="" disabled>Select an online associate to add</option>
-              {addableUsers.map((u) => {
-                const uId = u.username || u.id;
-                return (
-                  <option key={uId} value={uId}>
-                    {u.name} (@{uId})
-                  </option>
-                );
-              })}
-            </select>
-            <button
-              type="button"
-              className="btn btn-primary"
-              id="ember-add-member-btn"
-              onClick={handleAdd}
-              disabled={!selectedUser}
-            >
-              Add
-            </button>
-          </div>
-        ) : (
-          <div style={{ fontSize: "13px", color: "var(--sandesh-text-muted)", marginTop: "8px" }}>
-            No other online associates available to add.
-          </div>
-        )}
-      </div>
-      <div className="modal-footer" style={{ display: "flex", justifyContent: "space-between", marginTop: "16px" }}>
-        <button type="button" className="btn btn-danger" id="ember-leave-group-btn" onClick={onLeave}>
-          Leave group
+        <button type="button" className="close-btn-3d" onClick={onClose} aria-label="Close modal">
+          ×
         </button>
-        <button type="button" className="btn btn-secondary" id="ember-members-close-btn" onClick={onClose}>
+      </div>
+
+      {/* 2. Modal Body */}
+      <div className="sandesh-modal-body" style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+        {/* Current Members Section */}
+        <div>
+          <div className="new-group-section-header">
+            <div className="section-title-wrap">
+              <span className="section-title">Current Participants</span>
+              <span className="selected-pill">{members.length}</span>
+            </div>
+          </div>
+
+          <div className="new-group-members-list" style={{ maxHeight: "200px" }}>
+            {members.map((m) => {
+              const name = typeof m === "string" ? m : m.name || m.username || "Member";
+              const initials = typeof m === "string" ? m.slice(0, 2).toUpperCase() : m.initials || name.slice(0, 2).toUpperCase();
+              const color = typeof m === "string" ? "#ff7a59" : m.color || "#ff7a59";
+              const designation = typeof m === "object" ? m.designation || m.role : "Active Channel Member";
+              const role = typeof m === "object" ? m.role : null;
+
+              return (
+                <div
+                  className="participant-card"
+                  key={typeof m === "string" ? m : m.id || m.username || name}
+                  style={{ cursor: "default", justifyContent: "space-between" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: 1 }}>
+                    <Avatar size={40} initials={initials} color={color} />
+                    <div className="participant-info">
+                      <div className="participant-name-row">
+                        <span className="participant-name">{name}</span>
+                        {role === "Enterprise Administrator" && (
+                          <span className="role-tag admin">Admin</span>
+                        )}
+                        {role === "HR Operations Host" && (
+                          <span className="role-tag hr">HR</span>
+                        )}
+                      </div>
+                      <span className="participant-role">{designation}</span>
+                    </div>
+                  </div>
+                  <span className="material-icons" style={{ fontSize: "18px", color: "#10b981", marginRight: "4px" }} title="In Channel">
+                    check_circle
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Add Member Section */}
+        <div style={{ borderTop: "1px solid rgba(0, 0, 0, 0.06)", paddingTop: "14px" }}>
+          <div className="section-title-wrap" style={{ marginBottom: "10px" }}>
+            <span className="section-title">Add New Member</span>
+          </div>
+
+          {addableUsers.length > 0 ? (
+            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <div className="new-group-input-box" style={{ flex: 1, padding: "8px 12px" }}>
+                <span className="material-icons field-icon">person_add</span>
+                <select
+                  id="ember-add-member-select"
+                  value={selectedUser}
+                  onChange={(e) => setSelectedUser(e.target.value)}
+                  style={{
+                    flex: 1,
+                    border: "none",
+                    background: "transparent",
+                    outline: "none",
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    color: "var(--sandesh-text-main)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {addableUsers.map((u) => {
+                    const uId = u.username || u.id;
+                    return (
+                      <option key={uId} value={uId}>
+                        {u.name} ({u.designation || u.role})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <button
+                type="button"
+                className="sandesh-btn-mini-primary"
+                id="ember-add-member-btn"
+                onClick={handleAdd}
+                disabled={!selectedUser}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  height: "40px",
+                  padding: "0 18px",
+                  borderRadius: "12px",
+                  fontSize: "13px",
+                  fontWeight: "700",
+                  flexShrink: 0,
+                }}
+              >
+                <span className="material-icons" style={{ fontSize: "17px" }}>person_add</span>
+                <span>Add Member</span>
+              </button>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "12.5px",
+                color: "var(--sandesh-text-muted)",
+                background: "rgba(255, 255, 255, 0.7)",
+                border: "1px solid var(--sandesh-glass-border)",
+                padding: "10px 14px",
+                borderRadius: "12px",
+              }}
+            >
+              <span className="material-icons" style={{ fontSize: "18px", color: "#10b981" }}>verified</span>
+              <span>All available team colleagues are already members of this group.</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Footer Action Buttons */}
+      <div className="sandesh-modal-actions new-group-footer" style={{ justifyContent: "space-between" }}>
+        <button
+          type="button"
+          className="sandesh-btn-danger-3d"
+          id="ember-leave-group-btn"
+          onClick={() => {
+            if (window.confirm(`Are you sure you want to leave the group "${title}"?`)) {
+              onLeave?.();
+            }
+          }}
+        >
+          <span className="material-icons">logout</span>
+          <span>Leave Group</span>
+        </button>
+
+        <button
+          type="button"
+          className="sandesh-btn-secondary-3d"
+          id="ember-members-close-btn"
+          onClick={onClose}
+        >
           Close
         </button>
       </div>

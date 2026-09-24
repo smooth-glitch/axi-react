@@ -295,10 +295,21 @@
         });
     }
 
-    if (document.body) {
-        showLoginOverlay();
-    } else {
-        document.addEventListener('DOMContentLoaded', showLoginOverlay);
-    }
+    // Sandesh's own sign-in is the app's front door, so this ARM sign-in page is
+    // NO LONGER shown at start-up. (It used to appear over the app; once signed
+    // in it started the old AI app's ARM data loading, which could open a
+    // hidden modal that froze the whole page.) The ARM sign-in itself is kept
+    // and can still be opened on demand by code that genuinely needs an ARM
+    // session:  window.AxShowArmSignIn();
+    // Until someone signs in there, ARM data calls (GetDataFromAxList) simply
+    // wait for a session.
+    window.AxShowArmSignIn = function () {
+        if (document.getElementById('axiStandaloneLogin')) return;
+        if (document.body) {
+            showLoginOverlay();
+        } else {
+            document.addEventListener('DOMContentLoaded', showLoginOverlay);
+        }
+    };
 
 })();

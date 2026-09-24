@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { authorizedUsers } from "../data/sampleData.js";
 
 export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [activeTab, setActiveTab] = useState("signin"); // "signin" | "first_admin" | "self_reg"
@@ -12,10 +13,10 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
   // First Time Setup State
   const [adminOrg, setAdminOrg] = useState("Agile Labs Enterprise");
-  const [adminName, setAdminName] = useState("Arjun Sridhar");
-  const [adminEmail, setAdminEmail] = useState("arjun@agilelabs.com");
-  const [adminMobile, setAdminMobile] = useState("+91 98860 12345");
-  const [adminPassword, setAdminPassword] = useState("SandeshArjun");
+  const [adminName, setAdminName] = useState("Sabarish");
+  const [adminEmail, setAdminEmail] = useState("sabarish@agilelabs.com");
+  const [adminMobile, setAdminMobile] = useState("+91 98860 11111");
+  const [adminPassword, setAdminPassword] = useState("SandeshAdmin123");
   const [adminOtp, setAdminOtp] = useState("");
   const [adminOtpSent, setAdminOtpSent] = useState(false);
 
@@ -36,7 +37,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   const handleSignIn = (e) => {
     e.preventDefault();
     if (!signInIdentifier) {
-      setErrorMsg("Please enter your username, email, or mobile number.");
+      setErrorMsg("Please enter your username, email, or name.");
       return;
     }
     setErrorMsg("");
@@ -44,25 +45,28 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
     setTimeout(() => {
       setLoading(false);
-      const raw = signInIdentifier.trim();
-      const cleanUsername = raw.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "user_" + Math.floor(Math.random() * 8999 + 1000);
+      const raw = signInIdentifier.trim().toLowerCase();
+      const foundUser = authorizedUsers.find(
+        (u) =>
+          u.username.toLowerCase() === raw ||
+          u.name.toLowerCase() === raw ||
+          u.name.toLowerCase().includes(raw) ||
+          (u.email && u.email.toLowerCase() === raw)
+      );
+
+      if (!foundUser) {
+        setErrorMsg(
+          "Access restricted: Only authorized personnel (Sabarish, Nageshwari, Gunn Kataria, Anish, Arjun) are permitted to sign in."
+        );
+        return;
+      }
+
       onLoginSuccess({
-        name: raw,
-        username: cleanUsername,
-        role: cleanUsername === "arjun" ? "Enterprise Administrator" : "Enterprise Associate",
-        org: "Agile Labs Enterprise",
-        category: "employee",
-        branch: "Bangalore HQ",
-        department: "Product Architecture",
-        designation: cleanUsername === "arjun" ? "Chief Enterprise Architect" : "Enterprise Associate",
-        status: "Available",
-        initials: (raw.slice(0, 2)).toUpperCase(),
-        color: "#ff7a59",
-        isAdmin: cleanUsername === "arjun",
+        ...foundUser,
         token: "sandesh-jwt-" + Date.now(),
         armSessionId: "arm-sess-" + Date.now(),
       });
-    }, 600);
+    }, 500);
   };
 
   const handleFirstAdminSetup = (e) => {
@@ -271,7 +275,47 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
               </button>
 
               <div className="sandesh-quick-demo-accounts">
-                <span className="demo-label">Quick Sign-in:</span>
+                <span className="demo-label">Authorized Personnel:</span>
+                <button
+                  type="button"
+                  className="sandesh-pill-chip"
+                  onClick={() => {
+                    setSignInIdentifier("sabarish");
+                    setSignInPassword("Sandesh123");
+                  }}
+                >
+                  👑 Admin (Sabarish)
+                </button>
+                <button
+                  type="button"
+                  className="sandesh-pill-chip"
+                  onClick={() => {
+                    setSignInIdentifier("nageshwari");
+                    setSignInPassword("Sandesh123");
+                  }}
+                >
+                  👩‍💼 HR (Nageshwari)
+                </button>
+                <button
+                  type="button"
+                  className="sandesh-pill-chip"
+                  onClick={() => {
+                    setSignInIdentifier("gunn");
+                    setSignInPassword("Sandesh123");
+                  }}
+                >
+                  👨‍💻 Eng (Gunn Kataria)
+                </button>
+                <button
+                  type="button"
+                  className="sandesh-pill-chip"
+                  onClick={() => {
+                    setSignInIdentifier("anish");
+                    setSignInPassword("Sandesh123");
+                  }}
+                >
+                  👨‍💻 Eng (Anish)
+                </button>
                 <button
                   type="button"
                   className="sandesh-pill-chip"
@@ -280,27 +324,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                     setSignInPassword("Sandesh123");
                   }}
                 >
-                  👑 Admin (Arjun)
-                </button>
-                <button
-                  type="button"
-                  className="sandesh-pill-chip"
-                  onClick={() => {
-                    setSignInIdentifier("priya");
-                    setSignInPassword("Sandesh123");
-                  }}
-                >
-                  👩‍💼 HR Host (Priya)
-                </button>
-                <button
-                  type="button"
-                  className="sandesh-pill-chip"
-                  onClick={() => {
-                    setSignInIdentifier("ravi");
-                    setSignInPassword("Sandesh123");
-                  }}
-                >
-                  👨‍💻 Engineer (Ravi)
+                  👨‍💻 Eng (Arjun)
                 </button>
               </div>
             </form>

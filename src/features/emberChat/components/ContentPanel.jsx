@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { emojiGroups, emojiKeywords, gifResults, stickerResults } from "../data/sampleData.js";
+import { emojiGroups, emojiKeywords } from "../data/sampleData.js";
 
 export default function ContentPanel({ onPickEmoji }) {
-  const [tab, setTab] = useState("emoji");
   const [emojiQuery, setEmojiQuery] = useState("");
 
   const query = emojiQuery.trim().toLowerCase();
@@ -17,34 +16,15 @@ export default function ContentPanel({ onPickEmoji }) {
       <div id="ember-content-tabs" role="tablist">
         <button
           type="button"
-          className={`content-tab${tab === "emoji" ? " active" : ""}`}
+          className="content-tab active"
           role="tab"
-          aria-selected={tab === "emoji"}
-          onClick={() => setTab("emoji")}
+          aria-selected="true"
         >
           😀 Emoji
         </button>
-        <button
-          type="button"
-          className={`content-tab${tab === "gif" ? " active" : ""}`}
-          role="tab"
-          aria-selected={tab === "gif"}
-          onClick={() => setTab("gif")}
-        >
-          GIF
-        </button>
-        <button
-          type="button"
-          className={`content-tab${tab === "sticker" ? " active" : ""}`}
-          role="tab"
-          aria-selected={tab === "sticker"}
-          onClick={() => setTab("sticker")}
-        >
-          🖼 Stickers
-        </button>
       </div>
 
-      <div className={`content-view${tab === "emoji" ? "" : " hidden"}`}>
+      <div className="content-view">
         <input
           id="ember-emoji-search"
           type="text"
@@ -73,30 +53,7 @@ export default function ContentPanel({ onPickEmoji }) {
           )}
         </div>
       </div>
-
-      <div className={`content-view${tab === "gif" ? "" : " hidden"}`}>
-        <input id="ember-gif-search" type="text" placeholder="Search GIFs…" autoCapitalize="none" autoCorrect="off" />
-        <div id="ember-gif-grid">
-          {gifResults.map((g) => (
-            <button key={g.id} className="gif-cell">
-              <img src={g.url} alt="" />
-            </button>
-          ))}
-        </div>
-        <div className="giphy-attrib">Powered by GIPHY</div>
-      </div>
-
-      <div className={`content-view${tab === "sticker" ? "" : " hidden"}`}>
-        <input id="ember-sticker-search" type="text" placeholder="Search stickers…" autoCapitalize="none" autoCorrect="off" />
-        <div id="ember-sticker-grid">
-          {stickerResults.map((s) => (
-            <button key={s.id} className="gif-cell">
-              <img src={s.url} alt="" />
-            </button>
-          ))}
-        </div>
-        <div className="giphy-attrib">Powered by GIPHY</div>
-      </div>
     </div>
   );
 }
+

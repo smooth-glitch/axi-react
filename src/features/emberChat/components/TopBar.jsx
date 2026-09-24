@@ -7,6 +7,7 @@ export default function TopBar({
   onOpenSmartPrompts,
   onOpenAdminConsole,
   onOpenAiChat,
+  onDeleteChat,
   isAdmin,
 }) {
   return (
@@ -67,17 +68,43 @@ export default function TopBar({
           <span>Smart Prompts</span>
         </button>
 
-        {/* Group Members Button */}
+        {/* Group Actions: Add Member & View Members */}
         {chat.isGroup && (
-          <button
-            type="button"
-            className="sandesh-icon-btn-3d"
-            onClick={onMembersClick}
-            title="View group members"
-          >
-            <span className="material-icons">group</span>
-          </button>
+          <>
+            <button
+              type="button"
+              className="sandesh-action-pill-btn add-member-pill-btn"
+              onClick={onMembersClick}
+              title="Add a new member to this group"
+            >
+              <span className="material-icons">person_add</span>
+              <span>Add Member</span>
+            </button>
+            <button
+              type="button"
+              className="sandesh-icon-btn-3d"
+              onClick={onMembersClick}
+              title="View group members"
+            >
+              <span className="material-icons">group</span>
+            </button>
+          </>
         )}
+
+        {/* Delete / Clear Chat Button */}
+        <button
+          type="button"
+          className="sandesh-icon-btn-3d danger-btn"
+          onClick={() => {
+            if (window.confirm(`Are you sure you want to delete / clear the conversation "${chat.name}"?`)) {
+              onDeleteChat?.(chat.id);
+            }
+          }}
+          title="Delete or clear this conversation"
+          aria-label="Delete conversation"
+        >
+          <span className="material-icons">delete_sweep</span>
+        </button>
 
         {/* Admin Console trigger */}
         {isAdmin && (

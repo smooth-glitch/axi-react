@@ -12,6 +12,7 @@ import ToastContainer from "./components/Toast.jsx";
 import {
   chats as initialChats,
   messagesByChat as initialMessagesByChat,
+  authorizedUsers,
 } from "./data/sampleData.js";
 import { sandeshSocket } from "../../services/sandeshSocket.js";
 import "./EmberChat.css";
@@ -23,11 +24,17 @@ const formatTs = (ts) => {
 };
 
 export function EmberChatScreen({ onOpenAiChat }) {
-  // P0: Remove the default user. Fall back to null if no saved session
+  // Authorized session user. Fall back to null if no valid session for authorized personnel
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem("sandesh_session_user");
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const match = authorizedUsers.find(
+          (u) => u.username.toLowerCase() === (parsed.username || "").toLowerCase()
+        );
+        if (match) return { ...match, ...parsed };
+      }
     } catch {
       // ignore
     }
@@ -72,7 +79,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const pushToast = useCallback((text, error = false) => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, text, error }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToasts((t) => t.filter((x) => x.id !== id));
   }, []);
 
   const setChatTyping = useCallback((chatId, username) => {
@@ -872,16 +883,53 @@ export function EmberChatScreen({ onOpenAiChat }) {
   };
 
   const handleAttachFile = (filePayload) => {
-    updateActiveMessages((list) => [
-      ...list,
-      {
-        id: Date.now(),
-        dir: "out",
-        time: "now",
-        ticks: "sent",
-        ...filePayload,
-      },
-    ]);
+    const tempId = `temp-${Date.now()}`;
+    const newMsg = {
+      id: tempId,
+      dir: "out",
+      from: currentUser.name || currentUser.username,
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      ticks: "sent",
+      ...filePayload,
+    };
+    updateActiveMessages((list) => [...list, newMsg]);
+
+    const descriptor =
+      filePayload.kind === "image"
+        ? `📷 Photo: ${filePayload.fileName || "image"}`
+        : filePayload.kind === "video"
+        ? `🎥 Video: ${filePayload.fileName || "video"}`
+        : filePayload.kind === "audio"
+        ? `🎙️ Voice Note (${filePayload.duration || "0:05"})`
+        : `📎 Document: ${filePayload.fileName || "file"}`;
+
+    if (socketStatus === "connected") {
+      if (activeChat.isGroup) {
+        if (activeChat.id === "room-general") {
+          sandeshSocket.sendGlobalMsg(descriptor);
+        } else {
+          const grp = activeChat.name || activeChat.id.replace(/^room-/, "");
+          sandeshSocket.sendGroupMsg(grp, descriptor);
+        }
+      } else if (activeChat.isHost) {
+        sandeshSocket.sendHostMsg(activeChat.id.replace(/^host-/, ""), descriptor);
+      } else {
+        const targetUser = (activeChat.username || activeChat.id.replace(/^user-/, "")).toLowerCase().trim();
+        sandeshSocket.sendDM(targetUser, descriptor);
+      }
+    }
+
+    setChats((prevChats) =>
+      prevChats.map((c) =>
+        c.id === activeChatId
+          ? {
+              ...c,
+              preview: `You: ${descriptor}`,
+              time: "now",
+            }
+          : c
+      )
+    );
   };
 
   const handleToggleReaction = (msgId, emoji) => {
@@ -899,16 +947,57 @@ export function EmberChatScreen({ onOpenAiChat }) {
   };
 
   const handleDeleteMessage = (msgId) => {
-    const isGroup = activeChat.isGroup;
-    const target = isGroup
-      ? (activeChat.id === "room-general" ? "global" : activeChat.name)
-      : (activeChat.username || activeChat.id.replace(/^user-/, "")).toLowerCase().trim();
+    updateActiveMessages((prev) => prev.filter((m) => m.id !== msgId));
+    pushToast("Message deleted");
 
-    sandeshSocket.sendDelete(
-      isGroup ? (activeChat.id === "room-general" ? "global" : "group") : "dm",
-      target,
-      msgId
-    );
+    if (socketStatus === "connected") {
+      const isGroup = activeChat.isGroup;
+      const target = isGroup
+        ? (activeChat.id === "room-general" ? "global" : activeChat.name)
+        : (activeChat.username || activeChat.id.replace(/^user-/, "")).toLowerCase().trim();
+
+      const numId = Number(msgId);
+      if (!isNaN(numId)) {
+        sandeshSocket.sendDelete(
+          isGroup ? (activeChat.id === "room-general" ? "global" : "group") : "dm",
+          target,
+          numId
+        );
+      }
+    }
+  };
+
+  const handleDeleteChat = (chatId) => {
+    setMessagesByChat((prev) => {
+      const next = { ...prev };
+      delete next[chatId];
+      if (chatId === "room-general") {
+        next["room-general"] = [];
+      }
+      return next;
+    });
+
+    if (chatId !== "room-general") {
+      setChats((prev) => prev.filter((c) => c.id !== chatId));
+      if (activeChatIdRef.current === chatId) {
+        setActiveChatId("room-general");
+      }
+      const chatItem = chats.find((c) => c.id === chatId);
+      if (chatItem?.isGroup && chatId.startsWith("room-")) {
+        const grp = chatItem.name || chatId.replace(/^room-/, "");
+        sandeshSocket.sendLeaveGroup(grp);
+      }
+    } else {
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === "room-general"
+            ? { ...c, preview: "Conversation cleared", unread: 0 }
+            : c
+        )
+      );
+    }
+
+    pushToast("Conversation deleted");
   };
 
   const handleActionCardClick = (msg, action) => {
@@ -966,16 +1055,35 @@ export function EmberChatScreen({ onOpenAiChat }) {
     return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
 
-  const currentGroupMembers =
+  const currentGroupMembersRaw =
     (activeChat.isGroup && groupMembersByName[activeChat.name]) ||
     activeChat.members ||
-    [currentUser.name];
+    [currentUser.username || currentUser.name];
 
-  const currentAddableUsers = onlineUsers.filter((u) => {
-    const uName = u.username || u.name;
-    return !currentGroupMembers.some(
-      (m) => (typeof m === "string" ? m : m.name || m.username).toLowerCase() === uName.toLowerCase()
+  const enrichedGroupMembers = currentGroupMembersRaw.map((m) => {
+    if (typeof m === "object" && m !== null) return m;
+    const found = authorizedUsers.find(
+      (u) => (u.username || u.name || u.id || "").toLowerCase() === String(m).toLowerCase()
     );
+    if (found) return found;
+    return {
+      id: m,
+      username: m,
+      name: m,
+      role: "Member",
+      designation: "Team Associate",
+      initials: String(m).slice(0, 2).toUpperCase(),
+      color: "#ff7a59",
+    };
+  });
+
+  const teamPool = (authorizedUsers && authorizedUsers.length > 0) ? authorizedUsers : (onlineUsers || []);
+  const currentAddableUsers = teamPool.filter((u) => {
+    const uName = (u.username || u.name || u.id || "").toLowerCase();
+    return !currentGroupMembersRaw.some((m) => {
+      const mName = (typeof m === "string" ? m : m.username || m.name || m.id || "").toLowerCase();
+      return mName === uName;
+    });
   });
 
   return (
@@ -1011,11 +1119,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onSignOut={handleSignOut}
           socketStatus={socketStatus}
           onReconnectSocket={() => sandeshSocket.connect(currentUser)}
+          onDeleteChat={handleDeleteChat}
         />
 
         <ChatScreen
           key={activeChatId}
-          chat={{ ...activeChat, members: currentGroupMembers }}
+          chat={{ ...activeChat, members: enrichedGroupMembers }}
           messages={messages}
           userCategory={currentUser.category || "employee"}
           isAdmin={currentUser.isAdmin}
@@ -1025,6 +1134,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onAttachFile={handleAttachFile}
           onToggleReaction={handleToggleReaction}
           onDeleteMessage={handleDeleteMessage}
+          onDeleteChat={handleDeleteChat}
           onActionCardClick={handleActionCardClick}
           onOpenSmartPrompts={(p) => {
             setSelectedPrompt(p || { id: "general", label: "Smart Prompt" });
@@ -1043,6 +1153,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
             {modal === "new-group" && (
               <NewGroupModal
                 onlineUsers={onlineUsers}
+                availableUsers={authorizedUsers}
+                currentUsername={currentUser.username}
                 onCancel={() => setModal(null)}
                 onCreate={(payload) => {
                   const groupName =
@@ -1072,11 +1184,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
                     [groupName]: [currentUser.username, ...selectedMembers],
                   }));
 
-                  sandeshSocket.sendCreateGroup(groupName);
+                  const safeBackendGroupName = groupName.toLowerCase().replace(/[^a-z0-9_-]/g, "_").slice(0, 24) || "group";
+                  sandeshSocket.sendCreateGroup(safeBackendGroupName);
 
                   // Add invited members
                   selectedMembers.forEach((mem) => {
-                    sandeshSocket.sendAddMember(groupName, mem);
+                    sandeshSocket.sendAddMember(safeBackendGroupName, mem);
                   });
 
                   pushToast(`Group "${groupName}" created successfully`);
@@ -1087,7 +1200,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             {modal === "members" && (
               <MembersModal
                 title={activeChat.name}
-                members={currentGroupMembers}
+                members={enrichedGroupMembers}
                 addableUsers={currentAddableUsers}
                 onAdd={(userName) => {
                   const groupName = activeChat.name || activeChat.id.replace(/^room-/, "");
@@ -1147,7 +1260,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           </ModalLayer>
         )}
 
-        <ToastContainer toasts={toasts} />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     </div>
   );

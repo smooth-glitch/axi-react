@@ -27,6 +27,9 @@ export default function Composer({
   const fileInputRef = useRef(null);
   const lastTypingTime = useRef(0);
 
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
   const hasText = text.trim().length > 0;
   const activePrompts = smartPromptsByCategory[userCategory] || smartPromptsByCategory.employee;
 
@@ -70,28 +73,122 @@ export default function Composer({
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.onload = (loadEv) => {
-          onAttachFile?.({
-            kind: "image",
-            fileName: file.name,
-            imageUrl: loadEv.target.result,
-          });
-          pushToast?.(`Photo "${file.name}" sent`);
-        };
-        reader.readAsDataURL(file);
-      } else {
+    if (!file) return;
+
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (loadEv) => {
         onAttachFile?.({
-          kind: "file",
+          kind: "image",
           fileName: file.name,
-          fileSize: `${(file.size / 1024).toFixed(1)} KB`,
+          imageUrl: loadEv.target.result,
         });
-        pushToast?.(`Document "${file.name}" shared`);
-      }
+        pushToast?.(`Photo "${file.name}" sent`);
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type.startsWith("video/")) {
+      const reader = new FileReader();
+      reader.onload = (loadEv) => {
+        onAttachFile?.({
+          kind: "video",
+          fileName: file.name,
+          videoUrl: loadEv.target.result,
+        });
+        pushToast?.(`Video "${file.name}" sent`);
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type.startsWith("audio/")) {
+      const reader = new FileReader();
+      reader.onload = (loadEv) => {
+        onAttachFile?.({
+          kind: "audio",
+          fileName: file.name,
+          audioUrl: loadEv.target.result,
+          duration: "Audio File",
+        });
+        pushToast?.(`Audio "${file.name}" sent`);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      onAttachFile?.({
+        kind: "file",
+        fileName: file.name,
+        fileSize: `${(file.size / 1024).toFixed(1)} KB`,
+      });
+      pushToast?.(`Document "${file.name}" shared`);
     }
     e.target.value = "";
+  };
+
+  const startVoiceRecording = async () => {
+    if (disabled) return;
+    setElapsed(0);
+    setRecording(true);
+    audioChunksRef.current = [];
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        mediaRecorder.start();
+      }
+    } catch (err) {
+      console.warn("Microphone hardware or permission not accessible, using voice simulation", err);
+    }
+  };
+
+  const stopAndSendVoiceRecording = () => {
+    const finalElapsed = elapsed || 1;
+    const durationLabel = formatElapsed(finalElapsed);
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        try {
+          mediaRecorderRef.current.stream?.getTracks().forEach((track) => track.stop());
+        } catch {}
+
+        onAttachFile?.({
+          kind: "audio",
+          audioUrl,
+          duration: durationLabel,
+          fileName: `Voice note (${durationLabel})`,
+        });
+        pushToast?.("Voice note sent");
+      };
+      mediaRecorderRef.current.stop();
+    } else {
+      // Fallback voice note item
+      onAttachFile?.({
+        kind: "audio",
+        audioUrl: "",
+        duration: durationLabel,
+        fileName: `Voice note (${durationLabel})`,
+      });
+      pushToast?.("Voice note sent");
+    }
+
+    setRecording(false);
+    setElapsed(0);
+  };
+
+  const cancelVoiceRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream?.getTracks().forEach((track) => track.stop());
+      } catch {}
+    }
+    setRecording(false);
+    setElapsed(0);
+    audioChunksRef.current = [];
   };
 
   return (
@@ -144,7 +241,7 @@ export default function Composer({
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
-          accept="image/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
           style={{ display: "none" }}
           disabled={disabled}
         />
@@ -152,7 +249,7 @@ export default function Composer({
         <button
           type="button"
           className="composer-action-btn-3d"
-          title="Attach Document or Image"
+          title="Attach Document, Photo, or Media"
           onClick={() => !disabled && fileInputRef.current?.click()}
           disabled={disabled}
         >
@@ -172,10 +269,7 @@ export default function Composer({
               type="button"
               className="recording-cancel-btn"
               title="Discard Voice Note"
-              onClick={() => {
-                setRecording(false);
-                setElapsed(0);
-              }}
+              onClick={cancelVoiceRecording}
             >
               <span className="material-icons">delete</span>
             </button>
@@ -183,12 +277,7 @@ export default function Composer({
               type="button"
               className="recording-send-btn"
               title="Send Voice Note"
-              onClick={() => {
-                setRecording(false);
-                onSend?.(`🎙️ Voice Message (${formatElapsed(elapsed)})`);
-                setElapsed(0);
-                pushToast?.("Voice note sent");
-              }}
+              onClick={stopAndSendVoiceRecording}
             >
               <span className="material-icons">send</span>
             </button>
@@ -232,11 +321,7 @@ export default function Composer({
                 type="button"
                 className="composer-mic-btn-3d"
                 title="Record Voice Note"
-                onClick={() => {
-                  if (disabled) return;
-                  setElapsed(0);
-                  setRecording(true);
-                }}
+                onClick={startVoiceRecording}
                 disabled={disabled}
               >
                 <span className="material-icons">mic</span>
@@ -252,18 +337,10 @@ export default function Composer({
               setContentPanelOpen(false);
               textareaRef.current?.focus();
             }}
-            onPickGif={(url) => {
-              onSend?.(url);
-              setContentPanelOpen(false);
-            }}
-            onPickSticker={(url) => {
-              onSend?.(url);
-              setContentPanelOpen(false);
-            }}
-            pushToast={pushToast}
           />
         )}
       </div>
     </div>
   );
 }
+
