@@ -12,6 +12,12 @@ ever disagree, the code wins; flag it to the backend owner to fix the doc.
 > `open` mode everything in *this* document behaves exactly as written.
 > New here: refused chat commands may carry a machine-readable
 > `{"type":"error","code":"not_associated"|"not_allowed","text":…}`.
+>
+> **`#commands` (Discord-style action menu for the prompt bar) are documented
+> in [`HASH_COMMANDS.md`](HASH_COMMANDS.md).** Typing `#` opens a menu of every
+> feature; the server rewrites a `#command` into the `/command` below, so all
+> the events in this document are unchanged. New frames: `/cmds`,
+> `/cmdcomplete`; new events: `cmd_catalog`, `cmd_suggestions`, `cmd_help`.
 
 **Scope note, read this first:** this documents the real-time messaging
 transport plus the host directory — connect, DM, group chat, host
@@ -125,6 +131,9 @@ consume client-side.
 | `/groupmsg <group> <text>` | Send a message to a group. |
 | `/replygroup <group> <messageId> <text>` | Reply within a group thread. |
 | `/groups` | List the groups you're in. Reply: `groups` event. |
+| `/cmds [prefix]` | The `#command` catalog. Reply: `cmd_catalog` event ([`HASH_COMMANDS.md`](HASH_COMMANDS.md)). |
+| `/cmdcomplete {"input":"#dm al"}` | As-you-type suggestions for a `#command`. Reply: `cmd_suggestions` event. Has its own, larger rate-limit budget. |
+| `#<command> <args>` (e.g. `#dm alice hi`) | Runs the equivalent `/command` — see [`HASH_COMMANDS.md`](HASH_COMMANDS.md). An unknown `#word` gets `error` code `unknown_command`; `##text` posts the literal `#text` to the global room; `#` followed by a non-letter (`#1 priority`) is plain text. |
 | `/quit` | Clean disconnect. |
 | Anything else starting with `/` + a letter | **`error` event** `Unknown command: /xyz` — never broadcast (a typo used to post publicly to the global room). |
 | Anything else (no leading `/`) | Broadcast as a plain message to the **global** room. |
@@ -171,7 +180,8 @@ mirror the command that triggered them.
 | `gif_results` / `sticker_results` | Reply to a search | `query`, `results`: array of `{id, url, preview, width, height}` |
 | `pubkey` | Reply to `/getpubkey` | `user`, `key` (or `null`) |
 | `left_group` | Your `/leavegroup` succeeded | (text payload, not JSON object — see `json_obj` vs `json_obj2` in source) |
-| `error` | Any command usage error | `text` |
+| `error` | Any command usage error | `text`; sometimes `code` (`not_allowed`, `not_associated`, and for `#commands` `usage`, `unknown_command`, `invalid_encoding`, `internal`) |
+| `cmd_catalog` / `cmd_help` / `cmd_suggestions` | Reply to `/cmds`, `#help`, `/cmdcomplete` | see [`HASH_COMMANDS.md`](HASH_COMMANDS.md) |
 
 ### Message object shape (inside a `history` event's `list`)
 

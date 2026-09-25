@@ -22,8 +22,35 @@
 %%% a bare chat connection with an invented token never gets Sandesh powers,
 %%% even in open mode.
 -module(sd_cmds).
--export([handle/2, rate_limited/1]).
+-export([handle/2, rate_limited/1, caller/0, availability/2]).
 -include_lib("kernel/include/logger.hrl").
+
+%% For the #command catalog (chat_cmds): who is this connection, and may they
+%% call an action? Advisory only -- it lets the UI grey out commands; run/3
+%% still enforces every rule when the command is actually executed.
+caller() -> ctx().
+
+%% available | signin | host | manage | admin (the level the caller lacks).
+%% Ignores the strict-mode admin-console unlock and the forced password change:
+%% those surface as their own error codes when the command runs.
+availability(Action, Ctx) ->
+    case access(Action) of
+        unknown -> signin;
+        none -> available;
+        Level ->
+            case maps:get(user, Ctx) of
+                undefined -> signin;
+                User ->
+                    IsAdmin = sd_users:is_admin(User),
+                    Ok = case Level of
+                             user -> true;
+                             host -> IsAdmin orelse sd_users:is_host(User);
+                             manage -> IsAdmin orelse maps:get(<<"canManageUsers">>, User, false) =:= true;
+                             admin -> IsAdmin
+                         end,
+                    case Ok of true -> available; false -> Level end
+            end
+    end.
 
 %% The per-connection command limiter (chat_web) refused this line. A plain
 %% "error" event would leave a client that is awaiting the reply to its
