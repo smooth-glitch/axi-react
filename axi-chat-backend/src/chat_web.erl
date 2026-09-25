@@ -894,7 +894,7 @@ handle_ws_data(Socket, Name, Buf) ->
                         expired ->
                             sd_end_connection(Socket, Name, "session_expired", "two_week_login");
                         ok ->
-                            case check_rate_limit() of
+                            case check_rate_limit(Line) of
                                 ok -> handle_line(Socket, Name, Line);
                                 limited ->
                                     ?LOG_WARNING("~s hit the rate limit", [Name]),
@@ -1230,6 +1230,17 @@ handle_line(Socket, Name, "/groups") ->
 %% isn't plain chat (org, users, hosts, approvals, cards, forms, admin
 %% console). One command, one reply envelope; see sd_cmds.erl and
 %% docs/SANDESH_API.md. A bare "/sd" is shorthand for "/sd me".
+%% #commands (docs/HASH_COMMANDS.md): "/cmds [prefix]" lists them, and
+%% "/cmdcomplete {json}" suggests as the user types. Read-only; the
+%% "#command" lines themselves are handled further down.
+handle_line(Socket, _Name, "/cmds") ->
+    gen_tcp:send(Socket, ws_encode(1, chat_cmds:catalog_json("")));
+handle_line(Socket, _Name, "/cmds " ++ Query) ->
+    gen_tcp:send(Socket, ws_encode(1, chat_cmds:catalog_json(string:trim(Query))));
+handle_line(Socket, Name, "/cmdcomplete " ++ Body) ->
+    gen_tcp:send(Socket, ws_encode(1, chat_cmds:complete_json(Body, Name)));
+handle_line(Socket, Name, "/cmdcomplete") ->
+    gen_tcp:send(Socket, ws_encode(1, chat_cmds:complete_json("", Name)));
 handle_line(Socket, Name, "/sd " ++ Rest) ->
     gen_tcp:send(Socket, ws_encode(1, sd_cmds:handle(Name, Rest)));
 handle_line(Socket, Name, "/sd") ->
@@ -1263,7 +1274,23 @@ handle_line(Socket, _Name, [$/, C | _] = Text) when (C >= $a andalso C =< $z); (
     [Cmd | _] = string:split(Text, " "),
     ws_send_json(Socket, "error",
         "Unknown command: " ++ Cmd ++ " (see docs/CHAT_PROTOCOL.md for the command list)");
+%% "##text" posts the literal message "#text" to the global room -- the escape
+%% for a message that starts with # but isn't a command.
+handle_line(Socket, Name, [$#, $# | Rest]) ->
+    broadcast_text(Socket, Name, [$# | Rest]);
+%% "#command args" -- chat_cmds validates it and rewrites it into the existing
+%% "/..." command it stands for, which then runs through the exact same path
+%% (and the same permission/policy checks) as if the client had typed that.
+%% A "#" not followed by a letter ("#1 priority", "# 5") stays chat text.
+handle_line(Socket, Name, [$#, C | _] = Text) when (C >= $a andalso C =< $z); (C >= $A andalso C =< $Z) ->
+    case chat_cmds:run(Text, Name) of
+        {line, Line} -> handle_line(Socket, Name, Line);
+        {reply, Json} -> gen_tcp:send(Socket, ws_encode(1, Json))
+    end;
 handle_line(Socket, Name, Text) ->
+    broadcast_text(Socket, Name, Text).
+
+broadcast_text(Socket, Name, Text) ->
     case sd_policy:can_broadcast(Name) of
         true -> chat_room:broadcast(Name, Text);
         {false, Why} -> ws_send_error(Socket, "not_allowed", Why)
@@ -1484,18 +1511,31 @@ with_int(Str, Fun) ->
 %% already its own Erlang process, so there's no cross-connection
 %% contention to worry about, and nothing else in this process uses the
 %% dictionary for anything that could collide with this key.
-check_rate_limit() ->
+check_rate_limit(Line) ->
+    case is_hint_line(Line) of
+        true -> window_limit(hint_limit, ?HINT_LIMIT_MAX_COMMANDS);
+        false -> window_limit(rate_limit, rate_limit_max())
+    end.
+
+%% "/cmds" and "/cmdcomplete" are as-you-type helpers for the #command menu: a
+%% client may send one per keystroke. They read only, so they get their own,
+%% larger window instead of eating the budget real commands need.
+is_hint_line("/cmds") -> true;
+is_hint_line("/cmds " ++ _) -> true;
+is_hint_line("/cmdcomplete" ++ _) -> true;
+is_hint_line(_) -> false.
+
+window_limit(Key, Max) ->
     Now = erlang:monotonic_time(millisecond),
-    Max = rate_limit_max(),
-    case get(rate_limit) of
+    case get(Key) of
         undefined ->
-            put(rate_limit, {1, Now}),
+            put(Key, {1, Now}),
             ok;
         {_Count, WindowStart} when Now - WindowStart > ?RATE_LIMIT_WINDOW_MS ->
-            put(rate_limit, {1, Now}),
+            put(Key, {1, Now}),
             ok;
         {Count, WindowStart} when Count < Max ->
-            put(rate_limit, {Count + 1, WindowStart}),
+            put(Key, {Count + 1, WindowStart}),
             ok;
         {_Count, _WindowStart} ->
             limited
