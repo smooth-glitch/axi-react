@@ -1,0 +1,36 @@
+{
+  "name": "@tstruct/react",
+  "version": "1.0.0",
+  "description": "Lite Tstruct Builder - React + Vite web app and embeddable component library",
+  "private": false,
+  "type": "module",
+  "main": "./dist-lib/tstruct-react.js",
+  "module": "./dist-lib/tstruct-react.js",
+  "exports": {
+    ".": "./dist-lib/tstruct-react.js"
+  },
+  "files": [
+    "dist-lib"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:lib": "vite build --config vite.lib.config.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/plus-jakarta-sans": "^5.3.0",
+    "framer-motion": "^13.4.3",
+    "libphonenumber-js": "^1.13.14",
+    "lucide-react": "^1.48.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "styled-components": "^6.5.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.3.1"
+  }
+}

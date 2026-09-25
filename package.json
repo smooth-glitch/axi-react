@@ -1,36 +1,13 @@
 {
-  "name": "axi-react",
+  "name": "lite-tstruct-builder",
   "private": true,
-  "license": "UNLICENSED",
-  "version": "0.0.0",
-  "type": "module",
+  "description": "Lite Tstruct Builder: Express + Redis API (server/) and a React + Vite app / embeddable library (web/)",
   "scripts": {
-    "predev": "node scripts/sync-public-assets.mjs",
-    "dev": "vite --host",
-    "prebuild": "node scripts/sync-public-assets.mjs",
-    "build": "vite build",
-    "build:legacy": "npm run build:databin && npm run build:admin && npm run build:promptTemplates && npm run build:exportChat && npm run build:providerSwitcher && npm run build:messageThread && npm run build:systemPromptEditor && npm run build:composer",
-    "build:databin": "cross-env AXI_FEATURE=databin vite build",
-    "build:admin": "cross-env AXI_FEATURE=admin vite build",
-    "build:promptTemplates": "cross-env AXI_FEATURE=promptTemplates vite build",
-    "build:exportChat": "cross-env AXI_FEATURE=exportChat vite build",
-    "build:providerSwitcher": "cross-env AXI_FEATURE=providerSwitcher vite build",
-    "build:messageThread": "cross-env AXI_FEATURE=messageThread vite build",
-    "build:systemPromptEditor": "cross-env AXI_FEATURE=systemPromptEditor vite build",
-    "build:composer": "cross-env AXI_FEATURE=composer vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.31",
-    "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react": "^6.1.1",
-    "cross-env": "^7.0.3",
-    "oxlint": "^1.81.0",
-    "vite": "^8.3.0"
+    "dev": "node scripts/dev.js",
+    "dev:server": "npm --prefix server start",
+    "dev:web": "npm --prefix web run dev",
+    "build:web": "npm --prefix web run build",
+    "build:lib": "npm --prefix web run build:lib",
+    "e2e": "npm --prefix e2e run test"
   }
 }
