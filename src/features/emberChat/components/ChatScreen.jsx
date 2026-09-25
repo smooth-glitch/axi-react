@@ -16,6 +16,7 @@ export default function ChatScreen({
   onSend,
   onAttachFile,
   onToggleReaction,
+  onForward,
   onDeleteMessage,
   onDeleteChat,
   onActionCardClick,
@@ -131,6 +132,7 @@ export default function ChatScreen({
             typingUser={typingUser}
             onReply={(msg) => setReplyingTo({ from: msg.from ?? "You", text: msg.text || msg.title || "Message" })}
             onReact={onToggleReaction}
+            onForward={onForward}
             onDelete={onDeleteMessage}
             onActionCardClick={onActionCardClick}
             pushToast={pushToast}

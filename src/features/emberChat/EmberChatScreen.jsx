@@ -7,6 +7,7 @@ import MembersModal from "./components/modals/MembersModal.jsx";
 import ProfileModal from "./components/modals/ProfileModal.jsx";
 import SmartStructureModal from "./components/modals/SmartStructureModal.jsx";
 import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
+import ForwardModal from "./components/modals/ForwardModal.jsx";
 import SandeshLoginScreen from "./components/SandeshLoginScreen.jsx";
 import ToastContainer from "./components/Toast.jsx";
 import {
@@ -64,7 +65,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const [typingUsersByChat, setTypingUsersByChat] = useState({});
   const typingTimersRef = useRef({});
 
-  const [modal, setModal] = useState(null); // "new-group" | "members" | "profile" | "smart_structure" | "admin_console" | null
+  const [modal, setModal] = useState(null); // "new-group" | "members" | "profile" | "smart_structure" | "admin_console" | "forward" | null
+  const [forwardTargetMsg, setForwardTargetMsg] = useState(null);
   const [selectedPrompt, setSelectedPrompt] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [socketStatus, setSocketStatus] = useState("disconnected");
@@ -967,6 +969,102 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
   };
 
+  const handleOpenForward = (msg) => {
+    setForwardTargetMsg(msg);
+    setModal("forward");
+  };
+
+  const handleForwardMessage = (selectedTargets, originalMsg) => {
+    if (!selectedTargets || selectedTargets.length === 0 || !originalMsg) return;
+
+    selectedTargets.forEach((target) => {
+      const tempId = `temp-fwd-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const forwardedMsg = {
+        id: tempId,
+        kind: originalMsg.kind || "text",
+        dir: "out",
+        from: currentUser.name || currentUser.username,
+        text: originalMsg.text || "",
+        fileName: originalMsg.fileName,
+        fileSize: originalMsg.fileSize,
+        imageUrl: originalMsg.imageUrl,
+        videoUrl: originalMsg.videoUrl,
+        audioUrl: originalMsg.audioUrl,
+        duration: originalMsg.duration,
+        title: originalMsg.title,
+        details: originalMsg.details,
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        ts: Date.now(),
+        status: "sent",
+        ticks: "sent",
+        forwarded: true,
+        originalFrom: originalMsg.from,
+      };
+
+      // 1. Update local chat messages
+      setMessagesByChat((prev) => ({
+        ...prev,
+        [target.id]: [...(prev[target.id] || []), forwardedMsg],
+      }));
+
+      // 2. Transmit through sandeshSocket backend if connected
+      const forwardPayload = forwardedMsg.text
+        ? forwardedMsg.text
+        : (forwardedMsg.fileName || forwardedMsg.title || "Forwarded attachment");
+
+      if (socketStatus === "connected") {
+        if (target.isGroup) {
+          if (target.id === "room-general") {
+            sandeshSocket.sendGlobalMsg(forwardPayload);
+          } else {
+            const grp = target.name || target.id.replace(/^room-/, "");
+            sandeshSocket.sendGroupMsg(grp, forwardPayload);
+          }
+        } else if (target.isHost) {
+          sandeshSocket.sendHostMsg(target.id.replace(/^host-/, ""), forwardPayload);
+        } else {
+          const targetUser = (target.username || target.id.replace(/^user-/, "")).toLowerCase().trim();
+          sandeshSocket.sendDM(targetUser, forwardPayload);
+        }
+      }
+
+      // 3. Update sidebar conversation preview
+      setChats((prevChats) => {
+        const chatExists = prevChats.some((c) => c.id === target.id);
+        if (chatExists) {
+          return prevChats.map((c) =>
+            c.id === target.id
+              ? {
+                  ...c,
+                  preview: `You (Forwarded): ${forwardPayload}`,
+                  time: "now",
+                }
+              : c
+          );
+        }
+        return [
+          {
+            id: target.id,
+            name: target.name,
+            username: target.username,
+            isGroup: false,
+            color: target.color || "#10b981",
+            preview: `You (Forwarded): ${forwardPayload}`,
+            time: "now",
+            unread: 0,
+          },
+          ...prevChats,
+        ];
+      });
+    });
+
+    pushToast(
+      `Message forwarded to ${selectedTargets.length} recipient${selectedTargets.length > 1 ? "s" : ""}`
+    );
+    setModal(null);
+    setForwardTargetMsg(null);
+  };
+
   const handleDeleteChat = (chatId) => {
     setMessagesByChat((prev) => {
       const next = { ...prev };
@@ -1133,6 +1231,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onSend={handleSend}
           onAttachFile={handleAttachFile}
           onToggleReaction={handleToggleReaction}
+          onForward={handleOpenForward}
           onDeleteMessage={handleDeleteMessage}
           onDeleteChat={handleDeleteChat}
           onActionCardClick={handleActionCardClick}
@@ -1255,6 +1354,20 @@ export function EmberChatScreen({ onOpenAiChat }) {
               <AdminConsoleModal
                 onClose={() => setModal(null)}
                 pushToast={pushToast}
+              />
+            )}
+            {modal === "forward" && forwardTargetMsg && (
+              <ForwardModal
+                message={forwardTargetMsg}
+                chats={chats}
+                onlineUsers={onlineUsers}
+                availableUsers={authorizedUsers}
+                currentUsername={currentUser.username}
+                onCancel={() => {
+                  setModal(null);
+                  setForwardTargetMsg(null);
+                }}
+                onForward={handleForwardMessage}
               />
             )}
           </ModalLayer>

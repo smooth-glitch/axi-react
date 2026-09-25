@@ -299,8 +299,7 @@ export default function Composer({
                 type="button"
                 className="composer-emoji-btn"
                 title="Add Emoji / Reactions"
-                onClick={() => !disabled && setContentPanelOpen((v) => !v)}
-                disabled={disabled}
+                onClick={() => setContentPanelOpen((v) => !v)}
               >
                 😀
               </button>
@@ -330,8 +329,9 @@ export default function Composer({
           </>
         )}
 
-        {contentPanelOpen && !disabled && (
+        {contentPanelOpen && (
           <ContentPanel
+            onClose={() => setContentPanelOpen(false)}
             onPickEmoji={(emoji) => {
               setText((t) => t + emoji);
               setContentPanelOpen(false);
