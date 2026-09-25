@@ -62,6 +62,36 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Eliminate browser default focus rectangle and box-shadow outlines on all inputs and textareas */
+.sandesh-app-root input,
+.sandesh-app-root textarea,
+.sandesh-app-root select,
+.sandesh-auth-wrapper input,
+.sandesh-auth-wrapper textarea,
+.sandesh-auth-wrapper select {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+}
+
+.sandesh-app-root input:focus,
+.sandesh-app-root input:focus-visible,
+.sandesh-app-root textarea:focus,
+.sandesh-app-root textarea:focus-visible,
+.sandesh-app-root select:focus,
+.sandesh-app-root select:focus-visible,
+.sandesh-auth-wrapper input:focus,
+.sandesh-auth-wrapper input:focus-visible,
+.sandesh-auth-wrapper textarea:focus,
+.sandesh-auth-wrapper textarea:focus-visible,
+.sandesh-auth-wrapper select:focus,
+.sandesh-auth-wrapper select:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: transparent;
+  -webkit-box-shadow: none !important;
+}
+
 /* 3D Ambient Peach Lighting & Glow Canvas */
 .sandesh-ambient-canvas {
   position: absolute;
@@ -296,12 +326,24 @@
 .sandesh-input-box-3d input,
 .sandesh-input-box-3d select {
   flex: 1;
-  border: none;
+  border: none !important;
   background: transparent;
   font-size: 13.5px;
   color: var(--sandesh-text-main);
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
   width: 100%;
+}
+
+.sandesh-input-box-3d input:focus,
+.sandesh-input-box-3d input:focus-visible,
+.sandesh-input-box-3d select:focus,
+.sandesh-input-box-3d select:focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
 }
 
 .sandesh-input-box-3d .input-icon {
@@ -1725,16 +1767,26 @@
 
 .sandesh-msg-input {
   flex: 1;
-  border: none;
+  border: none !important;
   background: transparent;
   font-size: 13.5px;
   color: var(--sandesh-text-main);
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
   resize: none;
   max-height: 120px;
   line-height: 1.4;
   padding: 6px 0;
   font-family: inherit;
+}
+
+.sandesh-msg-input:focus,
+.sandesh-msg-input:focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
 }
 
 .composer-emoji-btn {
@@ -2189,12 +2241,22 @@
 
 .new-group-input {
   flex: 1;
-  border: none;
+  border: none !important;
   background: transparent;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--sandesh-text-main);
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+}
+
+.new-group-input:focus,
+.new-group-input:focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
 }
 
 .new-group-error-msg {
@@ -2812,7 +2874,7 @@
   -webkit-backdrop-filter: blur(28px) saturate(180%);
   border: 1.5px solid rgba(255, 255, 255, 0.88);
   border-radius: 20px;
-  box-shadow: 0 20px 48px rgba(220, 100, 60, 0.22), 0 6px 16px rgba(0, 0, 0, 0.08), inset 0 1.5px 1px #ffffff;
+  box-shadow: 0 16px 42px rgba(30, 41, 59, 0.12), 0 4px 12px rgba(0, 0, 0, 0.05), inset 0 1.5px 1px #ffffff;
   animation: toastCenterPopIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -2830,10 +2892,22 @@
 
 .sandesh-toast-popup.success {
   border-color: rgba(16, 185, 129, 0.38);
+  box-shadow: 0 18px 45px rgba(16, 185, 129, 0.16), 0 4px 12px rgba(0, 0, 0, 0.05), inset 0 1.5px 1px #ffffff;
+}
+
+.sandesh-toast-popup.info {
+  border-color: rgba(99, 102, 241, 0.38);
+  box-shadow: 0 18px 45px rgba(99, 102, 241, 0.16), 0 4px 12px rgba(0, 0, 0, 0.05), inset 0 1.5px 1px #ffffff;
+}
+
+.sandesh-toast-popup.warning {
+  border-color: rgba(245, 158, 11, 0.4);
+  box-shadow: 0 18px 45px rgba(245, 158, 11, 0.16), 0 4px 12px rgba(0, 0, 0, 0.05), inset 0 1.5px 1px #ffffff;
 }
 
 .sandesh-toast-popup.error {
   border-color: rgba(239, 68, 68, 0.38);
+  box-shadow: 0 18px 45px rgba(239, 68, 68, 0.16), 0 4px 12px rgba(0, 0, 0, 0.05), inset 0 1.5px 1px #ffffff;
 }
 
 .toast-icon-badge {
@@ -2852,6 +2926,20 @@
   color: #059669;
   border: 1px solid rgba(16, 185, 129, 0.35);
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2), inset 0 1px 1px #fff;
+}
+
+.sandesh-toast-popup.info .toast-icon-badge {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(79, 70, 229, 0.28));
+  color: #4f46e5;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2), inset 0 1px 1px #fff;
+}
+
+.sandesh-toast-popup.warning .toast-icon-badge {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(217, 119, 6, 0.28));
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2), inset 0 1px 1px #fff;
 }
 
 .sandesh-toast-popup.error .toast-icon-badge {
@@ -2883,6 +2971,14 @@
 
 .sandesh-toast-popup.success .toast-title {
   color: #059669;
+}
+
+.sandesh-toast-popup.info .toast-title {
+  color: #4f46e5;
+}
+
+.sandesh-toast-popup.warning .toast-title {
+  color: #d97706;
 }
 
 .sandesh-toast-popup.error .toast-title {
@@ -3249,12 +3345,22 @@
 .emoji-search-input {
   width: 100%;
   background: transparent;
-  border: none;
+  border: none !important;
   padding: 8px 0;
   font-size: 13px;
   font-family: inherit;
   color: var(--sandesh-text-main);
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+}
+
+.emoji-search-input:focus,
+.emoji-search-input:focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
 }
 
 .emoji-search-input::placeholder {
