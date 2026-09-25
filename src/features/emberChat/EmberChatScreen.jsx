@@ -8,6 +8,19 @@ import ProfileModal from "./components/modals/ProfileModal.jsx";
 import SmartStructureModal from "./components/modals/SmartStructureModal.jsx";
 import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
 import ForwardModal from "./components/modals/ForwardModal.jsx";
+import CommandsHelpModal from "./components/modals/CommandsHelpModal.jsx";
+import OnlineUsersModal from "./components/modals/OnlineUsersModal.jsx";
+import HostsDirectoryModal from "./components/modals/HostsDirectoryModal.jsx";
+import GroupsDirectoryModal from "./components/modals/GroupsDirectoryModal.jsx";
+import InboxModal from "./components/modals/InboxModal.jsx";
+import UserProfileViewModal from "./components/modals/UserProfileViewModal.jsx";
+import AssociatesModal from "./components/modals/AssociatesModal.jsx";
+import FindPeopleModal from "./components/modals/FindPeopleModal.jsx";
+import ApprovalsModal from "./components/modals/ApprovalsModal.jsx";
+import HostedUsersModal from "./components/modals/HostedUsersModal.jsx";
+import NotificationsModal from "./components/modals/NotificationsModal.jsx";
+import CardsModal from "./components/modals/CardsModal.jsx";
+import { parseCommandLine, DEFAULT_COMMANDS_CATALOG } from "./data/hashCommandsCatalog.js";
 import SandeshLoginScreen from "./components/SandeshLoginScreen.jsx";
 import ToastContainer from "./components/Toast.jsx";
 import {
@@ -65,11 +78,93 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const [typingUsersByChat, setTypingUsersByChat] = useState({});
   const typingTimersRef = useRef({});
 
-  const [modal, setModal] = useState(null); // "new-group" | "members" | "profile" | "smart_structure" | "admin_console" | "forward" | null
+  const [modal, setModal] = useState(null); // "new-group" | "members" | "profile" | "smart_structure" | "admin_console" | "forward" | "commands_help" | "online_users" | "hosts_directory" | "groups_directory" | "inbox" | "user_profile" | "associates" | "find_people" | "approvals" | "hosted_users" | "notifications" | "cards" | null
+  const [modalParam, setModalParam] = useState(null);
   const [forwardTargetMsg, setForwardTargetMsg] = useState(null);
   const [selectedPrompt, setSelectedPrompt] = useState(null);
+  const [composerPrefill, setComposerPrefill] = useState("");
+  const [mediaPanelConfig, setMediaPanelConfig] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [socketStatus, setSocketStatus] = useState("disconnected");
+  const [catalog, setCatalog] = useState(DEFAULT_COMMANDS_CATALOG);
+
+  const [associates, setAssociates] = useState(() => {
+    return authorizedUsers.filter(
+      (u) => (u.username || "").toLowerCase() !== (currentUser?.username || "").toLowerCase()
+    );
+  });
+
+  const [approvals, setApprovals] = useState([
+    {
+      id: 101,
+      type: "invitation",
+      status: "pending",
+      title: "Associate Connection Invitation",
+      details: "Anish invited you to connect as a Sandesh Associate.",
+      fromUser: "anish",
+      time: "10 mins ago",
+    },
+    {
+      id: 102,
+      type: "transfer",
+      status: "pending",
+      title: "SPOC Mentorship Transfer",
+      details: "Nageshwari requested to transfer department host mentorship for Arjun to you.",
+      fromUser: "nageshwari",
+      time: "1 hour ago",
+    },
+  ]);
+
+  const [cards, setCards] = useState([
+    {
+      id: "c1",
+      section: "reminders",
+      title: "Architecture Review",
+      text: "Submit OTP / Sandesh protocol audit review to Executive Leadership.",
+      time: "Today, 5:00 PM",
+    },
+    {
+      id: "c2",
+      section: "tasks",
+      title: "Pending Onboarding Form",
+      text: "Verify departmental permissions for Bangalore HQ engineering associates.",
+      time: "2 hours ago",
+    },
+    {
+      id: "c3",
+      section: "system",
+      title: "Redis Cluster Active",
+      text: "Backend chat session cache synchronized across cluster nodes.",
+      time: "Today",
+    },
+  ]);
+
+  const [notifications, setNotifications] = useState([
+    {
+      id: "n1",
+      category: "approvals",
+      title: "New Associate Request",
+      text: "Anish sent you a Sandesh connection invitation.",
+      time: "10m ago",
+      read: false,
+    },
+    {
+      id: "n2",
+      category: "reminders",
+      title: "Upcoming Architecture Sync",
+      text: "Enterprise Platform meeting starting in 30 minutes in General Broadcast.",
+      time: "25m ago",
+      read: false,
+    },
+    {
+      id: "n3",
+      category: "system",
+      title: "Sandesh Socket Synchronized",
+      text: "Real-time WebSocket connection active with Erlang backend.",
+      time: "1h ago",
+      read: true,
+    },
+  ]);
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0] || {
     id: "room-general",
@@ -699,6 +794,22 @@ export function EmberChatScreen({ onOpenAiChat }) {
             setActiveChatId("room-general");
           }
         }
+      } else if (event.type === "cmd_catalog" && Array.isArray(event.commands)) {
+        setCatalog(event.commands);
+      } else if (event.type === "cmd_help" && event.command) {
+        pushToast(`Help: ${event.command.usage || event.command.name} - ${event.command.summary}`);
+      } else if (event.type === "sd") {
+        if (event.reqId === "#cards" && event.ok && event.data?.cards) {
+          setCards(event.data.cards);
+        } else if (event.reqId === "#requests" && event.ok && event.data?.requests) {
+          setApprovals(event.data.requests);
+        } else if (event.reqId === "#associates" && event.ok && event.data?.associates) {
+          setAssociates(event.data.associates);
+        } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
+          setNotifications(event.data.notifications);
+        } else if (!event.ok && event.error?.message) {
+          pushToast(`Sandesh error: ${event.error.message}`, true);
+        }
       }
     });
 
@@ -810,8 +921,596 @@ export function EmberChatScreen({ onOpenAiChat }) {
     setChats((prev) => prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
   };
 
+  // Hash Commands Path Routing & UI Controller
+  const handleRouteHashCommand = (rawLine, parsed, replyTo) => {
+    // 1. Dispatch raw command line over WebSocket to backend
+    sandeshSocket.send(rawLine);
+
+    const cmd = parsed.cmdWord;
+    const rest = (parsed.rest || "").trim();
+    const parts = rest.split(/\s+/).filter(Boolean);
+
+    // 2. Messaging commands
+    if (cmd === "dm" || cmd === "msg" || cmd === "pm") {
+      const targetUser = parts[0];
+      const messageBody = parts.slice(1).join(" ");
+      if (targetUser) {
+        const uClean = targetUser.toLowerCase().trim();
+        const chatId = `user-${uClean}`;
+        handleSelectChat(chatId);
+        if (messageBody) {
+          const tempId = `temp-${Date.now()}`;
+          const newMsg = {
+            id: tempId,
+            kind: "text",
+            dir: "out",
+            from: currentUser.name || currentUser.username,
+            text: messageBody,
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            ts: Date.now(),
+            status: "sent",
+            ticks: "sent",
+            ...(replyTo ? { replyTo } : {}),
+          };
+          setMessagesByChat((prev) => ({
+            ...prev,
+            [chatId]: [...(prev[chatId] || []), newMsg],
+          }));
+          setChats((prev) =>
+            prev.map((c) => (c.id === chatId ? { ...c, preview: `You: ${messageBody}`, time: "now" } : c))
+          );
+        } else {
+          pushToast(`Switched conversation to @${uClean}`);
+        }
+      } else {
+        setModal("online_users");
+      }
+      return;
+    }
+
+    if (cmd === "host") {
+      const targetHost = parts[0];
+      const messageBody = parts.slice(1).join(" ");
+      if (targetHost) {
+        const hClean = targetHost.toLowerCase().trim();
+        const chatId = `host-${hClean}`;
+        handleSelectChat(chatId);
+        if (messageBody) {
+          const tempId = `temp-${Date.now()}`;
+          const newMsg = {
+            id: tempId,
+            kind: "text",
+            dir: "out",
+            from: currentUser.name || currentUser.username,
+            text: messageBody,
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            ts: Date.now(),
+            status: "sent",
+            ticks: "sent",
+            ...(replyTo ? { replyTo } : {}),
+          };
+          setMessagesByChat((prev) => ({
+            ...prev,
+            [chatId]: [...(prev[chatId] || []), newMsg],
+          }));
+        } else {
+          pushToast(`Switched to host desk #${hClean}`);
+        }
+      } else {
+        setModal("hosts_directory");
+      }
+      return;
+    }
+
+    if (cmd === "reply") {
+      const msgId = parts[0];
+      const messageBody = parts.slice(1).join(" ");
+      handleSelectChat("room-general");
+      if (messageBody) {
+        handleSend(messageBody, { id: msgId, text: `Replying to message #${msgId}` });
+      }
+      return;
+    }
+
+    if (cmd === "replydm") {
+      const targetUser = parts[0];
+      const msgId = parts[1];
+      const messageBody = parts.slice(2).join(" ");
+      if (targetUser) {
+        const chatId = `user-${targetUser.toLowerCase().trim()}`;
+        handleSelectChat(chatId);
+        if (messageBody) {
+          handleSend(messageBody, { id: msgId, text: `Replying to message #${msgId}` });
+        }
+      }
+      return;
+    }
+
+    if (cmd === "groupmsg" || cmd === "gm") {
+      const targetGroup = parts[0];
+      const messageBody = parts.slice(1).join(" ");
+      if (targetGroup) {
+        const chatId = `room-${targetGroup.toLowerCase().trim()}`;
+        handleSelectChat(chatId);
+        if (messageBody) {
+          const tempId = `temp-${Date.now()}`;
+          const newMsg = {
+            id: tempId,
+            kind: "text",
+            dir: "out",
+            from: currentUser.name || currentUser.username,
+            text: messageBody,
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            ts: Date.now(),
+            status: "sent",
+            ticks: "sent",
+            ...(replyTo ? { replyTo } : {}),
+          };
+          setMessagesByChat((prev) => ({
+            ...prev,
+            [chatId]: [...(prev[chatId] || []), newMsg],
+          }));
+        } else {
+          pushToast(`Switched to group "${targetGroup}"`);
+        }
+      } else {
+        setModal("groups_directory");
+      }
+      return;
+    }
+
+    if (cmd === "replygroup") {
+      const targetGroup = parts[0];
+      const msgId = parts[1];
+      const messageBody = parts.slice(2).join(" ");
+      if (targetGroup) {
+        const chatId = `room-${targetGroup.toLowerCase().trim()}`;
+        handleSelectChat(chatId);
+        if (messageBody) {
+          handleSend(messageBody, { id: msgId, text: `Replying to message #${msgId}` });
+        }
+      }
+      return;
+    }
+
+    if (cmd === "react") {
+      const msgId = Number(parts[0]);
+      const emoji = parts[1] || "👍";
+      if (!isNaN(msgId)) {
+        handleToggleReaction(msgId, emoji);
+        pushToast(`Reacted ${emoji} to message #${msgId}`);
+      }
+      return;
+    }
+
+    if (cmd === "reactdm") {
+      const targetUser = parts[0];
+      const msgId = Number(parts[1]);
+      const emoji = parts[2] || "👍";
+      if (targetUser && !isNaN(msgId)) {
+        sandeshSocket.sendReaction("dm", targetUser, msgId, emoji);
+        pushToast(`Reacted ${emoji} in DM with @${targetUser}`);
+      }
+      return;
+    }
+
+    if (cmd === "reactgroup") {
+      const targetGroup = parts[0];
+      const msgId = Number(parts[1]);
+      const emoji = parts[2] || "👍";
+      if (targetGroup && !isNaN(msgId)) {
+        sandeshSocket.sendReaction("group", targetGroup, msgId, emoji);
+        pushToast(`Reacted ${emoji} in group "${targetGroup}"`);
+      }
+      return;
+    }
+
+    if (cmd === "delete") {
+      const msgId = Number(parts[0]);
+      if (!isNaN(msgId)) {
+        handleDeleteMessage(msgId);
+      }
+      return;
+    }
+
+    if (cmd === "deletedm") {
+      const targetUser = parts[0];
+      const msgId = Number(parts[1]);
+      if (targetUser && !isNaN(msgId)) {
+        const chatId = `user-${targetUser.toLowerCase().trim()}`;
+        setMessagesByChat((prev) => ({
+          ...prev,
+          [chatId]: (prev[chatId] || []).filter((m) => m.id !== msgId),
+        }));
+        pushToast(`Deleted message #${msgId} in DM with @${targetUser}`);
+      }
+      return;
+    }
+
+    if (cmd === "deletegroup") {
+      const targetGroup = parts[0];
+      const msgId = Number(parts[1]);
+      if (targetGroup && !isNaN(msgId)) {
+        const chatId = `room-${targetGroup.toLowerCase().trim()}`;
+        setMessagesByChat((prev) => ({
+          ...prev,
+          [chatId]: (prev[chatId] || []).filter((m) => m.id !== msgId),
+        }));
+        pushToast(`Deleted message #${msgId} in group "${targetGroup}"`);
+      }
+      return;
+    }
+
+    if (cmd === "gif") {
+      setMediaPanelConfig({ open: true, tab: "gifs", query: rest });
+      return;
+    }
+
+    if (cmd === "sticker") {
+      setMediaPanelConfig({ open: true, tab: "stickers", query: rest });
+      return;
+    }
+
+    // 3. Look Things Up
+    if (cmd === "users" || cmd === "online" || cmd === "who") {
+      setModal("online_users");
+      return;
+    }
+
+    if (cmd === "hosts") {
+      setModal("hosts_directory");
+      return;
+    }
+
+    if (cmd === "groups") {
+      setModal("groups_directory");
+      return;
+    }
+
+    if (cmd === "inbox" || cmd === "conversations") {
+      setModal("inbox");
+      return;
+    }
+
+    if (cmd === "history") {
+      handleSelectChat("room-general");
+      sandeshSocket.sendHistory("global");
+      pushToast("Reloaded global broadcast history");
+      return;
+    }
+
+    if (cmd === "historydm") {
+      const user = parts[0];
+      if (user) {
+        const chatId = `user-${user.toLowerCase().trim()}`;
+        handleSelectChat(chatId);
+        sandeshSocket.sendHistory("dm", user);
+        pushToast(`Reloaded direct message history with @${user}`);
+      }
+      return;
+    }
+
+    if (cmd === "historygroup") {
+      const grp = parts[0];
+      if (grp) {
+        const chatId = `room-${grp.toLowerCase().trim()}`;
+        handleSelectChat(chatId);
+        sandeshSocket.sendHistory("group", grp);
+        pushToast(`Reloaded history for group "${grp}"`);
+      }
+      return;
+    }
+
+    if (cmd === "historyhost") {
+      const host = parts[0];
+      if (host) {
+        const chatId = `host-${host.toLowerCase().trim()}`;
+        handleSelectChat(chatId);
+        sandeshSocket.sendHistory("host", host);
+        pushToast(`Reloaded history for host #${host}`);
+      }
+      return;
+    }
+
+    if (cmd === "read") {
+      const user = parts[0];
+      if (user) {
+        const chatId = `user-${user.toLowerCase().trim()}`;
+        sandeshSocket.sendRead(user);
+        setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, unread: 0 } : c)));
+        pushToast(`Marked conversation with @${user} as read`);
+      }
+      return;
+    }
+
+    if (cmd === "profile") {
+      const user = parts[0];
+      if (!user || user.toLowerCase().trim() === (currentUser.username || "").toLowerCase()) {
+        setModal("profile");
+      } else {
+        const found =
+          authorizedUsers.find((u) => (u.username || "").toLowerCase() === user.toLowerCase()) ||
+          onlineUsers.find((u) => (u.username || "").toLowerCase() === user.toLowerCase()) ||
+          { username: user, name: user, designation: "Associate", status: "Active on Sandesh" };
+        setModalParam(found);
+        setModal("user_profile");
+      }
+      return;
+    }
+
+    // 4. Groups
+    if (cmd === "creategroup" || cmd === "newgroup") {
+      const gName = parts[0];
+      if (gName) {
+        const chatId = `room-${gName}`;
+        const newGroupChat = {
+          id: chatId,
+          name: gName,
+          isGroup: true,
+          category: "channel",
+          preview: "Group created via #creategroup",
+          time: "now",
+          unread: 0,
+          topic: gName,
+          members: [currentUser.username],
+        };
+        setChats((prev) => [newGroupChat, ...prev]);
+        setActiveChatId(chatId);
+        setGroupMembersByName((prev) => ({ ...prev, [gName]: [currentUser.username] }));
+        sandeshSocket.sendCreateGroup(gName);
+        pushToast(`Group "${gName}" created`);
+      } else {
+        setModal("new-group");
+      }
+      return;
+    }
+
+    if (cmd === "addmember" || cmd === "invitegroup") {
+      const grp = parts[0];
+      const user = parts[1];
+      if (grp && user) {
+        sandeshSocket.sendAddMember(grp, user);
+        setGroupMembersByName((prev) => ({
+          ...prev,
+          [grp]: [...(prev[grp] || []), user],
+        }));
+        pushToast(`Added @${user} to group "${grp}"`);
+      } else if (grp) {
+        setModal("members");
+      } else {
+        setModal("groups_directory");
+      }
+      return;
+    }
+
+    if (cmd === "leavegroup" || cmd === "leave") {
+      const grp = parts[0] || (activeChat.isGroup ? activeChat.name : "");
+      if (grp) {
+        sandeshSocket.sendLeaveGroup(grp);
+        setChats((prev) => prev.filter((c) => c.id !== `room-${grp}`));
+        setActiveChatId("room-general");
+        pushToast(`Left group "${grp}"`);
+      }
+      return;
+    }
+
+    // 5. Your Profile
+    if (cmd === "status") {
+      if (rest) {
+        setCurrentUser((u) => ({ ...u, status: rest }));
+        try {
+          localStorage.setItem("sandesh_session_user", JSON.stringify({ ...currentUser, status: rest }));
+        } catch {}
+        sandeshSocket.send(`/setstatus ${rest}`);
+        pushToast(`Status updated to: "${rest}"`);
+      } else {
+        setModal("profile");
+      }
+      return;
+    }
+
+    if (cmd === "avatar") {
+      if (rest) {
+        setCurrentUser((u) => ({ ...u, avatar: rest }));
+        try {
+          localStorage.setItem("sandesh_session_user", JSON.stringify({ ...currentUser, avatar: rest }));
+        } catch {}
+        pushToast("Avatar updated");
+      } else {
+        setModal("profile");
+      }
+      return;
+    }
+
+    // 6. People & Approvals (Sandesh)
+    if (cmd === "me" || cmd === "whoami") {
+      setModal("profile");
+      return;
+    }
+
+    if (cmd === "associates" || cmd === "contacts") {
+      setModal("associates");
+      return;
+    }
+
+    if (cmd === "find" || cmd === "search") {
+      setModalParam(rest);
+      setModal("find_people");
+      return;
+    }
+
+    if (cmd === "connect") {
+      const targetUser = parts[0];
+      if (targetUser) {
+        pushToast(`Invitation sent to @${targetUser}`);
+      } else {
+        setModal("find_people");
+      }
+      return;
+    }
+
+    if (cmd === "disconnect") {
+      const targetUser = parts[0];
+      if (targetUser) {
+        setAssociates((prev) => prev.filter((a) => (a.username || "").toLowerCase() !== targetUser.toLowerCase()));
+        pushToast(`Disconnected from @${targetUser}`);
+      }
+      return;
+    }
+
+    if (cmd === "requests" || cmd === "approvals") {
+      const statusFilter = parts[0] || "all";
+      setModalParam(statusFilter);
+      setModal("approvals");
+      return;
+    }
+
+    if (cmd === "accept") {
+      const reqId = Number(parts[0]) || parts[0];
+      setApprovals((prev) =>
+        prev.map((r) => (r.id === reqId || String(r.id) === String(reqId) ? { ...r, status: "accepted" } : r))
+      );
+      pushToast(`Request #${reqId} accepted`);
+      return;
+    }
+
+    if (cmd === "reject") {
+      const reqId = Number(parts[0]) || parts[0];
+      setApprovals((prev) =>
+        prev.map((r) => (r.id === reqId || String(r.id) === String(reqId) ? { ...r, status: "rejected" } : r))
+      );
+      pushToast(`Request #${reqId} rejected`);
+      return;
+    }
+
+    if (cmd === "ignore") {
+      const reqId = Number(parts[0]) || parts[0];
+      setApprovals((prev) => prev.filter((r) => r.id !== reqId && String(r.id) !== String(reqId)));
+      pushToast(`Request #${reqId} ignored`);
+      return;
+    }
+
+    if (cmd === "myusers") {
+      setModal("hosted_users");
+      return;
+    }
+
+    if (cmd === "transfer") {
+      const user = parts[0];
+      const toHost = parts[1];
+      pushToast(`Transfer requested for @${user} to Host @${toHost}`);
+      return;
+    }
+
+    // 7. Notifications & Cards
+    if (cmd === "notifications" || cmd === "notifs") {
+      const cat = parts[0] || "all";
+      setModalParam(cat);
+      setModal("notifications");
+      return;
+    }
+
+    if (cmd === "markread") {
+      const cat = parts[0] || "all";
+      setNotifications((prev) =>
+        prev.map((n) => (cat === "all" || n.category === cat ? { ...n, read: true } : n))
+      );
+      pushToast(`Marked ${cat} notifications as read`);
+      return;
+    }
+
+    if (cmd === "cards") {
+      const section = parts[0] || "all";
+      setModalParam(section);
+      setModal("cards");
+      return;
+    }
+
+    if (cmd === "dismiss") {
+      const cardId = parts[0];
+      if (cardId === "all") {
+        setCards([]);
+        pushToast("Dismissed all cards");
+      } else if (cardId) {
+        setCards((prev) => prev.filter((c) => c.id !== cardId));
+        pushToast(`Dismissed card #${cardId}`);
+      }
+      return;
+    }
+
+    if (cmd === "remind" || cmd === "reminder") {
+      if (rest) {
+        const newCard = {
+          id: `rem-${Date.now()}`,
+          section: "reminders",
+          title: "Personal Reminder",
+          text: rest,
+          time: "Just now",
+        };
+        setCards((prev) => [newCard, ...prev]);
+        pushToast(`Reminder saved: "${rest}"`);
+      } else {
+        setModal("cards");
+      }
+      return;
+    }
+
+    // 8. Administration
+    if (cmd === "admin-org") {
+      setModalParam({ tab: "setup" });
+      setModal("admin_console");
+      return;
+    }
+
+    if (cmd === "admin-users") {
+      setModalParam({ tab: "users", query: rest });
+      setModal("admin_console");
+      return;
+    }
+
+    if (cmd === "admin-admins") {
+      setModalParam({ tab: "users", query: "admin" });
+      setModal("admin_console");
+      return;
+    }
+
+    if (cmd === "admin-affiliates") {
+      setModalParam({ tab: "affiliates" });
+      setModal("admin_console");
+      return;
+    }
+
+    if (cmd === "admin-activate") {
+      const user = parts[0];
+      pushToast(`User @${user} activated`);
+      return;
+    }
+
+    if (cmd === "admin-deactivate") {
+      const user = parts[0];
+      pushToast(`User @${user} deactivated`);
+      return;
+    }
+
+    // 9. Help
+    if (cmd === "help" || cmd === "commands") {
+      setModalParam(rest);
+      setModal("commands_help");
+      return;
+    }
+  };
+
   // P0 & P1: Send messages with sending/sent/failed status and correct routing
   const handleSend = (text, replyTo) => {
+    // Check if text is a known #command
+    if (text.startsWith("#")) {
+      const parsed = parseCommandLine(text);
+      if (parsed && parsed.matchedCommand) {
+        handleRouteHashCommand(text, parsed, replyTo);
+        return;
+      }
+    }
+
     const tempId = `temp-${Date.now()}`;
     const newMsg = {
       id: tempId,
@@ -1213,7 +1912,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onClose={() => setSidebarOpen(false)}
           onNewGroup={() => setModal("new-group")}
           onOpenAiChat={onOpenAiChat}
-          onOpenAdminConsole={() => setModal("admin_console")}
+          onOpenAdminConsole={() => {
+            setModalParam({ tab: "users" });
+            setModal("admin_console");
+          }}
+          onOpenCommandsHelp={() => {
+            setModalParam("");
+            setModal("commands_help");
+          }}
           onSignOut={handleSignOut}
           socketStatus={socketStatus}
           onReconnectSocket={() => sandeshSocket.connect(currentUser)}
@@ -1239,16 +1945,240 @@ export function EmberChatScreen({ onOpenAiChat }) {
             setSelectedPrompt(p || { id: "general", label: "Smart Prompt" });
             setModal("smart_structure");
           }}
-          onOpenAdminConsole={() => setModal("admin_console")}
+          onOpenAdminConsole={() => {
+            setModalParam({ tab: "users" });
+            setModal("admin_console");
+          }}
           onOpenAiChat={onOpenAiChat}
           typingUser={typingUsersByChat[activeChatId]}
           onTyping={handleTyping}
           disabled={socketStatus !== "connected"}
           pushToast={pushToast}
+          currentUser={currentUser}
+          onlineUsers={onlineUsers}
+          availableUsers={authorizedUsers}
+          chats={chats}
+          initialComposerText={composerPrefill}
+          mediaPanelConfig={mediaPanelConfig}
+          onCloseMediaPanel={() => setMediaPanelConfig(null)}
         />
 
         {modal && (
-          <ModalLayer onScrimClick={() => setModal(null)}>
+          <ModalLayer onScrimClick={() => {
+            setModal(null);
+            setModalParam(null);
+          }}>
+            {modal === "commands_help" && (
+              <CommandsHelpModal
+                initialCommand={typeof modalParam === "string" ? modalParam : ""}
+                onSelectCommand={(cmd) => {
+                  setComposerPrefill(`#${cmd.name} `);
+                  setModal(null);
+                  setModalParam(null);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
+              />
+            )}
+            {modal === "online_users" && (
+              <OnlineUsersModal
+                onlineUsers={onlineUsers}
+                availableUsers={authorizedUsers}
+                currentUsername={currentUser.username}
+                onSelectUser={handleSelectOnlineUser}
+                onViewProfile={(u) => {
+                  setModalParam(u);
+                  setModal("user_profile");
+                }}
+                onClose={() => setModal(null)}
+              />
+            )}
+            {modal === "hosts_directory" && (
+              <HostsDirectoryModal
+                onSelectHost={(hostId) => {
+                  handleSelectChat(hostId);
+                  setModal(null);
+                }}
+                onClose={() => setModal(null)}
+              />
+            )}
+            {modal === "groups_directory" && (
+              <GroupsDirectoryModal
+                chats={chats}
+                groupMembersByName={groupMembersByName}
+                onSelectChat={(chatId) => {
+                  handleSelectChat(chatId);
+                  setModal(null);
+                }}
+                onNewGroup={() => setModal("new-group")}
+                onClose={() => setModal(null)}
+              />
+            )}
+            {modal === "inbox" && (
+              <InboxModal
+                chats={chats}
+                onSelectChat={(chatId) => {
+                  handleSelectChat(chatId);
+                  setModal(null);
+                }}
+                onClose={() => setModal(null)}
+              />
+            )}
+            {modal === "user_profile" && modalParam && (
+              <UserProfileViewModal
+                user={modalParam}
+                onSendMessage={(u) => {
+                  handleSelectOnlineUser(u);
+                  setModal(null);
+                  setModalParam(null);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
+              />
+            )}
+            {modal === "associates" && (
+              <AssociatesModal
+                associates={associates}
+                onSelectUser={(u) => {
+                  handleSelectOnlineUser(u);
+                  setModal(null);
+                }}
+                onDisconnect={(username) => {
+                  sandeshSocket.send(`#disconnect ${username}`);
+                  setAssociates((prev) =>
+                    prev.filter((a) => (a.username || "").toLowerCase() !== username.toLowerCase())
+                  );
+                  pushToast(`Disconnected associate @${username}`);
+                }}
+                onOpenFind={() => {
+                  setModalParam("");
+                  setModal("find_people");
+                }}
+                onClose={() => setModal(null)}
+              />
+            )}
+            {modal === "find_people" && (
+              <FindPeopleModal
+                initialQuery={typeof modalParam === "string" ? modalParam : ""}
+                availableUsers={authorizedUsers}
+                currentUsername={currentUser.username}
+                associates={associates}
+                onConnect={(username) => {
+                  sandeshSocket.send(`#connect ${username}`);
+                  const found = authorizedUsers.find(
+                    (u) => (u.username || "").toLowerCase() === username.toLowerCase()
+                  );
+                  if (found && !associates.some((a) => a.username === found.username)) {
+                    setAssociates((prev) => [...prev, found]);
+                  }
+                  pushToast(`Connection invitation sent to @${username}`);
+                }}
+                onSelectUser={(u) => {
+                  handleSelectOnlineUser(u);
+                  setModal(null);
+                  setModalParam(null);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
+              />
+            )}
+            {modal === "approvals" && (
+              <ApprovalsModal
+                initialStatus={typeof modalParam === "string" ? modalParam : "all"}
+                requests={approvals}
+                onAccept={(reqId) => {
+                  sandeshSocket.send(`#accept ${reqId}`);
+                  setApprovals((prev) =>
+                    prev.map((r) => (r.id === reqId ? { ...r, status: "accepted" } : r))
+                  );
+                  pushToast(`Request #${reqId} accepted`);
+                }}
+                onReject={(reqId) => {
+                  sandeshSocket.send(`#reject ${reqId}`);
+                  setApprovals((prev) =>
+                    prev.map((r) => (r.id === reqId ? { ...r, status: "rejected" } : r))
+                  );
+                  pushToast(`Request #${reqId} rejected`);
+                }}
+                onIgnore={(reqId) => {
+                  sandeshSocket.send(`#ignore ${reqId}`);
+                  setApprovals((prev) => prev.filter((r) => r.id !== reqId));
+                  pushToast(`Request #${reqId} ignored`);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
+              />
+            )}
+            {modal === "hosted_users" && (
+              <HostedUsersModal
+                hostedUsers={authorizedUsers.filter(
+                  (u) => u.hostUser === currentUser.name || u.hostUser === "Sabarish"
+                )}
+                availableHosts={["sabarish", "nageshwari", "hr", "finance"]}
+                onTransferUser={(user, toHost) => {
+                  sandeshSocket.send(`#transfer ${user} ${toHost}`);
+                  pushToast(`Transferred @${user} to Host @${toHost}`);
+                  setModal(null);
+                }}
+                onClose={() => setModal(null)}
+              />
+            )}
+            {modal === "notifications" && (
+              <NotificationsModal
+                initialCategory={typeof modalParam === "string" ? modalParam : "all"}
+                notifications={notifications}
+                onMarkRead={(cat) => {
+                  sandeshSocket.send(`#markread ${cat}`);
+                  setNotifications((prev) =>
+                    prev.map((n) =>
+                      cat === "all" || n.category === cat ? { ...n, read: true } : n
+                    )
+                  );
+                  pushToast(`Marked ${cat} notifications as read`);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
+              />
+            )}
+            {modal === "cards" && (
+              <CardsModal
+                initialSection={typeof modalParam === "string" ? modalParam : "all"}
+                cards={cards}
+                onDismissCard={(cardId) => {
+                  sandeshSocket.send(`#dismiss ${cardId}`);
+                  setCards((prev) => prev.filter((c) => c.id !== cardId));
+                  pushToast(`Dismissed card #${cardId}`);
+                }}
+                onAddReminder={(remText) => {
+                  sandeshSocket.send(`#remind ${remText}`);
+                  setCards((prev) => [
+                    {
+                      id: `rem-${Date.now()}`,
+                      section: "reminders",
+                      title: "Personal Reminder",
+                      text: remText,
+                      time: "Just now",
+                    },
+                    ...prev,
+                  ]);
+                  pushToast(`Reminder saved: "${remText}"`);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
+              />
+            )}
             {modal === "new-group" && (
               <NewGroupModal
                 onlineUsers={onlineUsers}
@@ -1352,7 +2282,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "admin_console" && (
               <AdminConsoleModal
-                onClose={() => setModal(null)}
+                initialTab={modalParam?.tab || "users"}
+                initialQuery={modalParam?.query || ""}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
                 pushToast={pushToast}
               />
             )}

@@ -14,6 +14,7 @@ export default function Sidebar({
   onNewGroup,
   onOpenAiChat,
   onOpenAdminConsole,
+  onOpenCommandsHelp,
   onSignOut,
   socketStatus,
   onReconnectSocket,
@@ -69,6 +70,15 @@ export default function Sidebar({
             </div>
           </div>
           <div className="user-actions-right">
+            <button
+              type="button"
+              className="sandesh-icon-btn-3d"
+              onClick={onOpenCommandsHelp}
+              title="# Commands Guide & Directory"
+              aria-label="Commands guide"
+            >
+              <span className="material-icons">terminal</span>
+            </button>
             {me.isAdmin && (
               <button
                 type="button"

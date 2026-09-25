@@ -27,6 +27,13 @@ export default function ChatScreen({
   onTyping,
   disabled = false,
   pushToast,
+  currentUser = null,
+  onlineUsers = [],
+  availableUsers = [],
+  chats = [],
+  initialComposerText = "",
+  mediaPanelConfig = null,
+  onCloseMediaPanel,
 }) {
   const [activeView, setActiveView] = useState("messages"); // "messages" | "episodes"
   const [replyingTo, setReplyingTo] = useState(null);
@@ -160,6 +167,13 @@ export default function ChatScreen({
             disabled={disabled}
             pushToast={pushToast}
             userCategory={userCategory}
+            currentUser={currentUser}
+            onlineUsers={onlineUsers}
+            availableUsers={availableUsers}
+            chats={chats}
+            initialText={initialComposerText}
+            mediaPanelConfig={mediaPanelConfig}
+            onCloseMediaPanel={onCloseMediaPanel}
           />
         </div>
       )}

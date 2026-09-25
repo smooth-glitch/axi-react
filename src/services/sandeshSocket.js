@@ -124,6 +124,7 @@ class SandeshSocketService {
           this.send('/groups');
           this.send('/conversations');
           this.send('/history global');
+          this.send('/cmds');
         }
 
         this.notify(payload);

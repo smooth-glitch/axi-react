@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { initialAdminData } from "../../data/sampleData.js";
 
-export default function AdminConsoleModal({ onClose, pushToast }) {
-  const [activeTab, setActiveTab] = useState("users"); // "users" | "affiliates" | "setup" | "invite"
+export default function AdminConsoleModal({ initialTab = "users", initialQuery = "", onClose, pushToast }) {
+  const [activeTab, setActiveTab] = useState(initialTab || "users"); // "users" | "affiliates" | "setup" | "invite"
   const [adminData, setAdminData] = useState(initialAdminData);
   const [reassignTargetUser, setReassignTargetUser] = useState(null);
   const [selectedNewHost, setSelectedNewHost] = useState("Nageshwari");
+  const [userSearch, setUserSearch] = useState(initialQuery || "");
 
   // Invite user form state
   const [inviteForm, setInviteForm] = useState({
@@ -127,15 +128,31 @@ export default function AdminConsoleModal({ onClose, pushToast }) {
         {/* TAB 1: USERS & HOSTS */}
         {activeTab === "users" && (
           <div className="admin-table-container">
-            <div className="admin-section-header">
+            <div className="admin-section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
               <h4>All Registered Users ({adminData.users.length})</h4>
-              <button
-                type="button"
-                className="sandesh-btn-mini-primary"
-                onClick={() => setActiveTab("invite")}
-              >
-                + Invite User
-              </button>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="Filter users..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "14px",
+                    border: "1px solid rgba(0,0,0,0.1)",
+                    fontSize: "12px",
+                    background: "rgba(255,255,255,0.7)",
+                    outline: "none",
+                  }}
+                />
+                <button
+                  type="button"
+                  className="sandesh-btn-mini-primary"
+                  onClick={() => setActiveTab("invite")}
+                >
+                  + Invite User
+                </button>
+              </div>
             </div>
 
             <div className="sandesh-glass-table">
@@ -147,7 +164,19 @@ export default function AdminConsoleModal({ onClose, pushToast }) {
                 <span>Status</span>
                 <span>Actions</span>
               </div>
-              {adminData.users.map((u) => (
+              {adminData.users
+                .filter((u) => {
+                  if (!userSearch) return true;
+                  const q = userSearch.toLowerCase();
+                  if (q === "admin" || q === "admins") return u.designation?.toLowerCase().includes("admin") || u.category === "admin";
+                  return (
+                    u.name.toLowerCase().includes(q) ||
+                    (u.username && u.username.toLowerCase().includes(q)) ||
+                    (u.designation && u.designation.toLowerCase().includes(q)) ||
+                    (u.department && u.department.toLowerCase().includes(q))
+                  );
+                })
+                .map((u) => (
                 <div key={u.id} className={`table-row ${!u.active ? "inactive-row" : ""}`}>
                   <div className="cell-user">
                     <span className="cell-name">{u.name}</span>

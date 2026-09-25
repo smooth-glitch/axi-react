@@ -3752,5 +3752,1149 @@
   gap: 6px;
 }
 
+/* ==========================================================================
+   SANDESH HASH COMMANDS (#COMMANDS) 3D GLASSMORPHISM SYSTEM
+   Floating Autocomplete Menu, Help Center, Directory Modals, and Action Views
+   ========================================================================== */
+
+/* 1. Floating Command Autocomplete Menu Popup */
+.sandesh-cmd-menu-popup {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 20px;
+  right: 20px;
+  max-width: 620px;
+  max-height: 380px;
+  background: var(--sandesh-glass-thick);
+  backdrop-filter: var(--sandesh-blur);
+  -webkit-backdrop-filter: var(--sandesh-blur);
+  border: 1px solid var(--sandesh-glass-border);
+  box-shadow: 0 22px 55px -10px rgba(220, 110, 65, 0.28), 0 8px 24px -4px rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  overflow: hidden;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  animation: sandeshCmdFadeUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sandeshCmdFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.cmd-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(135deg, rgba(255, 122, 89, 0.1) 0%, rgba(255, 235, 225, 0.6) 100%);
+}
+
+.cmd-header-icon {
+  font-size: 16px;
+  color: var(--sandesh-coral-accent);
+}
+
+.cmd-header-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sandesh-text-main);
+  letter-spacing: 0.2px;
+}
+
+.cmd-header-hint {
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+  margin-left: auto;
+}
+
+.cmd-menu-scroll {
+  overflow-y: auto;
+  max-height: 300px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cmd-menu-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--sandesh-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cmd-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.cmd-menu-item:hover,
+.cmd-menu-item.active {
+  background: linear-gradient(90deg, rgba(255, 122, 89, 0.14) 0%, rgba(255, 245, 240, 0.8) 100%);
+  transform: translateX(3px);
+}
+
+.cmd-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cmd-item-hash {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--sandesh-coral-grad);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(255, 122, 89, 0.35);
+}
+
+.cmd-item-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cmd-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cmd-primary-name {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--sandesh-text-main);
+}
+
+.cmd-alias-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sandesh-coral-accent);
+  background: rgba(255, 122, 89, 0.1);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.cmd-cat-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--sandesh-text-muted);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+}
+
+.cmd-summary-line {
+  font-size: 11.5px;
+  color: var(--sandesh-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.cmd-item-right {
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.cmd-usage-preview {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.cmd-lock-badge {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  letter-spacing: 0.4px;
+}
+
+.cmd-lock-badge.req-admin {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+
+.cmd-lock-badge.req-host {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007aff;
+}
+
+/* Argument Suggestion Items */
+.cmd-menu-item.arg-item {
+  padding: 9px 12px;
+}
+
+.arg-type-icon {
+  font-size: 18px;
+  color: var(--sandesh-coral-accent);
+  margin-right: 4px;
+}
+
+.arg-text-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.arg-label-text {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--sandesh-text-main);
+}
+
+.arg-hint-text {
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+}
+
+.arg-sub-note {
+  font-size: 11px;
+  color: var(--sandesh-text-subtle);
+  margin-left: auto;
+}
+
+/* 2. Commands Help Center Modal */
+.commands-help-search {
+  padding: 14px 22px 8px 22px;
+}
+
+.commands-help-categories {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 22px 14px 22px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.commands-help-categories::-webkit-scrollbar {
+  display: none;
+}
+
+.cmd-cat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.cmd-cat-pill:hover {
+  background: #fff;
+  color: var(--sandesh-text-main);
+  transform: translateY(-1px);
+}
+
+.cmd-cat-pill.active {
+  background: var(--sandesh-coral-grad);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--sandesh-shadow-pill);
+}
+
+.pill-cat-icon {
+  font-size: 14px;
+}
+
+.commands-scroll-body {
+  max-height: 440px;
+  overflow-y: auto;
+  padding: 10px 22px;
+}
+
+.commands-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.command-card-3d {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 4px 14px rgba(220, 110, 65, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.18s ease;
+}
+
+.command-card-3d:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(220, 110, 65, 0.14);
+}
+
+.command-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.command-name-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.command-name-badge .cmd-hash {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--sandesh-coral-accent);
+}
+
+.command-name-badge .cmd-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--sandesh-text-main);
+}
+
+.command-name-badge .cmd-aliases {
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+}
+
+.cmd-req-badge {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 9999px;
+}
+
+.cmd-req-badge.req-admin {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+
+.cmd-req-badge.req-host {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007aff;
+}
+
+.command-card-desc {
+  font-size: 12px;
+  color: var(--sandesh-text-muted);
+  line-height: 1.45;
+}
+
+.command-card-usage {
+  background: rgba(0, 0, 0, 0.04);
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.command-card-usage code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--sandesh-text-main);
+}
+
+.command-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.cmd-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--sandesh-coral-grad);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(255, 122, 89, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.cmd-run-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* 3. Directory User Lists & Cards (Users, Hosts, Groups, People, Inbox) */
+.directory-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.directory-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
+}
+
+.directory-user-card:hover {
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(220, 110, 65, 0.12);
+}
+
+.directory-user-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.online-beacon-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #34c759;
+  border: 2px solid #fff;
+  box-shadow: 0 0 6px rgba(52, 199, 89, 0.7);
+}
+
+.directory-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.directory-user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.directory-user-name {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--sandesh-text-main);
+}
+
+.directory-user-handle {
+  font-size: 12px;
+  color: var(--sandesh-text-muted);
+}
+
+.host-badge,
+.admin-badge,
+.connected-badge {
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.host-badge {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007aff;
+}
+
+.admin-badge {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+
+.connected-badge {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34c759;
+}
+
+.directory-user-sub {
+  font-size: 12px;
+  color: var(--sandesh-text-muted);
+  margin-top: 2px;
+}
+
+.directory-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dir-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.dir-profile-btn {
+  width: 32px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--sandesh-text-main);
+}
+
+.dir-profile-btn:hover {
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.dir-dm-btn {
+  padding: 0 12px;
+  border: none;
+  background: var(--sandesh-coral-grad);
+  color: #fff;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(255, 122, 89, 0.3);
+}
+
+.dir-dm-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Host & Group Cards Specializations */
+.host-entry-card .host-key-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #007aff;
+  background: rgba(0, 122, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.host-cat-pill {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.host-cat-pill.tag-ai_host {
+  background: rgba(175, 82, 222, 0.12);
+  color: #af52de;
+}
+
+.host-cat-pill.tag-department {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007aff;
+}
+
+.host-entry-desc {
+  font-size: 11.5px;
+  color: var(--sandesh-text-muted);
+  font-style: italic;
+  margin-top: 3px;
+}
+
+.group-members-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.group-preview-text,
+.inbox-preview-text {
+  font-size: 11.5px;
+  color: var(--sandesh-text-muted);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+/* Inbox Thread Cards */
+.inbox-thread-card {
+  cursor: pointer;
+}
+
+.inbox-time-tag {
+  font-size: 11px;
+  color: var(--sandesh-text-subtle);
+  margin-left: auto;
+}
+
+.inbox-unread-count-pill {
+  background: var(--sandesh-coral-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 6px rgba(255, 122, 89, 0.4);
+}
+
+.unread-dot-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sandesh-coral-accent);
+  border: 2px solid #fff;
+}
+
+/* 4. User Profile Hero & Details Card */
+.profile-hero-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(255, 122, 89, 0.12) 0%, rgba(255, 230, 215, 0.5) 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+}
+
+.profile-hero-name {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0;
+  color: var(--sandesh-text-main);
+}
+
+.profile-hero-handle {
+  font-size: 13px;
+  color: var(--sandesh-text-muted);
+}
+
+.profile-role-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sandesh-coral-accent);
+  margin-top: 4px;
+}
+
+.profile-detail-card {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 14px;
+  padding: 12px 16px;
+}
+
+.profile-detail-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--sandesh-text-muted);
+  margin-bottom: 4px;
+}
+
+.profile-detail-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sandesh-text-main);
+}
+
+/* 5. Approvals & Pending Requests Modal */
+.requests-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.approval-request-card {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  padding: 14px 18px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.approval-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.approval-type-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--sandesh-text-main);
+}
+
+.approval-type-tag .req-icon {
+  font-size: 18px;
+  color: var(--sandesh-coral-accent);
+}
+
+.approval-status-pill {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  letter-spacing: 0.4px;
+}
+
+.approval-status-pill.status-pending {
+  background: rgba(255, 159, 10, 0.15);
+  color: #ff9f0a;
+}
+
+.approval-status-pill.status-approved,
+.approval-status-pill.status-accepted {
+  background: rgba(52, 199, 89, 0.15);
+  color: #34c759;
+}
+
+.approval-status-pill.status-rejected {
+  background: rgba(255, 59, 48, 0.15);
+  color: #ff3b30;
+}
+
+.approval-card-body {
+  margin: 8px 0;
+}
+
+.approval-desc {
+  font-size: 12.5px;
+  color: var(--sandesh-text-main);
+  margin: 0 0 6px 0;
+}
+
+.approval-meta {
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.req-id-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.approval-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.sandesh-btn-mini-primary,
+.sandesh-btn-mini-danger,
+.sandesh-btn-mini-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.sandesh-btn-mini-primary {
+  background: #34c759;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(52, 199, 89, 0.35);
+}
+
+.sandesh-btn-mini-danger {
+  background: #ff3b30;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(255, 59, 48, 0.35);
+}
+
+.sandesh-btn-mini-ghost {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--sandesh-text-muted);
+}
+
+/* 6. Notifications Modal */
+.notif-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notif-entry-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  transition: all 0.15s ease;
+}
+
+.notif-entry-card.unread {
+  border-left: 4px solid var(--sandesh-coral-accent);
+  background: rgba(255, 245, 240, 0.85);
+}
+
+.notif-icon-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 122, 89, 0.14);
+  color: var(--sandesh-coral-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.notif-content-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notif-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--sandesh-text-main);
+}
+
+.notif-time {
+  font-size: 11px;
+  color: var(--sandesh-text-subtle);
+}
+
+.notif-body {
+  font-size: 12px;
+  color: var(--sandesh-text-muted);
+  margin: 4px 0 6px 0;
+  line-height: 1.4;
+}
+
+.notif-category-tag {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--sandesh-text-muted);
+}
+
+/* 7. Message Cards & Reminders Modal */
+.cards-grid-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sandesh-message-card-entry {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  padding: 14px 18px;
+  box-shadow: 0 4px 14px rgba(220, 110, 65, 0.06);
+}
+
+.card-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-type-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--sandesh-coral-accent);
+}
+
+.card-chip-icon {
+  font-size: 17px;
+}
+
+.card-dismiss-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--sandesh-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.card-dismiss-btn:hover {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+
+.card-entry-body {
+  margin: 6px 0;
+  font-size: 12.5px;
+  color: var(--sandesh-text-main);
+}
+
+.card-sub-note {
+  display: block;
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+  margin-top: 3px;
+}
+
+.card-entry-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--sandesh-text-subtle);
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* 8. Media Tabs (Emojis, GIFs, Stickers) in ContentPanel */
+.content-media-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 4px;
+  border-radius: 9999px;
+}
+
+.content-media-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.content-media-tab-btn.active {
+  background: #fff;
+  color: var(--sandesh-coral-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.gifs-masonry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 8px 4px;
+}
+
+.gif-card-item {
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease;
+}
+
+.gif-card-item:hover {
+  transform: scale(1.02);
+}
+
+.gif-preview-box {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.gif-preview-emoji {
+  font-size: 32px;
+}
+
+.gif-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.gif-title-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sandesh-text-main);
+  padding: 6px 8px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stickers-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 8px 4px;
+}
+
+.sticker-card-item {
+  border-radius: 14px;
+  padding: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.sticker-card-item:hover {
+  background: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(220, 110, 65, 0.15);
+}
+
+.sticker-badge-container {
+  border: 2px solid;
+  border-radius: 10px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
+.sticker-title-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+}
+
+/* Commands Empty State */
+.commands-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--sandesh-text-muted);
+}
+
+.commands-empty-state .empty-icon {
+  font-size: 36px;
+  color: var(--sandesh-coral-accent);
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.commands-empty-state h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sandesh-text-main);
+  margin: 0 0 4px 0;
+}
+
+.commands-empty-state p {
+  font-size: 12.5px;
+  margin: 0;
+}
+
+
 
 
