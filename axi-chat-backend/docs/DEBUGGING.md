@@ -28,6 +28,25 @@ user's bug report. It does **not** cover file uploads, GIF/sticker search
 (depends on Giphy's live API), the raw TCP dev listener, or anything with
 more than 2 concurrent clients.
 
+**Other suites** (each is a plain Node script driving a real server; details in
+the file headers, `docs/SANDESH.md` "Testing" and `docs/HASH_COMMANDS.md`
+"Testing"):
+
+| Touched... | Run | Checks |
+|---|---|---|
+| anything | `node test/integration_test.mjs 8080` | 44 |
+| `sd_*` | `node test/sandesh_test.mjs <url>` (strict mode, empty scratch DB) · `node test/sandesh_session_test.mjs <url>` | 198 · 13 |
+| `chat_cmds.erl` or any command | `rebar3 eunit --module=chat_cmds_tests` (no Redis) | 38 |
+| `chat_cmds.erl` or any command | `node test/hash_commands_test.mjs 8080` (default rate limit) | 48 |
+| `chat_cmds.erl` or any command | `node test/hash_commands_full_test.mjs 8081` · `node test/hash_commands_edge_test.mjs 8081` (start the backend with `CHAT_RATE_LIMIT_MAX=1000`) | 78 · 59 |
+| `chat_cmds.erl` or any `/sd` action | `node test/hash_commands_strict_test.mjs <url>` (strict mode, empty scratch DB) | 140 |
+
+The `hash_commands_full` and `hash_commands_strict` runs end with a coverage
+check that fails if a command in the server's catalog was never executed.
+On the Windows dev laptop Redis lives in WSL: if `127.0.0.1:6379` is
+unreachable from Windows (another Redis already owns the port in WSL), start a
+throwaway one on another port and pass `REDIS_PORT` to `run.ps1`.
+
 ## 2. Reading the logs
 
 This app uses OTP's built-in `logger` (not scattered `print` statements)
@@ -63,6 +82,15 @@ Every Redis call in `chat_store.erl` now logs at `error` level (via its
 process crashes on a genuine Redis outage — check for these first if
 `chat_room`/`chat_groups` are restarting unexpectedly (§3's
 `sys:get_state/1` will show a freshly-restarted, emptied state if so).
+
+**`#commands`:** a normal run logs nothing above `debug` (`LOG_LEVEL=debug` adds
+one line per command: `<user> ran #<name>` -- the name only, never the
+arguments). An unexpected exception is logged as `chat_cmds crashed: <class>:<reason
+tag> at {Module,Function,Line}` -- deliberately *without* the stacktrace
+arguments, which could hold message text -- and the client gets an
+`internal` error event. To reproduce a crash, run the same line in the
+unit-test harness: `chat_cmds:run("#the line", "someuser")` returns
+`{line, "/..."}` or `{reply, Json}` and needs no server.
 
 **Sandesh layer:** `/sd` and `/api/sd/*` failures carry a stable
 `error.code`; unexpected ones are `internal` with the full stacktrace in the
@@ -124,8 +152,12 @@ redis-cli HGETALL profile:someuser         # one user's avatar/status/pubkey
 | GIF/sticker search always returns nothing | `GIPHY_API_KEY` isn't set | `?LOG_WARNING` fires once at startup from `chat_gif.erl`; set the env var to enable it |
 | `chat_redis is connecting to '...' with NO PASSWORD SET` warning | Exactly what it says — `REDIS_PASSWORD` isn't set and the host isn't loopback | Set `REDIS_PASSWORD` before this points anywhere but a local dev Redis |
 | The whole backend keeps restart-looping (repeated `Chat server: web UI on...` boot lines in the journal, every connected client dropped) | A *sustained* Redis outage — `chat_store.erl`'s `q_ok/1` crashes the calling process on every Redis failure, and `chat_app_sup`'s restart budget (20 restarts/60s — see its `init/1` comment) eventually exhausts under continued chat activity, taking the whole node down; systemd's `Restart=on-failure`/`RestartSec=5` then keeps retrying it every 5s until Redis actually comes back | Fix Redis first (`redis-cli ping`); this is the intended fail-safe behavior for an outage that doesn't resolve on its own, not a bug — a brief blip (a few seconds) should NOT trigger this, only a real outage |
-| A client gets `"Too many commands -- slow down"` during normal use | Legitimate rate limiting (30 commands/10s) tripped by something sending faster than a human types — check for a client-side bug sending duplicate commands, not a server bug | `?LOG_WARNING` fires in `chat_room`'s logs with the username |
+| A client gets `"Too many commands -- slow down"` during normal use | Legitimate rate limiting (30 commands/10s) tripped by something sending faster than a human types — check for a client-side bug sending duplicate commands, not a server bug. `/cmds` and `/cmdcomplete` have a separate 120/10s budget; if *those* trip, the UI is firing a suggestion request per keystroke without debouncing | `?LOG_WARNING` fires in `chat_room`'s logs with the username |
 | `POST /upload` returns `429 {"error":"Too many uploads -- slow down"}` | Legitimate per-IP upload rate limit (20/60s) tripped, OR every client is being seen as the same IP (check nginx's `X-Real-IP` is actually being set for `/upload` — see `chat_web.erl`'s `client_ip/2`; if it's missing, every request behind that proxy falls back to the proxy's own IP and shares one limit) | `?LOG_WARNING` fires in `chat_web`'s logs with the IP; `chat_upload_limiter.erl` |
+| A `#word` a user typed didn't post and they got `unknown_command` | Working as designed: `#` + a letter is a command, and an unknown one is an error (like an unknown `/typo`), so `#urgent` never posts by accident. `##urgent` posts the literal `#urgent` to the global room; `#1`/`# 5` (non-letter after `#`) are ordinary text. The frontend should only send a raw `#line` if its first word is in the catalog | `chat_web.erl` `handle_line` `#` clauses; `docs/HASH_COMMANDS.md` "Hashtags" |
+| A `#command` returns `usage` even though it looks right | Validation is stricter than the old commands: numeric ids only, username ≤ 24 / group ≤ 32 chars, no tab/newline inside a non-text argument, extra arguments are an error, `#avatar` needs `http(s)://` or `/uploads/`. The error carries `usage` and a `text` saying which argument | `chat_cmds:commands/0` (the arg specs), `convert/3` |
+| `/cmds` says `available:false` / `requires:"signin"` for a Sandesh command | The connection has no Sandesh session (open-mode chat with an invented token) or the user lacks the role. Advisory only — running it returns the real `sd` error. `admin_locked` means the admin console isn't unlocked yet (strict mode); it is a runtime state so the catalog still shows admin commands as available to admins | `sd_cmds:availability/2` |
+| A `#command`'s Sandesh reply never arrives | Match on `reqId`, which is `"#<canonical name>"` even when an alias was typed (`#whoami` -> `"#me"`). A malformed one gets a plain `error` event instead (no `sd` envelope) | `chat_cmds:exec/3` |
 | `/hostmsg` always errors "No such host" for every key including real department names | Expected until the backend dev's chat-host tstruct exists — see `chat_hosts.erl`'s `CHAT_HOST_ADS_NAME` placeholder | `docs/CHAT_PROTOCOL.md`'s "Host directory" section |
 | ARM API calls (`chat_arm.erl`) always fail | Check the `?LOG_WARNING` for the HTTP status/reason (never the body) — could be network, could be an actually-invalid/expired token being forwarded from the frontend | `chat_arm.erl`'s `post_json/3` |
 | A message's reactions/history look wrong after a server restart during testing | If this is a *fresh dev Redis* that predates the message-id fix (see `chat_store.erl`'s `save_message/6` comment on why it uses Redis `INCR`, not `erlang:unique_integer/1`), old test data may have colliding ids — `redis-cli FLUSHDB` to reset (never do this against real data) | `chat_store.erl` |

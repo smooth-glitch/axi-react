@@ -141,6 +141,11 @@ consume client-side.
 Messages are capped at 2000 chars — longer ones get an `error` event back
 instead of being sent.
 
+**Rate limits (per connection):** 30 commands per 10 s
+(`Too many commands -- slow down` when exceeded); `/cmds` and
+`/cmdcomplete` are counted separately, 120 per 10 s. A deployment can raise the
+main limit with `CHAT_RATE_LIMIT_MAX`.
+
 ---
 
 ## Events you receive (JSON, one object per WS text frame)

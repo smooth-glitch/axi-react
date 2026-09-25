@@ -37,13 +37,20 @@ whoever runs, debugs or extends the backend.
 | `sd_scheduler` | a small `gen_server` (supervised in `chat_app_sup`) that every `SANDESH_SCHEDULER_TICK_MS` (15 s) asks `sd_cards:fire_due/0` to notify due reminders |
 | `sd_notify` | OTP/invite delivery channel (log / fixed / webhook) and live pushes to online users |
 | `sd_http` | the REST endpoints |
-| `sd_cmds` | the `/sd` WebSocket command dispatcher |
+| `sd_cmds` | the `/sd` WebSocket command dispatcher. Also exports `caller/0` + `availability/2`, which `chat_cmds` uses to tell the UI which `#commands` the current user may run (advisory; `run/3` still enforces) |
+
+Most of the everyday actions are also reachable from the prompt bar as
+`#commands` (`#accept 12` = `/sd req.respond {"id":12,"action":"accept"}`); the
+`chat_cmds` module rewrites them into `/sd` lines, so every rule below applies
+unchanged. Mapping table: `docs/SANDESH_API.md` "#command shortcuts".
 
 Touched existing files: `chat_web.erl` (route `/api/sd/`, handshake check with
 optional `armSessionId`, `/sd` command, policy hooks on `/msg /replydm
 /creategroup /addmember /groupmsg /replygroup` + plain broadcast, an after-`/read`
 hook for notifications, two `ws_loop` clauses for pushes/forced disconnect, the
-per-command session re-check for the two-week rule, `CHAT_RATE_LIMIT_MAX`),
+per-command session re-check for the two-week rule, `CHAT_RATE_LIMIT_MAX`, and --
+added later for `#commands` -- the `#` dispatch clauses, `/cmds`, `/cmdcomplete`
+and a separate rate-limit window for those two),
 `chat_groups.erl` (`force_add/3`), `chat_app_sup.erl` (starts `sd_scheduler`).
 
 ## Configuration (environment variables)
@@ -122,7 +129,10 @@ Chat data (`msg:*`, `conv:*`, `group:*`, `profile:*`, `known_users`,
 
 ## Testing
 
-Three suites (255 checks), all plain Node scripts (Node 22+), all driving a
+Three Sandesh-focused suites (255 checks) -- plus the `#command` suites
+(`hash_commands_*`, see `docs/HASH_COMMANDS.md` "Testing"; `hash_commands_strict_test.mjs`
+runs every Sandesh `#command` as admin/host/employee in strict mode and needs its own
+empty scratch DB, like suite 2) -- all plain Node scripts (Node 22+), all driving a
 **real running backend over real HTTP/WebSocket**. Use scratch Redis DBs
 (never 0); the two Sandesh suites need an **empty** DB because first-run setup
 happens once per DB. Each server needs its own terminal (or clear the `$env:`
@@ -219,6 +229,13 @@ modules directly, e.g. `sd_users:get(<<"priya">>).`, `sd_reqs:list_for(<<"priya"
    Data must be maps of binaries (`json:encode` treats a plain string as a
    list of integers). Put the logic in the relevant `sd_*` module.
 3. Add checks to `test/sandesh_test.mjs`; document it in `docs/SANDESH_API.md`.
+4. If people should be able to run it from the prompt bar, add a `#command`:
+   one `cmd(...)` entry in `chat_cmds:commands/0` with target
+   `{sd, <<"my.action">>, fun(Vals) -> #{...} end}` (return a map -- never paste
+   strings into JSON), a line in the shortcuts table in `docs/SANDESH_API.md`, and
+   a scenario in `test/hash_commands_strict_test.mjs` (its coverage check fails if a
+   catalog command is never executed). Skip it for anything that takes a
+   password/OTP or a large JSON document (`admin.unlock*`, `admin.tstruct.save`, ...).
 
 ## Spec coverage
 
@@ -242,8 +259,8 @@ modules directly, e.g. `sd_users:get(<<"priya">>).`, `sd_reqs:list_for(<<"priya"
 | My Work Space | client-side (as today) |
 | Message history sync to the Axpert DB; push notifications; SMS/email provider | ❌ (unchanged from before; OTP channel is pluggable) |
 
-`docs/NEXT_STEPS.md` still describes the earlier "prompt engine" design; the
-Sandesh spec replaced it with lite tstructs + options.
+`docs/NEXT_STEPS.md` notes that the earlier "prompt engine" design was
+replaced by the Sandesh spec's lite tstructs + options.
 
 ### Open decision: the backend's ARM identity
 

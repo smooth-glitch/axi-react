@@ -19,6 +19,29 @@ the history stays meaningful.
 
 ---
 
+## Backend status at a glance (updated 25 Sep 2026)
+
+The Erlang backend has moved well ahead of the frontend. **Everything below is
+built, tested and documented on the backend; none of it is wired into the React
+app yet** — that is the frontend team's next block of work.
+
+| Backend capability | Contract the frontend builds against |
+|---|---|
+| Real-time chat: DMs, groups, global room, reactions, deletes, replies, typing, profiles, uploads, GIF/sticker search, host directory | [`CHAT_PROTOCOL.md`](CHAT_PROTOCOL.md) |
+| **Sandesh**: the app's own login (email/mobile + OTP, 14-day sessions), organisation & master data, users/hosts/affiliates, self-registration + approvals, host-only messaging rules, message cards & sections, notifications, lite forms (tstructs) & options, admin console. `SANDESH_MODE=open` (default) leaves plain chat untouched; `strict` enforces the spec | [`SANDESH_API.md`](SANDESH_API.md), [`../axi-chat-backend/docs/SANDESH.md`](../axi-chat-backend/docs/SANDESH.md) |
+| **`#commands`** (PR #13): typing `#` in the prompt bar opens a menu of every feature; the server validates the command and runs the equivalent `/command`/`/sd` action (same permissions). 55 commands, catalog + as-you-type suggestions | [`HASH_COMMANDS.md`](HASH_COMMANDS.md) |
+| ARM sign-in page removed from the app (PR #10); the WebSocket handshake takes the Sandesh session token, `armSessionId` optional | [`CHAT_PROTOCOL.md`](CHAT_PROTOCOL.md) "Connecting" |
+
+**Still not built on the backend:** executing options against external systems
+(get data / download / upload / pay / Axpert pages), SSO, real SMS/email
+delivery (OTP channel is pluggable), the department-host directory (needs the
+chat-host tstruct — `chat_hosts.erl` placeholder), message-history sync to the
+Axpert DB, push notifications for offline mobile clients, and the open
+question of how the backend gets an ARM identity for Axpert calls
+(`SANDESH.md` "Open decision"). Full list: `SANDESH_API.md` §9.
+
+---
+
 ## 1. The vision, in plain terms
 
 Five concepts carry the whole document:
@@ -141,12 +164,13 @@ Type-specific fields, shown only for that prompt type:
 | Download file prompt | ✅ Built (chat/message export) | `services/chatExport.js`, `pdfExport.js` |
 | Message cards, expand/collapse | ✅ Built (single-thread form) | MessageBubble / MessageThread |
 | Smart View popup on a list result | ⬜ Deferred — needs a scoped design pass | — |
-| Associate/host directory + multi-conversation nav | ⬜ Missing | — |
-| External user registration | ⬜ Missing | — |
-| Chat host configuration (admin side) | ⬜ Missing | — |
-| Generic prompt engine (configurable, all 6 types) | ⬜ Missing | — |
-| Payment / OTP prompts | ⬜ Missing | — |
-| Month-grouped, cascading card view | ⬜ Missing | — |
+| Associate/host directory + multi-conversation nav | 🟡 Backend ✅ · frontend ⬜ | `/list`, `/hosts`, `/conversations`, Sandesh associations (`assoc.*`) |
+| External user registration | 🟡 Backend ✅ · frontend ⬜ | `POST /api/sd/register` + host approval (`sd_reqs`), invites (`users.invite`) |
+| Chat host configuration (admin side) | 🟡 Backend partial · frontend ⬜ | Sandesh admin console (users, host scope, affiliates, options, forms). The *department-host directory* (chat-host tstruct) is still unwired — `chat_hosts.erl` |
+| Generic prompt engine (configurable, all 6 types) | 🟡 Backend: lite tstructs + options (definition, validation, per-user filtering, submissions) ✅; executing options against external systems ❌ · frontend ⬜ | `sd_config`, `SANDESH_API.md` — the Sandesh spec replaced the original prompt-engine design with these |
+| Payment / OTP prompts | ⬜ Missing (login OTP exists in the backend; no SMS/email/payment provider wired) | — |
+| Month-grouped, cascading card view | 🟡 Backend ✅ (cards, six sections, custom rules, `ts` on every message) · frontend ⬜ | `sd_cards`, `cards.list` |
+| Prompt-bar `#command` menu (type `#`, pick an action) | 🟡 Backend ✅ (PR #13) · frontend ⬜ | [`HASH_COMMANDS.md`](HASH_COMMANDS.md) |
 
 ---
 
@@ -175,6 +199,12 @@ IA has no place for yet.
       Dashboard.
 - [ ] **Payment & OTP flows** — new UI patterns with no analog in the
       current app; scope depends entirely on backend/provider decisions.
+- [ ] **Sandesh screens** — sign-in (email/mobile + OTP/password), first-run
+      setup, registration, home page (options, associates, cards), approvals,
+      notifications, admin console. Backend contract: `SANDESH_API.md`.
+- [ ] **`#command` menu in the prompt bar** — fetch `/cmds` once, filter locally
+      when the input starts with `#`, `/cmdcomplete` for arguments, send the
+      raw `#line` on Enter. Contract + sketch: `HASH_COMMANDS.md`.
 
 ---
 
@@ -198,7 +228,10 @@ IA has no place for yet.
 - [ ] Apply to both LLM and human-to-human conversations via the shared thread component
 
 ### Phase 3 — Prompt engine (List & Input first)
-*Needs backend tstruct/ADS contracts confirmed first.*
+*Needs backend tstruct/ADS contracts confirmed first.* **Update:** the backend
+now provides lite tstructs + options as the "Input" mechanism (`SANDESH_API.md`
+"Options and forms"); "List"/"get data" execution against Axpert is still
+blocked on the ARM contracts.
 
 - [ ] Generic prompt renderer (reads a prompt definition, dispatches to the right UI)
 - [ ] List prompt type (reuse Data Bin datasource patterns)
@@ -206,7 +239,9 @@ IA has no place for yet.
 - [ ] Wire in existing Upload/Download services
 
 ### Phase 4 — Registration & host admin
-*Extends the existing Admin Dashboard.*
+*Extends the existing Admin Dashboard.* **Backend is largely done**
+(registration, approvals, admin console — `SANDESH_API.md`); the one open backend
+piece is the department-host directory (chat-host tstruct). The rest is frontend.
 
 - [ ] External-user registration form (`AxExternalUsers` fields)
 - [ ] Chat-host configuration UI
@@ -231,18 +266,23 @@ it naturally avoids overlap with the React work.
 ### Split work by module, not by task type
 
 **Arjun — Erlang chat backend**
-- [ ] Chat backend service in Erlang (the "separately-owned backend" this
+- [x] Chat backend service in Erlang (the "separately-owned backend" this
       doc's frontend work builds against) — connections, message routing,
       real-time delivery (websocket/polling — see the open question in
       Section 8), and the API contract the React app calls
 - [ ] Prompt-engine backend support: List (GetList API), Input (tstruct
-      save), Upload/Download file endpoints
+      save), Upload/Download file endpoints — *partly done: Input is covered by
+      Sandesh lite tstructs + options; uploads/downloads by `/upload`; List and
+      option execution still need the ARM contracts*
 - [ ] Chat-host and external-user data access — reads/writes against the
       existing schema (e.g. `erpdemo`); no new database or schema setup
-      needed, this plugs into the schema already in place
-- [ ] Publishing the API contract (endpoints, payload shapes) that Anish
+      needed, this plugs into the schema already in place — *external users
+      are currently stored by Sandesh in Redis (`sd_users`); the Axpert-schema
+      integration and the department-host tstruct are still open*
+- [x] Publishing the API contract (endpoints, payload shapes) that Anish
       and Gunn build the frontend against — do this early, before they're
-      blocked on real data
+      blocked on real data — *`CHAT_PROTOCOL.md`, `SANDESH_API.md`,
+      `HASH_COMMANDS.md`*
 
 **Anish & Gunn — React frontend**
 - Split Phase 1–2 work between the two of you by module, same principle as

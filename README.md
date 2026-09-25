@@ -23,6 +23,8 @@ in the way.
 | A **frontend dev** working on the React app | This file, then [Frontend: architecture](#frontend-architecture) |
 | The **backend dev** working on the Erlang chat service | [`axi-chat-backend/README.md`](axi-chat-backend/README.md), then [`axi-chat-backend/docs/DEBUGGING.md`](axi-chat-backend/docs/DEBUGGING.md) |
 | Wiring the **frontend chat UI** to the backend | [`docs/CHAT_PROTOCOL.md`](docs/CHAT_PROTOCOL.md) — the WebSocket protocol reference |
+| Wiring the **sign-in, org, approvals, cards, forms and admin screens** (Sandesh) | [`docs/SANDESH_API.md`](docs/SANDESH_API.md) — REST + `/sd` WebSocket API |
+| Wiring the **prompt bar's `#command` menu** (type `#`, pick an action) | [`docs/HASH_COMMANDS.md`](docs/HASH_COMMANDS.md) — catalog, suggestions, every command |
 | Touching **CI/CD, the deploy VM, nginx, or preview environments** | [Infrastructure & deployment](#infrastructure--deployment) below |
 | Planning **what to build next** | [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) — the shared progress tracker for the whole team |
 | Picking up the **Data Bin wizard rewrite** specifically | [`EXTRACTION_NOTES.md`](EXTRACTION_NOTES.md) — line-by-line notes on the vanilla-JS source being ported |
@@ -35,7 +37,7 @@ axi-react/
 ├── shared/               Real ARM-API-integrated JS, loaded as <script> globals (see below)
 ├── public/                Static assets; shared/ files are copied here at build time, not committed
 ├── scripts/               Build helper scripts (public-asset sync)
-├── docs/                  Cross-cutting docs: chat protocol, roadmap
+├── docs/                  Cross-cutting docs: chat protocol, Sandesh API, #commands, roadmap
 ├── axi-chat-backend/       Erlang/OTP chat backend — its own README, own setup, own deploy
 ├── .github/workflows/      CI/CD: frontend deploy, backend deploy, PR preview environments
 ├── EXTRACTION_NOTES.md    Working notes for porting the vanilla-JS Data Bin wizard to React
@@ -144,8 +146,12 @@ This repo also holds the real-time chat backend — Erlang/OTP, at
 both layers. See that folder's `README.md` for architecture and setup,
 its `docs/DEBUGGING.md` for troubleshooting, and
 [`docs/CHAT_PROTOCOL.md`](docs/CHAT_PROTOCOL.md) for the WebSocket
-protocol this app's chat UI will eventually talk to. **Not yet wired up to
-any frontend component** — see [Known gaps](#known-gaps) below.
+protocol this app's chat UI will eventually talk to. Two further contracts
+sit on top of it: [`docs/SANDESH_API.md`](docs/SANDESH_API.md) (login,
+organisation, approvals, cards, forms, admin console) and
+[`docs/HASH_COMMANDS.md`](docs/HASH_COMMANDS.md) (the prompt bar's `#command`
+menu — one command per backend feature). **Not yet wired up to any frontend
+component** — see [Known gaps](#known-gaps) below.
 
 ## Infrastructure & deployment
 

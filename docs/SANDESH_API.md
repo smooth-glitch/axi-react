@@ -202,6 +202,35 @@ Reply (always, exactly one):
   raise it on a deployment). Load lists in parallel sparingly, or batch by
   screen.
 
+### `#command` shortcuts (prompt bar)
+
+Most actions below can also be run by typing a `#command` in the message box
+([`HASH_COMMANDS.md`](HASH_COMMANDS.md) has the menu/suggestion contract). The
+server rewrites `#accept 12` into the matching `/sd` call, so permissions and
+errors are identical, and the reply is the normal `sd` envelope with
+`reqId` = `"#<command name>"` (canonical name even if an alias was typed).
+
+| `/sd` action | `#command` | | `/sd` action | `#command` |
+|---|---|---|---|---|
+| `me` | `#me` | | `notifications.list` | `#notifications [category]` |
+| `assoc.list` | `#associates` | | `notifications.read` | `#markread <category|all>` |
+| `users.search` | `#find <query>` | | `cards.list` | `#cards [section]` |
+| `assoc.invite` | `#connect <user|email|mobile>` | | `cards.dismiss` | `#dismiss <cardId|all>` |
+| `assoc.remove` | `#disconnect <user>` | | `reminder.add` | `#remind <text>` |
+| `req.list` | `#requests [status]` | | `options.list` | `#forms` |
+| `req.respond` | `#accept` / `#reject` / `#ignore <id>` | | `tstruct.get` | `#form <name>` |
+| `host.users` | `#myusers` | | `submissions.list` | `#submissions` |
+| `host.transfer` | `#transfer <user> <toHost>` | | `admin.org.get` | `#admin-org` |
+| `admin.users.list` | `#admin-users [query]` | | `admin.admins.list` | `#admin-admins` |
+| `admin.affiliates.list` | `#admin-affiliates` | | `admin.user.status` | `#admin-activate` / `#admin-deactivate <user>` |
+
+**Deliberately not #commands:** anything that takes a password or OTP
+(`admin.unlock.start`, `admin.unlock`) and anything that needs a structured or
+large JSON body (`users.invite`, `tstruct.submit`, `sections.*`,
+`notifications.summary`, `admin.org.set`, `admin.cfg.*`, `admin.tstruct.*`, `admin.option.*`,
+`admin.appconn.*`, `admin.host.*`, `admin.admins.add/remove`, `admin.user.get/update`).
+Use `/sd` for those.
+
 ### Who may call what
 
 `none` = anyone connected · `user` = signed in · `host` = a host or admin ·

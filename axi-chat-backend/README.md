@@ -18,7 +18,9 @@ where do I look."
 Frontend devs integrating against this backend want
 [`../docs/CHAT_PROTOCOL.md`](../docs/CHAT_PROTOCOL.md) (plain chat) and
 [`../docs/SANDESH_API.md`](../docs/SANDESH_API.md) (login, org, users, hosts,
-approvals, cards, forms, admin console) instead, not this file. Running,
+approvals, cards, forms, admin console) and
+[`../docs/HASH_COMMANDS.md`](../docs/HASH_COMMANDS.md) (the prompt bar's `#command`
+menu) instead, not this file. Running,
 configuring or debugging the Sandesh layer:
 [`docs/SANDESH.md`](docs/SANDESH.md). The [root README](../README.md) has a full "start here, by role"
 table if you landed here looking for something else (frontend setup, CI/CD,
@@ -159,13 +161,24 @@ it works -- see `docs/DEBUGGING.md` for what it doesn't cover.
 
 Full reference: [`../docs/CHAT_PROTOCOL.md`](../docs/CHAT_PROTOCOL.md).
 
-Summary: connect with a JSON handshake (`{username, token, armSessionId}`
--- the same ARM credentials the frontend already has), then the client
-sends plain-text commands over the WebSocket (`/msg`, `/hostmsg`,
-`/react`, `/delete`, `/setavatar`, ...) and receives JSON events back
-(`chat`, `history`, `hosts`, `reaction`, `deleted`, `profile`, ...). See
-`src/chat_web.erl` for the full command set, or the protocol doc for a
-complete table with example payloads.
+Summary: connect with a JSON handshake (`{username, token}` -- `token` is
+the session token from the app's own Sandesh login; `armSessionId` is optional
+since the ARM sign-in page was removed), then the client sends plain-text
+commands over the WebSocket (`/msg`, `/hostmsg`, `/react`, `/delete`,
+`/setavatar`, ...) and receives JSON events back (`chat`, `history`, `hosts`,
+`reaction`, `deleted`, `profile`, ...). See `src/chat_web.erl` for the full
+command set, or the protocol doc for a complete table with example payloads.
+
+Two layers sit on top of that, each with its own doc:
+
+- **Sandesh** -- `/sd <action> {json}` and `/api/sd/*`: login, organisation,
+  approvals, cards, forms, admin console ([`../docs/SANDESH_API.md`](../docs/SANDESH_API.md)).
+- **`#commands`** -- the prompt bar's Discord-style action menu. Typing `#dm
+  alice hi` is rewritten by `chat_cmds` into `/msg alice hi` (or a `/sd`
+  action) and runs through the same code and permission checks; `/cmds` serves
+  the catalog and `/cmdcomplete` the as-you-type suggestions
+  ([`../docs/HASH_COMMANDS.md`](../docs/HASH_COMMANDS.md)). **Adding a backend
+  feature? Give it a `#command` too** -- one entry in `chat_cmds:commands/0`.
 
 Separately, `POST /upload` and `GET /uploads/<name>` handle image/voice
 attachments (multipart upload, magic-byte content-type verification,
@@ -182,13 +195,21 @@ See `docs/DEBUGGING.md` §7.
 
 ## Security posture (read before deploying anywhere real)
 
-- **WebSocket connect requires real ARM credentials** (`{username, token,
-  armSessionId}`), not a claimable username -- but this is *not*
-  independent cryptographic re-verification (`ARMToken` is an HMAC-signed
-  JWT; we don't hold ARM's secret to check it ourselves). See
-  `docs/CHAT_PROTOCOL.md`'s "Connecting" section for the exact trust
-  model.
+- **WebSocket identity.** In `SANDESH_MODE=strict` the handshake token must be
+  a live Sandesh session (issued by this backend, 14-day lifetime) for exactly
+  the username being claimed. In the default `open` mode any non-empty token is
+  accepted for **plain chat** only -- an invented token never gains Sandesh
+  powers. The earlier ARM-token handshake was *not* independently verifiable
+  (HMAC-signed JWT, no ARM secret here); see `docs/CHAT_PROTOCOL.md`'s
+  "Connecting" section for the exact trust model, and
+  `docs/SANDESH.md` for the strict-mode rules.
 - **Per-connection rate limiting** (30 commands/10s) against flooding.
+  The read-only `#command` helpers (`/cmds`, `/cmdcomplete`) have their own
+  120/10s budget so as-you-type suggestions can't starve real commands.
+- **`#commands` add no new privileges**: each is validated, then rewritten into
+  the existing `/command` and run through the same policy checks. Arguments
+  are bounded and control-character-free, Sandesh arguments are built as JSON
+  (never string-pasted), and passwords/OTPs are deliberately not commands.
 - **Per-IP rate limiting on `POST /upload`** (20 uploads/60s, `chat_upload_limiter.erl`) — behind nginx, keyed off the `X-Real-IP` header nginx sets, not the raw socket peer (which is always nginx itself in production/preview).
 - **No TLS in this backend.** Plain `ws://`, not `wss://`, by design --
   see the comment in `chat_web.erl`'s module doc for why native TLS
