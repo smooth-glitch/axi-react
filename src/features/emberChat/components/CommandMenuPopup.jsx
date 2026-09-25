@@ -1,8 +1,29 @@
 import { useEffect, useRef } from "react";
 import { COMMAND_CATEGORIES } from "../data/hashCommandsCatalog.js";
 
+function highlightMatch(text, query) {
+  if (!query || !text) return text;
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const idx = lowerText.indexOf(lowerQuery);
+  if (idx === -1) return text;
+
+  const before = text.slice(0, idx);
+  const match = text.slice(idx, idx + query.length);
+  const after = text.slice(idx + query.length);
+
+  return (
+    <>
+      {before}
+      <span className="cmd-highlight">{match}</span>
+      {after}
+    </>
+  );
+}
+
 export default function CommandMenuPopup({
   mode = "commands", // "commands" | "args"
+  query = "",
   commands = [],
   argSuggestions = [],
   selectedIndex = 0,
@@ -13,7 +34,7 @@ export default function CommandMenuPopup({
 }) {
   const listRef = useRef(null);
 
-  // Auto-scroll selected item into view
+  // Auto-scroll selected item into view smoothly
   useEffect(() => {
     if (!listRef.current) return;
     const activeEl = listRef.current.querySelector(".cmd-menu-item.active");
@@ -24,10 +45,10 @@ export default function CommandMenuPopup({
 
   if (mode === "commands" && commands.length === 0) {
     return (
-      <div className="sandesh-cmd-menu-popup">
+      <div className="sandesh-cmd-menu-popup" onMouseDown={(e) => e.preventDefault()}>
         <div className="cmd-menu-empty">
           <span className="material-icons" style={{ fontSize: "18px" }}>search_off</span>
-          <span>No matching #commands</span>
+          <span>No matching #{query} command</span>
         </div>
       </div>
     );
@@ -38,14 +59,21 @@ export default function CommandMenuPopup({
   }
 
   return (
-    <div className="sandesh-cmd-menu-popup" ref={listRef} role="listbox">
+    <div
+      className="sandesh-cmd-menu-popup"
+      ref={listRef}
+      role="listbox"
+      onMouseDown={(e) => e.preventDefault()}
+    >
       {/* Header bar indicating command context */}
       <div className="cmd-menu-header">
         {mode === "commands" ? (
           <>
             <span className="material-icons cmd-header-icon">terminal</span>
-            <span className="cmd-header-title">Select a #Command</span>
-            <span className="cmd-header-hint">Use ↑ ↓ to navigate • Enter to select</span>
+            <span className="cmd-header-title">
+              {query ? `Suggestions for #${query}` : "All #Commands"}
+            </span>
+            <span className="cmd-header-hint">Use ↑ ↓ to navigate • Enter to run • Tab to pick</span>
           </>
         ) : (
           <>
@@ -63,22 +91,29 @@ export default function CommandMenuPopup({
           commands.map((cmd, idx) => {
             const isSelected = idx === selectedIndex;
             const categoryObj = COMMAND_CATEGORIES.find((c) => c.id === cmd.category);
+            const requiresArgs = cmd.args && cmd.args.some((a) => a.required);
+
             return (
               <div
                 key={cmd.name}
                 className={`cmd-menu-item ${isSelected ? "active" : ""} ${!cmd.available ? "unavailable" : ""}`}
                 role="option"
                 aria-selected={isSelected}
-                onClick={() => onSelectCommand?.(cmd)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelectCommand?.(cmd, !requiresArgs);
+                }}
               >
                 <div className="cmd-item-left">
                   <div className="cmd-item-hash">#</div>
                   <div className="cmd-item-titles">
                     <div className="cmd-name-line">
-                      <span className="cmd-primary-name">{cmd.name}</span>
+                      <span className="cmd-primary-name">
+                        {highlightMatch(cmd.name, query)}
+                      </span>
                       {cmd.aliases && cmd.aliases.length > 0 && (
                         <span className="cmd-alias-pill">
-                          {cmd.aliases.map((a) => `#${a}`).join(", ")}
+                          {cmd.aliases.map((a) => `#${highlightMatch(a, query)}`)}
                         </span>
                       )}
                       {categoryObj && (
@@ -99,6 +134,9 @@ export default function CommandMenuPopup({
                   ) : (
                     <code className="cmd-usage-preview">{cmd.usage}</code>
                   )}
+                  <span className="cmd-action-hint">
+                    {!requiresArgs ? "Run ↵" : "Select ⇥"}
+                  </span>
                 </div>
               </div>
             );
@@ -112,7 +150,10 @@ export default function CommandMenuPopup({
                 className={`cmd-menu-item arg-item ${isSelected ? "active" : ""}`}
                 role="option"
                 aria-selected={isSelected}
-                onClick={() => onSelectArg?.(item)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelectArg?.(item);
+                }}
               >
                 <div className="cmd-item-left">
                   <span className="material-icons arg-type-icon">
@@ -127,11 +168,14 @@ export default function CommandMenuPopup({
                       : "label"}
                   </span>
                   <div className="arg-text-col">
-                    <span className="arg-label-text">{item.label || item.value}</span>
+                    <span className="arg-label-text">
+                      {highlightMatch(item.label || item.value, query)}
+                    </span>
                     {item.hint && <span className="arg-hint-text">{item.hint}</span>}
                   </div>
                 </div>
                 {item.sub && <span className="arg-sub-note">{item.sub}</span>}
+                <span className="cmd-action-hint">Choose ↵</span>
               </div>
             );
           })

@@ -41,6 +41,7 @@ export default function Composer({
 
   // Command Menu & Autocomplete State
   const [showCmdMenu, setShowCmdMenu] = useState(false);
+  const [cmdSearchQuery, setCmdSearchQuery] = useState("");
   const [cmdMenuMode, setCmdMenuMode] = useState("commands"); // "commands" | "args"
   const [filteredCmds, setFilteredCmds] = useState([]);
   const [argSuggestions, setArgSuggestions] = useState([]);
@@ -195,16 +196,20 @@ export default function Composer({
   // Analyze text and caret to trigger command menu / suggestions
   const updateMenuState = useCallback(
     (currentVal, caretPos) => {
-      if (!currentVal.startsWith("#")) {
+      const trimmedStart = currentVal.trimStart();
+      if (!trimmedStart.startsWith("#")) {
         setShowCmdMenu(false);
+        setCmdSearchQuery("");
         return;
       }
 
-      const before = currentVal.slice(0, caretPos);
+      const effectiveCaret = caretPos != null ? caretPos : currentVal.length;
+      const before = currentVal.slice(0, effectiveCaret).trimStart();
 
       // 1. Typing command name: no space yet
       if (!before.includes(" ")) {
         const query = before.slice(1); // after #
+        setCmdSearchQuery(query);
         const matches = filterCatalogCommands(DEFAULT_COMMANDS_CATALOG, query, currentUser);
         setFilteredCmds(matches);
         setCmdMenuMode("commands");
@@ -216,7 +221,7 @@ export default function Composer({
       }
 
       // 2. Space exists: user is typing arguments!
-      const parts = before.split(" ");
+      const parts = before.split(/\s+/);
       const cmdWord = parts[0].slice(1).toLowerCase();
       const matched = DEFAULT_COMMANDS_CATALOG.find(
         (c) => c.name === cmdWord || (c.aliases || []).includes(cmdWord)
@@ -224,20 +229,23 @@ export default function Composer({
 
       if (!matched) {
         setShowCmdMenu(false);
+        setCmdSearchQuery("");
         return;
       }
 
       setCurrentCommand(matched);
       const argIndex = parts.length - 2; // parts: ["#cmd", "arg0", "arg1", ...]
-      const currentToken = parts[parts.length - 1];
+      const currentToken = parts[parts.length - 1] || "";
       const argSpec = matched.args ? matched.args[argIndex] : null;
 
       if (!argSpec || argSpec.type === "text") {
         // Free text: close menu
         setShowCmdMenu(false);
+        setCmdSearchQuery("");
         return;
       }
 
+      setCmdSearchQuery(currentToken);
       setCurrentArgSpec(argSpec);
       setCmdMenuMode("args");
       setSelectedCmdIndex(0);
@@ -267,12 +275,25 @@ export default function Composer({
     onSend?.(trimmed);
     setText("");
     setShowCmdMenu(false);
+    setCmdSearchQuery("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
   };
 
-  const handleSelectCommand = (cmd) => {
+  const handleSelectCommand = (cmd, immediateRun = false) => {
+    const requiresArgs = cmd.args && cmd.args.some((a) => a.required);
+    if (immediateRun && !requiresArgs) {
+      onSend?.(`#${cmd.name}`);
+      setText("");
+      setShowCmdMenu(false);
+      setCmdSearchQuery("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
+      return;
+    }
+
     const newText = `#${cmd.name} `;
     setText(newText);
     setSelectedCmdIndex(0);
@@ -296,6 +317,7 @@ export default function Composer({
 
     setText(combined);
     setShowCmdMenu(false);
+    setCmdSearchQuery("");
     if (textareaRef.current) {
       textareaRef.current.focus();
       textareaRef.current.style.height = "auto";
@@ -316,10 +338,21 @@ export default function Composer({
         setSelectedCmdIndex((idx) => (idx - 1 + listLength) % Math.max(1, listLength));
         return;
       }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+      if (e.key === "Tab") {
         e.preventDefault();
         if (cmdMenuMode === "commands" && filteredCmds[selectedCmdIndex]) {
-          handleSelectCommand(filteredCmds[selectedCmdIndex]);
+          handleSelectCommand(filteredCmds[selectedCmdIndex], false);
+          return;
+        }
+        if (cmdMenuMode === "args" && argSuggestions[selectedCmdIndex]) {
+          handleSelectArg(argSuggestions[selectedCmdIndex]);
+          return;
+        }
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (cmdMenuMode === "commands" && filteredCmds[selectedCmdIndex]) {
+          handleSelectCommand(filteredCmds[selectedCmdIndex], true);
           return;
         }
         if (cmdMenuMode === "args" && argSuggestions[selectedCmdIndex]) {
@@ -518,22 +551,23 @@ export default function Composer({
         </div>
       )}
 
-      {/* 3. Floating Command Palette / Autocomplete Menu */}
-      {showCmdMenu && (
-        <CommandMenuPopup
-          mode={cmdMenuMode}
-          commands={filteredCmds}
-          argSuggestions={argSuggestions}
-          selectedIndex={selectedCmdIndex}
-          onSelectCommand={handleSelectCommand}
-          onSelectArg={handleSelectArg}
-          currentCommand={currentCommand}
-          currentArgSpec={currentArgSpec}
-        />
-      )}
-
       {/* 4. Floating 3D Glass Composer Bar */}
       <div className="sandesh-composer-3d">
+        {/* Floating Command Palette / Autocomplete Menu (anchored right above composer pill) */}
+        {showCmdMenu && (
+          <CommandMenuPopup
+            mode={cmdMenuMode}
+            query={cmdSearchQuery}
+            commands={filteredCmds}
+            argSuggestions={argSuggestions}
+            selectedIndex={selectedCmdIndex}
+            onSelectCommand={handleSelectCommand}
+            onSelectArg={handleSelectArg}
+            currentCommand={currentCommand}
+            currentArgSpec={currentArgSpec}
+          />
+        )}
+
         {/* Hidden native file input */}
         <input
           type="file"
@@ -595,6 +629,13 @@ export default function Composer({
                 value={text}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
+                onFocus={(e) => updateMenuState(e.target.value, e.target.selectionEnd)}
+                onClick={(e) => updateMenuState(e.target.value, e.target.selectionEnd)}
+                onKeyUp={(e) => {
+                  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+                    updateMenuState(e.target.value, e.target.selectionEnd);
+                  }
+                }}
                 disabled={disabled}
               />
               <button

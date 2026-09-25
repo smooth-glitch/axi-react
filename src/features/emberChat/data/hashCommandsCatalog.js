@@ -614,21 +614,52 @@ export const DEFAULT_COMMANDS_CATALOG = [
   },
 ];
 
+export const IGNORED_COMMANDS = new Set(["forms", "options", "form", "submissions"]);
+
 /**
- * Filter catalog commands matching user input
+ * Filter and rank catalog commands matching user input for every letter typed
  */
 export function filterCatalogCommands(catalog = DEFAULT_COMMANDS_CATALOG, query = "", user = null) {
   const cleanQ = query.trim().toLowerCase().replace(/^#/, "");
-  return catalog.filter((cmd) => {
-    // Check permission advisory
-    const meetsAdmin = cmd.requires !== "admin" || (user && user.isAdmin);
-    const meetsHost = cmd.requires !== "host" || (user && (user.isHost || user.isAdmin));
-    // Check match
-    if (!cleanQ) return true;
-    const nameMatch = cmd.name.toLowerCase().startsWith(cleanQ);
-    const aliasMatch = (cmd.aliases || []).some((a) => a.toLowerCase().startsWith(cleanQ));
-    return nameMatch || aliasMatch;
-  });
+
+  return catalog
+    .filter((cmd) => {
+      // Strictly ignore forms commands as requested
+      if (IGNORED_COMMANDS.has(cmd.name.toLowerCase())) return false;
+      if ((cmd.aliases || []).some((a) => IGNORED_COMMANDS.has(a.toLowerCase()))) return false;
+
+      // Check permission advisory
+      const meetsAdmin = cmd.requires !== "admin" || (user && user.isAdmin);
+      const meetsHost = cmd.requires !== "host" || (user && (user.isHost || user.isAdmin));
+      if (!meetsAdmin || !meetsHost) return false;
+
+      return true;
+    })
+    .map((cmd) => {
+      if (!cleanQ) {
+        return { cmd, score: 10 };
+      }
+
+      const name = cmd.name.toLowerCase();
+      const aliases = (cmd.aliases || []).map((a) => a.toLowerCase());
+      const summary = (cmd.summary || "").toLowerCase();
+      const category = (cmd.category || "").toLowerCase();
+
+      let score = 0;
+      if (name === cleanQ) score = 100;
+      else if (aliases.includes(cleanQ)) score = 90;
+      else if (name.startsWith(cleanQ)) score = 80;
+      else if (aliases.some((a) => a.startsWith(cleanQ))) score = 70;
+      else if (name.includes(cleanQ)) score = 50;
+      else if (aliases.some((a) => a.includes(cleanQ))) score = 40;
+      else if (summary.includes(cleanQ)) score = 30;
+      else if (category.includes(cleanQ)) score = 20;
+
+      return { cmd, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.cmd);
 }
 
 /**
