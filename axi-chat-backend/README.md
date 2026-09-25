@@ -54,6 +54,12 @@ chat_arm                  ARM API client: reads (GetList/AxList) and
                            using the {token, ARMSessionId} the frontend
                            already holds after its own ARM sign-in
 chat_gif / chat_link_preview   Giphy search, link-preview fetching
+chat_cmds                 #commands (Discord-style prompt-bar menu): parses
+                           and validates "#dm alice hi", rewrites it into the
+                           existing "/msg ..." / "/sd ..." command, serves the
+                           catalog + as-you-type suggestions. Stateless; adds
+                           no permission logic of its own -- see
+                           ../docs/HASH_COMMANDS.md
 sd_*                      the Sandesh layer (org, users, hosts, approvals,
                            host-only messaging, cards, forms, admin console)
                            -- additive, off-by-default rules; see
@@ -137,6 +143,11 @@ node test/integration_test.mjs 8080
 
 For the Sandesh layer (strict mode, scratch Redis DB) see `docs/SANDESH.md`
 "Testing" -- `node test/sandesh_test.mjs`.
+
+For the `#command` layer: `rebar3 eunit --module=chat_cmds_tests` (no Redis
+needed), `node test/hash_commands_test.mjs 8080`, and
+`node test/hash_commands_strict_test.mjs` (strict mode) -- see
+[`../docs/HASH_COMMANDS.md`](../docs/HASH_COMMANDS.md) "Testing".
 
 Drives a real WebSocket connection through the full protocol (handshake,
 DMs, groups, host directory, reactions, deletes, rate limiting) and

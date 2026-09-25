@@ -13,6 +13,10 @@
 -define(RATE_LIMIT_MAX_COMMANDS, 30).
 -define(RATE_LIMIT_WINDOW_MS, 10000).
 
+%% Same window, separate budget, for the read-only #command menu helpers
+%% (/cmds, /cmdcomplete) -- see chat_web:is_hint_line/1.
+-define(HINT_LIMIT_MAX_COMMANDS, 120).
+
 %% POST /upload rate limit -- 20 uploads per 60s window, per client IP.
 %% Unlike WS commands, an upload is a brand-new plain-HTTP connection every
 %% time (no persistent per-connection process to hold state in), and each
