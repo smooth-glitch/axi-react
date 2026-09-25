@@ -16,6 +16,7 @@ export default function ChatScreen({
   onSend,
   onAttachFile,
   onToggleReaction,
+  onForward,
   onDeleteMessage,
   onDeleteChat,
   onActionCardClick,
@@ -26,6 +27,13 @@ export default function ChatScreen({
   onTyping,
   disabled = false,
   pushToast,
+  currentUser = null,
+  onlineUsers = [],
+  availableUsers = [],
+  chats = [],
+  initialComposerText = "",
+  mediaPanelConfig = null,
+  onCloseMediaPanel,
 }) {
   const [activeView, setActiveView] = useState("messages"); // "messages" | "episodes"
   const [replyingTo, setReplyingTo] = useState(null);
@@ -131,6 +139,7 @@ export default function ChatScreen({
             typingUser={typingUser}
             onReply={(msg) => setReplyingTo({ from: msg.from ?? "You", text: msg.text || msg.title || "Message" })}
             onReact={onToggleReaction}
+            onForward={onForward}
             onDelete={onDeleteMessage}
             onActionCardClick={onActionCardClick}
             pushToast={pushToast}
@@ -158,6 +167,13 @@ export default function ChatScreen({
             disabled={disabled}
             pushToast={pushToast}
             userCategory={userCategory}
+            currentUser={currentUser}
+            onlineUsers={onlineUsers}
+            availableUsers={availableUsers}
+            chats={chats}
+            initialText={initialComposerText}
+            mediaPanelConfig={mediaPanelConfig}
+            onCloseMediaPanel={onCloseMediaPanel}
           />
         </div>
       )}

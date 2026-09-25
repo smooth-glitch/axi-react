@@ -121,7 +121,7 @@ function VoiceNoteBubble({ msg }) {
   );
 }
 
-function MessageRow({ msg, onReact, onReply, onDelete, onOpenActionMenu, onActionCardClick }) {
+function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMenu, onActionCardClick }) {
   const longPressTimer = useRef(null);
 
   if (msg.kind === "system") {
@@ -167,6 +167,14 @@ function MessageRow({ msg, onReact, onReply, onDelete, onOpenActionMenu, onActio
         onPointerLeave={cancelLongPress}
         onPointerMove={cancelLongPress}
       >
+        {/* WhatsApp-style Forwarded Indicator */}
+        {msg.forwarded && (
+          <div className="sandesh-forwarded-pill">
+            <span className="material-icons forwarded-icon" style={{ transform: "scaleX(-1)" }}>reply</span>
+            <span>Forwarded</span>
+          </div>
+        )}
+
         {!isOut && !msg.grouped && (
           <div className="msg-sender-line">
             <span className="sender-name">{msg.from}</span>
@@ -286,7 +294,7 @@ function MessageRow({ msg, onReact, onReply, onDelete, onOpenActionMenu, onActio
         )}
       </div>
 
-      {/* Floating Action Triggers with Delete Message button */}
+      {/* Floating Action Triggers matching WhatsApp message structure */}
       <div className="sandesh-msg-hover-actions">
         <button
           type="button"
@@ -311,6 +319,27 @@ function MessageRow({ msg, onReact, onReply, onDelete, onOpenActionMenu, onActio
         </button>
         <button
           type="button"
+          className="msg-action-btn"
+          aria-label="Forward"
+          title="Forward message to someone or group"
+          onClick={() => onForward?.(msg)}
+        >
+          <span className="material-icons" style={{ transform: "scaleX(-1)" }}>reply</span>
+        </button>
+        <button
+          type="button"
+          className="msg-action-btn menu-btn"
+          aria-label="More options"
+          title="More options"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            onOpenActionMenu?.(msg, { x: rect.left, y: rect.bottom + 4 }, "menu");
+          }}
+        >
+          <span className="material-icons">expand_more</span>
+        </button>
+        <button
+          type="button"
           className="msg-action-btn delete-btn"
           aria-label="Delete message"
           title="Delete message"
@@ -328,6 +357,7 @@ export default function MessageList({
   typingUser,
   onReact,
   onReply,
+  onForward,
   onDelete,
   onActionCardClick,
   pushToast,
@@ -359,11 +389,21 @@ export default function MessageList({
 
   const popupStyle = popup
     ? (() => {
-        const margin = 8;
-        const width = popup.kind === "react" ? 220 : 200;
-        const left = Math.min(Math.max(popup.x, margin), window.innerWidth - width - margin);
-        const top = Math.min(Math.max(popup.y - 46, margin), window.innerHeight - 220);
-        return { left, top };
+        const margin = 12;
+        const width = popup.kind === "react" ? 360 : 190;
+        const height = popup.kind === "react" ? 52 : 270;
+        const left = Math.min(
+          Math.max(popup.x - (popup.kind === "react" ? 60 : 10), margin),
+          window.innerWidth - width - margin
+        );
+        let top = popup.y - height - 10;
+        if (top < margin) {
+          top = popup.y + 24;
+        }
+        if (top + height > window.innerHeight - margin) {
+          top = window.innerHeight - height - margin;
+        }
+        return { left, top, position: "fixed" };
       })()
     : null;
 
@@ -376,6 +416,7 @@ export default function MessageList({
             msg={m}
             onReact={onReact}
             onReply={onReply}
+            onForward={onForward}
             onDelete={onDelete}
             onOpenActionMenu={openPopup}
             onActionCardClick={onActionCardClick}
@@ -407,6 +448,7 @@ export default function MessageList({
         <MessageActionMenu
           style={popupStyle}
           msg={popup.msg}
+          canDelete={true}
           onReact={() => setPopup({ ...popup, kind: "react" })}
           onReply={() => {
             onReply?.(popup.msg);
@@ -417,6 +459,14 @@ export default function MessageList({
               navigator.clipboard?.writeText(popup.msg.text);
               pushToast?.("Message copied");
             }
+            setPopup(null);
+          }}
+          onForward={() => {
+            onForward?.(popup.msg);
+            setPopup(null);
+          }}
+          onStar={() => {
+            pushToast?.("Message starred");
             setPopup(null);
           }}
           onDelete={() => {
