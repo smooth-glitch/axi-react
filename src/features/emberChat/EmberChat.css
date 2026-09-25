@@ -1574,6 +1574,7 @@
    3D FLOATING COMPOSER & SMART PROMPTS
    ========================================================================== */
 .sandesh-composer-wrapper {
+  position: relative;
   padding: 8px 18px 16px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.55) 100%);
 }
@@ -3760,22 +3761,45 @@
 /* 1. Floating Command Autocomplete Menu Popup */
 .sandesh-cmd-menu-popup {
   position: absolute;
-  bottom: calc(100% + 12px);
-  left: 20px;
-  right: 20px;
-  max-width: 620px;
+  bottom: calc(100% + 14px);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: calc(100% - 20px);
+  max-width: 660px;
   max-height: 380px;
-  background: var(--sandesh-glass-thick);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: var(--sandesh-blur);
   -webkit-backdrop-filter: var(--sandesh-blur);
   border: 1px solid var(--sandesh-glass-border);
-  box-shadow: 0 22px 55px -10px rgba(220, 110, 65, 0.28), 0 8px 24px -4px rgba(0, 0, 0, 0.08);
-  border-radius: 18px;
+  box-shadow: 0 24px 60px -10px rgba(220, 110, 65, 0.35), 0 10px 25px -4px rgba(0, 0, 0, 0.1);
+  border-radius: 20px;
   overflow: hidden;
-  z-index: 60;
+  z-index: 250;
   display: flex;
   flex-direction: column;
   animation: sandeshCmdFadeUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: bottom center;
+}
+
+.cmd-highlight {
+  color: var(--sandesh-coral-accent);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cmd-action-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sandesh-coral-accent);
+  background: rgba(255, 122, 89, 0.12);
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
 }
 
 @keyframes sandeshCmdFadeUp {
@@ -3927,6 +3951,9 @@
 .cmd-item-right {
   margin-left: 12px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .cmd-usage-preview {
