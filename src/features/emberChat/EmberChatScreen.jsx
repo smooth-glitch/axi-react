@@ -29,6 +29,7 @@ import {
   authorizedUsers,
 } from "./data/sampleData.js";
 import { sandeshSocket } from "../../services/sandeshSocket.js";
+import { formatServerMessage } from "./utils/serverMessageFormatter.js";
 import "./EmberChat.css";
 
 const formatTs = (ts) => {
@@ -173,9 +174,20 @@ export function EmberChatScreen({ onOpenAiChat }) {
   };
   const messages = messagesByChat[activeChatId] ?? [];
 
-  const pushToast = useCallback((text, error = false) => {
+  const pushToast = useCallback((textOrPayload, error = false, meta = {}) => {
     const id = Date.now() + Math.random();
-    setToasts((t) => [...t, { id, text, error }]);
+    const formatted = formatServerMessage(textOrPayload, error, meta);
+    setToasts((t) => [
+      ...t,
+      {
+        id,
+        text: formatted.text,
+        error: formatted.isError,
+        type: formatted.type,
+        title: formatted.title,
+        icon: formatted.icon,
+      },
+    ]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   }, []);
 
@@ -221,8 +233,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
           }
         }
       } else if (event.type === "error" && event.text) {
-        // P0: Handle error events (show toast)
-        pushToast(event.text, true);
+        // P0: Handle error events (show user-friendly toast)
+        pushToast(event);
       } else if (event.type === "system") {
         // P0: Re-send /list whenever a system event contains "has joined" or "has left"
         if (event.text && (event.text.includes("has joined") || event.text.includes("has left"))) {
@@ -696,11 +708,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
           return updated;
         });
       } else if (event.type === "delete_denied") {
-        // P1: Handle delete denied
-        pushToast(
-          `Cannot delete message: ${event.reason === "forbidden" ? "not allowed" : event.reason || "denied"}`,
-          true
-        );
+        // P1: Handle delete denied (show user-friendly toast)
+        pushToast(event);
       } else if (event.type === "groups" && Array.isArray(event.list)) {
         // P1: Handle groups event
         const membersMap = {};
@@ -797,7 +806,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
       } else if (event.type === "cmd_catalog" && Array.isArray(event.commands)) {
         setCatalog(event.commands);
       } else if (event.type === "cmd_help" && event.command) {
-        pushToast(`Help: ${event.command.usage || event.command.name} - ${event.command.summary}`);
+        pushToast(event);
       } else if (event.type === "sd") {
         if (event.reqId === "#cards" && event.ok && event.data?.cards) {
           setCards(event.data.cards);
@@ -808,7 +817,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
           setNotifications(event.data.notifications);
         } else if (!event.ok && event.error?.message) {
-          pushToast(`Sandesh error: ${event.error.message}`, true);
+          pushToast(event);
         }
       }
     });

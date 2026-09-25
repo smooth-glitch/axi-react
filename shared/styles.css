@@ -3967,9 +3967,9 @@
 
         button:focus-visible,
         a:focus-visible,
-        input:focus-visible,
-        textarea:focus-visible,
-        select:focus-visible {
+        input:focus-visible:not(.sandesh-auth-wrapper *):not(.sandesh-app-root *),
+        textarea:focus-visible:not(.sandesh-auth-wrapper *):not(.sandesh-app-root *),
+        select:focus-visible:not(.sandesh-auth-wrapper *):not(.sandesh-app-root *) {
             box-shadow: 0 0 0 2px var(--accent-soft);
         }
 
