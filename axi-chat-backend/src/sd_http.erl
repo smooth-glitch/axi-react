@@ -3,16 +3,32 @@
 %%% Routed here from chat_web's dispatch for any path under /api/sd/.
 %%%
 %%%   GET  /api/sd/public              names for the registration form + whether setup is done
-%%%   POST /api/sd/setup/start         {org, name, username?, email, mobile, setupToken?}  -> sends OTP
-%%%   POST /api/sd/setup/verify        {otp}  -> creates the org + first administrator, returns a session
-%%%   POST /api/sd/register            self-registration -> pending, sent to a host for approval
-%%%   POST /api/sd/otp/send            {identifier}
-%%%   POST /api/sd/login               {identifier, password?, otp?}  -> {token, user, ...}
+%%%   POST /api/sd/setup/start         {org, name, username?, email, mobile, setupToken?}  -> sends a bootstrap OTP
+%%%   POST /api/sd/setup/verify        {otp}  -> creates the org + first admin; NOT a session yet, see below
+%%%   POST /api/sd/register            {..., password}  -> pending, sent to a host for approval
+%%%   POST /api/sd/login               {identifier, password, totp?, recoveryCode?}  -> see "Login / mandatory TOTP" below
 %%%   POST /api/sd/logout              (Bearer)
 %%%   GET  /api/sd/session             (Bearer) -> current user, or 401
 %%%   POST /api/sd/password/change     (Bearer) {oldPassword?, newPassword}
-%%%   POST /api/sd/admin/unlock/start  (Bearer) sends the admin-console OTP
+%%%   POST /api/sd/admin/unlock/start  (Bearer) sends the admin-console OTP (unaffected by mandatory TOTP below)
 %%%   POST /api/sd/admin/unlock        (Bearer) {password, otp}
+%%%   GET  /api/sd/2fa/totp             (Bearer) -> {enabled} -- always true for a live session; see below
+%%%   POST /api/sd/2fa/totp/disable      (Bearer) {password, code} (code: totp or a recovery code)
+%%%   POST /api/sd/2fa/totp/recovery/regenerate (Bearer) {password, code} -> {recoveryCodes}
+%%%
+%%% Login / mandatory TOTP: every account needs a password (set at
+%%% setup/register/invite time) AND a TOTP code from an authenticator app --
+%%% there is no OTP-only or password-only login any more (except within the
+%%% 14-day freshness window after a code was last given). A password-correct
+%%% call for an account with no confirmed TOTP secret doubles as enrollment:
+%%%   1. POST /login {identifier, password}            -> no `token`; instead
+%%%      {totpSetupRequired:true, secret, otpauthUri, issuer, digits, periodSec, recommendedApps}
+%%%      -- render the QR, the user scans it.
+%%%   2. POST /login {identifier, password, totp:"123456"} (their app's code)
+%%%      -> {token, ..., recoveryCodes:[...10], totpJustEnabled:true}. Show
+%%%      the recovery codes exactly once -- the API never returns them again.
+%%% setup/verify (the very first admin) works the same way: its response is
+%%% step 1 above (with `defaultPassword` included), not a session.
 %%%
 %%% Success:  200 {"ok":true,"data":{...}}
 %%% Failure:  4xx {"ok":false,"error":{"code":"...","message":"...","details":{...}}}
@@ -40,6 +56,8 @@ route(Socket, "OPTIONS", _Path, _Headers, _BodyStart) ->
     send(Socket, 204, <<>>);
 route(Socket, "GET", "/api/sd/public", _H, _B) ->
     ok_(Socket, sd_org:public());
+route(Socket, "GET", "/api/sd/2fa/totp", H, _B) ->
+    respond(Socket, sd_totp:status(bearer(H)));
 route(Socket, "GET", "/api/sd/session", H, _B) ->
     case bearer(H) of
         undefined -> fail(Socket, {error, unauthenticated, <<"Missing Authorization: Bearer <token>.">>});
@@ -48,7 +66,7 @@ route(Socket, "GET", "/api/sd/session", H, _B) ->
                 {ok, User, State} ->
                     ok_(Socket, #{<<"user">> => User, <<"password">> => State,
                                   <<"sessionExpiresTs">> => sd_auth:session_expires(Token),
-                                  <<"otpDue">> => not sd_auth:otp_fresh(User),
+                                  <<"totpDue">> => not sd_auth:totp_fresh(User),
                                   <<"mode">> => atom_to_binary(sd_util:mode(), utf8)});
                 error -> fail(Socket, {error, unauthenticated, <<"Session expired. Sign in again.">>})
             end
@@ -67,8 +85,6 @@ post(Socket, "/api/sd/setup/verify", Body, H) ->
     respond(Socket, sd_auth:setup_verify(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/register", Body, H) ->
     respond(Socket, self_register(Body, client_ip(Socket, H)));
-post(Socket, "/api/sd/otp/send", Body, H) ->
-    respond(Socket, sd_auth:otp_send(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/login", Body, H) ->
     respond(Socket, sd_auth:login(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/logout", _Body, H) ->
@@ -82,26 +98,43 @@ post(Socket, "/api/sd/admin/unlock/start", _Body, H) ->
 post(Socket, "/api/sd/admin/unlock", Body, H) ->
     respond(Socket, sd_auth:admin_unlock(bearer(H), sd_util:get(<<"password">>, Body),
                                          sd_util:get(<<"otp">>, Body)));
+post(Socket, "/api/sd/2fa/totp/disable", Body, H) ->
+    respond(Socket, sd_totp:disable(bearer(H), sd_util:get(<<"password">>, Body),
+                                    sd_util:get(<<"code">>, Body)));
+post(Socket, "/api/sd/2fa/totp/recovery/regenerate", Body, H) ->
+    respond(Socket, sd_totp:regenerate_recovery(bearer(H), sd_util:get(<<"password">>, Body),
+                                                sd_util:get(<<"code">>, Body)));
 post(Socket, _Path, _Body, _H) ->
     fail(Socket, {error, not_found, <<"No such endpoint.">>}).
 
 %% ---- self-registration ----------------------------------------------------------------------
 %% "Users can register into the system themselves ... The onboarding
 %% approval will be sent to the host who can approve their onboarding."
+%% A self-registering user picks their own password up front (unlike an
+%% invited user, who didn't choose their account and gets a default one) --
+%% checked with the same policy as a password change. TOTP enrollment still
+%% happens at their first login after approval, same as everyone else.
 self_register(Body, Ip) ->
     case {sd_org:setup_done(), sd_db:rate(["register:", Ip], 10, 3600)} of
         {false, _} -> {error, not_ready, <<"This organisation hasn't been set up yet.">>};
         {_, limited} -> {error, rate_limited, <<"Too many registrations from here; try later.">>};
         _ ->
-            case sd_users:create(Body, #{mode => register, actor => <<"self">>,
-                                         status => <<"pending">>}) of
-                {ok, User} ->
-                    {ok, Req} = sd_reqs:create_onboarding(User),
-                    {ok, #{<<"registered">> => true, <<"status">> => <<"pending">>,
-                           <<"username">> => maps:get(<<"username">>, User),
-                           <<"requestId">> => maps:get(<<"id">>, Req),
-                           <<"awaitingApprovalFrom">> => length(maps:get(<<"approvers">>, Req))}};
-                Err -> Err
+            Password = sd_util:get(<<"password">>, Body),
+            Username0 = sd_util:get(<<"username">>, Body, <<>>),
+            case sd_auth:check_password_policy(Username0, Password) of
+                {error, _, _} = Err -> Err;
+                ok ->
+                    case sd_users:create(Body, #{mode => register, actor => <<"self">>,
+                                                 status => <<"pending">>}) of
+                        {ok, User} ->
+                            sd_auth:set_initial_password(maps:get(<<"username">>, User), Password),
+                            {ok, Req} = sd_reqs:create_onboarding(User),
+                            {ok, #{<<"registered">> => true, <<"status">> => <<"pending">>,
+                                   <<"username">> => maps:get(<<"username">>, User),
+                                   <<"requestId">> => maps:get(<<"id">>, Req),
+                                   <<"awaitingApprovalFrom">> => length(maps:get(<<"approvers">>, Req))}};
+                        Err -> Err
+                    end
             end
     end.
 
@@ -128,6 +161,7 @@ status(unauthenticated) -> 401;
 status(session_expired) -> 401;
 status(invalid_credentials) -> 401;
 status(otp_required) -> 401;
+status(totp_required) -> 401;
 status(otp_invalid) -> 401;
 status(otp_locked) -> 429;
 status(forbidden) -> 403;
@@ -143,7 +177,7 @@ status(locked) -> 429;
 status(internal) -> 500;
 status(C) when C =:= already_setup; C =:= email_taken; C =:= mobile_taken; C =:= username_taken;
                C =:= in_use; C =:= duplicate; C =:= already_associated; C =:= already_resolved;
-               C =:= not_ready -> 409;
+               C =:= not_ready; C =:= already_enabled -> 409;
 status(_) -> 400.
 
 bearer(Headers) ->

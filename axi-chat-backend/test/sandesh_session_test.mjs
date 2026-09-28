@@ -7,12 +7,39 @@
 //   SANDESH_SESSION_TTL_SEC=6 SANDESH_SESSION_CHECK_SEC=2 .\run.ps1 5559 8084
 //   node test/sandesh_session_test.mjs [http://localhost:8084]
 //
-// (The default lifetime, 14 days, is asserted in sandesh_test.mjs.)
+// (The default lifetime, 14 days, is asserted in sandesh_test.mjs.) Session
+// lifetime (SANDESH_SESSION_TTL_SEC) is independent of the TOTP freshness
+// window (14 days, not overridden here), so once the admin finishes
+// mandatory TOTP enrollment below, the short-session assertions that follow
+// can keep using password-only logins exactly as before.
+
+import crypto from "node:crypto";
 
 const BASE = process.argv[2] || "http://localhost:8084";
 const WS_URL = BASE.replace(/^http/, "ws");
 const sfx = Date.now().toString(36).slice(-5);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function b32decode(str) {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const clean = str.replace(/=+$/, "").toUpperCase();
+    let bits = "";
+    for (const c of clean) bits += alphabet.indexOf(c).toString(2).padStart(5, "0");
+    const bytes = [];
+    for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+    return Buffer.from(bytes);
+}
+function totpNow(secretB32) {
+    const secret = b32decode(secretB32);
+    const counter = Math.floor(Date.now() / 1000 / 30);
+    const msg = Buffer.alloc(8);
+    msg.writeBigUInt64BE(BigInt(counter));
+    const hmac = crypto.createHmac("sha1", secret).update(msg).digest();
+    const offset = hmac[hmac.length - 1] & 0x0f;
+    const bin = ((hmac[offset] & 0x7f) << 24) | ((hmac[offset + 1] & 0xff) << 16) |
+                ((hmac[offset + 2] & 0xff) << 8) | (hmac[offset + 3] & 0xff);
+    return String(bin % 1000000).padStart(6, "0");
+}
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -31,10 +58,17 @@ async function main() {
     let r = await api("POST", "/api/sd/setup/start", { org: "Session Org", name: "Sess Admin", username: admin, email: `${admin}@x.org`, mobile: "+919000000123" });
     if (r.status === 409) { console.log("Database already set up -- flush it and restart the backend, then re-run."); process.exit(2); }
     r = await api("POST", "/api/sd/setup/verify", { otp: r.json.data.devOtp });
-    ok("setup works", r.status === 200, r);
+    ok("setup works (mandatory TOTP enrollment pending)", r.status === 200 && r.json.data.totpSetupRequired === true, r);
+    const secret = r.json.data.secret;
+
+    // Complete mandatory TOTP enrollment -- this IS the first login.
+    r = await api("POST", "/api/sd/login", { identifier: admin, password: `Sandesh${admin}`, totp: totpNow(secret) });
+    ok("finishing enrollment logs in and marks TOTP fresh", r.status === 200 && !!r.json.data.token, r.json);
 
     console.log("=== A session ends when its lifetime does (REST) ===");
-    // A fresh login gives the token we time everything from.
+    // A fresh login gives the token we time everything from. Well within the
+    // (default, unshortened) 14-day TOTP freshness window, so password alone
+    // is enough here, same as before mandatory TOTP existed.
     r = await api("POST", "/api/sd/login", { identifier: admin, password: `Sandesh${admin}` });
     const loginAt = Date.now();
     const token = r.json.data.token;
