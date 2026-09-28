@@ -19,23 +19,12 @@ export function configure(next = {}) {
   setStorageName(config.storageName);
   setMaxUploadMb(config.maxUploadMb);
   if (next.user) _client.setUser(next.user);
+  // Accept a pre-authenticated shared socket (e.g. the main sandeshSocket instance)
+  // so the tstruct studio never opens a second WebSocket connection.
+  if (next.socket) _client.useShared(next.socket);
   return config;
 }
 export const getConfig = () => config;
-
-// ─── Minimal Sandesh WebSocket client ─────────────────────────────────────────
-// Connects to the Sandesh backend (port 8080 in dev, /ws in prod) and issues
-// /sd <action> {json} commands, routing responses by reqId.
-
-const getWsUrl = () => {
-  if (typeof window === 'undefined') return null;
-  const isDev =
-    ['5173', '3000', '5174'].includes(window.location.port) ||
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1';
-  if (window.location.protocol === 'https:') return `wss://${window.location.host}/ws`;
-  return isDev ? `ws://${window.location.hostname}:8080` : `ws://${window.location.host}/ws`;
-};
 
 class SandeshClient {
   constructor() {
@@ -46,6 +35,13 @@ class SandeshClient {
     this._connectPromise = null;
     this._user = null;
     this._epoch = 0;
+    this._shared = null; // shared sandeshSocket instance from the host app
+  }
+
+  // Use an already-authenticated socket from the host app instead of opening a new one.
+  // This avoids a second WebSocket connection and all the URL/auth headaches that come with it.
+  useShared(socket) {
+    this._shared = socket;
   }
 
   setUser(user) {
@@ -182,6 +178,8 @@ class SandeshClient {
 
   sd(action, args = {}) {
     log.info(`[sd] -> ${action}`, args);
+    // Delegate to the host app's shared socket when available — avoids a second connection.
+    if (this._shared) return this._shared.sd(action, args);
     return this.connect().then(
       () =>
         new Promise((resolve, reject) => {

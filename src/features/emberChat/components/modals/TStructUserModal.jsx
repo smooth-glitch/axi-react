@@ -9,15 +9,17 @@ import Definitions from "@tstruct/studio/pages/Definitions";
 import { EditStruct, NewStruct } from "@tstruct/studio/pages/StructPages";
 import { EditRecord, NewRecord, Records } from "@tstruct/studio/pages/RecordPages";
 import { configure } from "@tstruct/core/api";
+import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 
 // Renders the full tstruct studio inside the Sandesh chat app.
 // Uses MemoryRouter so navigation stays in-memory and doesn't affect the browser URL.
 // Because this code is bundled with the chat app (same port/origin), localStorage
 // is shared — the user session set by the chat app is available to api.js automatically.
 export default function TStructUserModal({ onClose, currentUser }) {
-  // Pass the current Sandesh user to the tstruct API layer on mount
+  // Wire the tstruct API to the host app's already-authenticated socket.
+  // This avoids opening a second WebSocket connection for the same user.
   useEffect(() => {
-    if (currentUser) configure({ user: currentUser });
+    configure({ user: currentUser, socket: sandeshSocket });
   }, [currentUser]);
 
   return (
