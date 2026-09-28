@@ -98,8 +98,8 @@ const reactPlugin = react({ jsxRuntime: 'classic' })
 // bundle exposes createRoot directly on window.ReactDOM, so it maps to the
 // same global as 'react-dom'.
 const reactExternals = {
-  external: ['react', 'react-dom', 'react-dom/client'],
-  globals: { react: 'React', 'react-dom': 'ReactDOM', 'react-dom/client': 'ReactDOM' },
+  external: ['react', 'react-dom', 'react-dom/client', 'leaflet'],
+  globals: { react: 'React', 'react-dom': 'ReactDOM', 'react-dom/client': 'ReactDOM', leaflet: 'L' },
 }
 
 export default defineConfig(() => {
