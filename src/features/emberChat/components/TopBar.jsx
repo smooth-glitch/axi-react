@@ -8,6 +8,7 @@ export default function TopBar({
   onMembersClick,
   onOpenSmartPrompts,
   onOpenAdminConsole,
+  onOpenTstructStudio,
   onOpenAiChat,
   onDeleteChat,
   isAdmin,
@@ -165,6 +166,15 @@ export default function TopBar({
             title="Sandesh Admin Console"
           >
             <span className="material-icons">admin_panel_settings</span>
+          </button>
+        )}
+
+        {/* Lite Tstruct Builder — opens the studio (web/), mounted inside the app itself (no separate dev server
+            or tab; see src/StudioApp.jsx's TstructStudio and TstructStudioModal.jsx). Dev-only affordance, for
+            testing the code brought into web/ is wired up correctly — remove once real integration lands. */}
+        {isAdmin && (
+          <button type="button" className="sandesh-icon-btn-3d" onClick={onOpenTstructStudio} title="Open Lite Tstruct Builder">
+            <span className="material-icons">widgets</span>
           </button>
         )}
 

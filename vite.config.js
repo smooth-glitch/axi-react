@@ -106,6 +106,11 @@ export default defineConfig(() => {
   const resolveAlias = {
     alias: {
       '@': resolve(__dirname, '.'),
+      // The Lite Tstruct Builder studio (web/) lives inside this repo, unwired into the app so far - this alias
+      // is what lets src/ import its public API (e.g. TstructStudioModal.jsx) exactly like an external consumer
+      // would: `import { TstructStudio } from '@tstruct/react'`. Live source, no build step - see web/README /
+      // ../docs/embedding.md in that folder for what else is exported.
+      '@tstruct/react': resolve(__dirname, 'web/src/embed/index.js'),
     },
   }
 

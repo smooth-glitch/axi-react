@@ -174,32 +174,8 @@ export const chats = [
 
 export const onlineUsers = [];
 
-export const smartPromptsByCategory = {
-  employee: [
-    { id: "leave_req", label: "Leave Request", icon: "event_note", desc: "Apply for sick or privilege leave" },
-    { id: "pay_slip", label: "Get Payslip", icon: "receipt_long", desc: "Download recent payroll statement" },
-    { id: "raise_ticket", label: "Raise Ticket", icon: "support_agent", desc: "Submit IT or Admin support issue" },
-    { id: "expense_claim", label: "Expense Claim", icon: "payments", desc: "File travel or meal reimbursement" },
-    { id: "punch_in", label: "Punch In/Out", icon: "fingerprint", desc: "Log attendance checkpoint" },
-  ],
-  healthcare: [
-    { id: "record_vitals", label: "Record Vitals", icon: "monitor_heart", desc: "Log BP, pulse, temp and SpO2" },
-    { id: "book_appt", label: "Book Appointment", icon: "calendar_month", desc: "Schedule doctor consultation" },
-    { id: "lab_reports", label: "Lab Reports", icon: "biotech", desc: "View pathology & radiology findings" },
-    { id: "prescribe", label: "Prescribe Medication", icon: "medication", desc: "Issue e-prescription to pharmacy" },
-  ],
-  customer: [
-    { id: "view_balance", label: "View Balance", icon: "account_balance_wallet", desc: "Check current ledger balance" },
-    { id: "pending_invoices", label: "Pending Invoices", icon: "description", desc: "Review open billing invoices" },
-    { id: "my_orders", label: "My Orders", icon: "local_shipping", desc: "Track consignment & order status" },
-    { id: "make_payment", label: "Make Payment", icon: "credit_card", desc: "Settle dues via secure gateway" },
-  ],
-  supplier: [
-    { id: "submit_quote", label: "Submit Quote", icon: "request_quote", desc: "Bid on active procurement RFQ" },
-    { id: "view_po", label: "View Purchase Orders", icon: "fact_check", desc: "Inspect authorized POs" },
-    { id: "dispatch_note", label: "Notify Dispatch", icon: "airport_shuttle", desc: "Send consignment dispatch notice" },
-  ],
-};
+// Smart Prompts used to be this static per-category list; they're now fetched live from the backend
+// (`options.list`, filtered to type "data_input") — see Composer.jsx's `useSmartPrompts`.
 
 export const sampleEpisodes = [];
 

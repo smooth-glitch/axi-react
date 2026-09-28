@@ -22,6 +22,7 @@ export default function ChatScreen({
   onActionCardClick,
   onOpenSmartPrompts,
   onOpenAdminConsole,
+  onOpenTstructStudio,
   onOpenAiChat,
   typingUser,
   onTyping,
@@ -90,6 +91,7 @@ export default function ChatScreen({
         onMembersClick={onMembersClick}
         onOpenSmartPrompts={onOpenSmartPrompts}
         onOpenAdminConsole={onOpenAdminConsole}
+        onOpenTstructStudio={onOpenTstructStudio}
         onOpenAiChat={onOpenAiChat}
         onDeleteChat={onDeleteChat}
         isAdmin={isAdmin}

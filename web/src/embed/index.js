@@ -9,6 +9,10 @@ export { default as DynamicForm } from '../ui/DynamicForm';
 // Options (standalone configurable actions) - self-contained screens, no router needed
 export { OptionsList, OptionBuilder, OptionRun } from '../ui/options';
 
+// The whole studio (sidebar + builder + records + options) as one mountable component - its own in-memory
+// routing, scoped styles, no GlobalStyle. Give it an explicit height. See StudioApp.jsx.
+export { TstructStudio } from '../StudioApp';
+
 // API client (configure once; every call accepts a struct id or key)
 export { configure, getConfig, listStructs, getStruct, createStruct, updateStruct, listRecords, getRecord, createRecord, updateRecord, listOptions, getOption, createOption, updateOption, deleteOption, listFiles, uploadFile, downloadFile } from '../core/api';
 

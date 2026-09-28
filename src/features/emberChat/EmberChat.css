@@ -356,7 +356,8 @@
 }
 
 .sandesh-input-box-3d input,
-.sandesh-input-box-3d select {
+.sandesh-input-box-3d select,
+.sandesh-input-box-3d textarea {
   flex: 1;
   border: none !important;
   background: transparent;
@@ -366,6 +367,20 @@
   box-shadow: none !important;
   -webkit-box-shadow: none !important;
   width: 100%;
+}
+
+/* Multiline text fields (Lite TStruct `text` fields with multiline:true) need to grow past the fixed 44px row height. */
+.sandesh-input-box-3d.textarea-box {
+  height: auto;
+  align-items: stretch;
+  padding: 10px 12px;
+}
+
+.sandesh-input-box-3d.textarea-box textarea {
+  resize: vertical;
+  min-height: 70px;
+  font-family: inherit;
+  line-height: 1.4;
 }
 
 .sandesh-input-box-3d input:focus,
@@ -1760,7 +1775,30 @@
 
 .prompts-chips-scroll {
   display: flex;
+  align-items: center;
   gap: 6px;
+}
+
+.prompts-chips-hint {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+  white-space: nowrap;
+}
+
+.prompts-chips-hint-error {
+  color: #ef4444;
+}
+
+.prompts-chips-retry {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--sandesh-coral-accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .sandesh-prompt-chip-3d {
@@ -2213,6 +2251,23 @@
   flex-direction: column;
 }
 
+.tstruct-studio-modal {
+  width: 94vw;
+  max-width: 1240px;
+  height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.tstruct-studio-modal .sandesh-modal-header {
+  flex: none;
+}
+
+.tstruct-studio-body {
+  flex: 1;
+  min-height: 0;
+}
+
 .sandesh-modal-header {
   padding: 18px 22px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
@@ -2269,6 +2324,123 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 18px;
+}
+
+/* --------------------------------------------------------------------------
+   Lite TStruct form (SmartStructureModal): dynamic fields fetched from the
+   real backend (tstruct.get / tstruct.submit) - see docs/SANDESH_API.md §5.
+   -------------------------------------------------------------------------- */
+.tstruct-required-mark {
+  color: var(--sandesh-coral-accent);
+  margin-left: 2px;
+}
+
+.tstruct-field-hint {
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+  margin-top: 3px;
+}
+
+.tstruct-field-error {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ef4444;
+  margin-top: 4px;
+}
+
+.tstruct-form-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--sandesh-radius-md);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #ef4444;
+  margin-bottom: 14px;
+}
+
+.tstruct-section {
+  margin: 18px 0 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+}
+
+.tstruct-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.tstruct-section-heading {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--sandesh-text-main);
+  margin: 0 0 10px;
+}
+
+.tstruct-multi-select {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1.5px solid rgba(240, 205, 185, 0.7);
+  border-radius: var(--sandesh-radius-md);
+  padding: 10px 12px;
+}
+
+.tstruct-location-row {
+  display: flex;
+  gap: 10px;
+}
+
+.tstruct-location-row .sandesh-input-group {
+  flex: 1;
+}
+
+.tstruct-locate-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sandesh-coral-accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tstruct-loading-state,
+.tstruct-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--sandesh-text-muted);
+  gap: 6px;
+}
+
+.tstruct-loading-state .material-icons,
+.tstruct-error-state .material-icons {
+  font-size: 34px;
+  color: var(--sandesh-coral-accent);
+  opacity: 0.7;
+}
+
+.tstruct-loading-state .material-icons {
+  animation: tstructSpin 0.9s linear infinite;
+}
+
+@keyframes tstructSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* --------------------------------------------------------------------------

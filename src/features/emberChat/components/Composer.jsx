@@ -1,12 +1,48 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import ContentPanel from "./ContentPanel.jsx";
 import CommandMenuPopup from "./CommandMenuPopup.jsx";
-import { smartPromptsByCategory, quickReactions } from "../data/sampleData.js";
+import { quickReactions } from "../data/sampleData.js";
 import {
   DEFAULT_COMMANDS_CATALOG,
   filterCatalogCommands,
 } from "../data/hashCommandsCatalog.js";
 import { sandeshSocket } from "../../../services/sandeshSocket.js";
+
+// Smart Prompts bar: live `options.list` filtered to the ones that open a form (`data_input`), instead of the old
+// hardcoded per-category list. The backend already filters `options.list` to what this signed-in user is allowed to
+// see ("Applicable to"), so no client-side category filtering is needed any more (docs/SANDESH_API.md §5).
+function useSmartPrompts() {
+  const [state, setState] = useState({ status: "loading", prompts: [] }); // 'loading' | 'ready' | 'error'
+
+  const load = useCallback(() => {
+    setState((s) => ({ ...s, status: "loading" }));
+    sandeshSocket
+      .sd("options.list")
+      .then(({ options }) => {
+        const prompts = (options || [])
+          .filter((o) => o.type === "data_input" && o.target)
+          .map((o) => ({ id: o.id, label: o.caption, target: o.target, icon: "description" }));
+        setState({ status: "ready", prompts });
+      })
+      .catch((err) => {
+        // "unauthenticated" just means there's no real Sandesh session on this connection yet - not worth alarming
+        // the user over in a quick-prompts bar; treat it the same as "nothing configured".
+        if (err?.code === "unauthenticated") setState({ status: "ready", prompts: [] });
+        else setState({ status: "error", prompts: [] });
+      });
+  }, []);
+
+  useEffect(() => {
+    load();
+    // Refresh once the socket (re)connects - covers the common case of opening the bar before the handshake lands.
+    const unsub = sandeshSocket.subscribe((event) => {
+      if (event.type === "status_change" && event.status === "connected") load();
+    });
+    return unsub;
+  }, [load]);
+
+  return { ...state, reload: load };
+}
 
 function formatElapsed(seconds) {
   const m = Math.floor(seconds / 60);
@@ -23,7 +59,6 @@ export default function Composer({
   onTyping,
   disabled = false,
   pushToast,
-  userCategory = "employee",
   currentUser = null,
   onlineUsers = [],
   availableUsers = [],
@@ -59,7 +94,7 @@ export default function Composer({
   const audioChunksRef = useRef([]);
 
   const hasText = text.trim().length > 0;
-  const activePrompts = smartPromptsByCategory[userCategory] || smartPromptsByCategory.employee;
+  const { status: promptsStatus, prompts: activePrompts, reload: reloadPrompts } = useSmartPrompts();
 
   // Sync initialText if supplied externally (e.g. from #help modal)
   useEffect(() => {
@@ -516,6 +551,18 @@ export default function Composer({
           <span className="material-icons prompt-icon">bolt</span> Smart Prompts:
         </span>
         <div className="prompts-chips-scroll">
+          {promptsStatus === "loading" && activePrompts.length === 0 ? (
+            <span className="prompts-chips-hint">Loading…</span>
+          ) : promptsStatus === "error" ? (
+            <span className="prompts-chips-hint prompts-chips-hint-error">
+              Smart prompts unavailable.{" "}
+              <button type="button" className="prompts-chips-retry" onClick={reloadPrompts}>
+                Retry
+              </button>
+            </span>
+          ) : activePrompts.length === 0 ? (
+            <span className="prompts-chips-hint">Nothing configured for you yet.</span>
+          ) : null}
           {activePrompts.map((p) => (
             <button
               key={p.id}

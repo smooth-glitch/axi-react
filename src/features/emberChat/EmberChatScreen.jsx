@@ -7,6 +7,7 @@ import MembersModal from "./components/modals/MembersModal.jsx";
 import ProfileModal from "./components/modals/ProfileModal.jsx";
 import SmartStructureModal from "./components/modals/SmartStructureModal.jsx";
 import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
+import TstructStudioModal from "./components/modals/TstructStudioModal.jsx";
 import ForwardModal from "./components/modals/ForwardModal.jsx";
 import CommandsHelpModal from "./components/modals/CommandsHelpModal.jsx";
 import OnlineUsersModal from "./components/modals/OnlineUsersModal.jsx";
@@ -79,7 +80,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const [typingUsersByChat, setTypingUsersByChat] = useState({});
   const typingTimersRef = useRef({});
 
-  const [modal, setModal] = useState(null); // "new-group" | "members" | "profile" | "smart_structure" | "admin_console" | "forward" | "commands_help" | "online_users" | "hosts_directory" | "groups_directory" | "inbox" | "user_profile" | "associates" | "find_people" | "approvals" | "hosted_users" | "notifications" | "cards" | null
+  const [modal, setModal] = useState(null); // "new-group" | "members" | "profile" | "smart_structure" | "admin_console" | "tstruct_studio" | "forward" | "commands_help" | "online_users" | "hosts_directory" | "groups_directory" | "inbox" | "user_profile" | "associates" | "find_people" | "approvals" | "hosted_users" | "notifications" | "cards" | null
   const [modalParam, setModalParam] = useState(null);
   const [forwardTargetMsg, setForwardTargetMsg] = useState(null);
   const [selectedPrompt, setSelectedPrompt] = useState(null);
@@ -1958,6 +1959,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             setModalParam({ tab: "users" });
             setModal("admin_console");
           }}
+          onOpenTstructStudio={() => setModal("tstruct_studio")}
           onOpenAiChat={onOpenAiChat}
           typingUser={typingUsersByChat[activeChatId]}
           onTyping={handleTyping}
@@ -2299,6 +2301,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 }}
                 pushToast={pushToast}
               />
+            )}
+            {modal === "tstruct_studio" && (
+              <TstructStudioModal onClose={() => setModal(null)} />
             )}
             {modal === "forward" && forwardTargetMsg && (
               <ForwardModal

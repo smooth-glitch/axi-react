@@ -21,6 +21,8 @@ class SandeshSocketService {
     this.reconnectTimer = null;
     this.isManualDisconnect = false;
     this.connEpoch = 0;
+    this.sdSeq = 0; // request ids for sd(), kept numeric so they never collide with the fixed string
+    // reqIds ("#cards" etc.) some screens match on directly.
   }
 
   subscribe(listener) {
@@ -261,6 +263,36 @@ class SandeshSocketService {
   sendLeaveGroup(group) {
     const g = (group || '').trim();
     return this.send(`/leavegroup ${g}`);
+  }
+
+  /**
+   * The Sandesh `/sd <action> {json}` request/reply protocol (docs/SANDESH_API.md §2/§4) — options, forms,
+   * submissions, admin console. Resolves with `data` on `{"type":"sd","ok":true,...}`, otherwise rejects with an
+   * Error carrying `.code` / `.details` from the server's `error` object (see §7 for the codes).
+   *
+   *   const { options } = await sandeshSocket.sd('options.list');
+   *   await sandeshSocket.sd('tstruct.submit', { name, values });   // -> throws { code: 'invalid_values', details }
+   */
+  sd(action, args = {}) {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        reject(Object.assign(new Error('Not connected to the server.'), { code: 'not_connected' }));
+        return;
+      }
+      const reqId = ++this.sdSeq;
+      const timer = setTimeout(() => {
+        unsubscribe();
+        reject(Object.assign(new Error('The server did not reply in time.'), { code: 'timeout' }));
+      }, 15000);
+      const unsubscribe = this.subscribe((event) => {
+        if (event.type !== 'sd' || event.reqId !== reqId) return;
+        clearTimeout(timer);
+        unsubscribe();
+        if (event.ok) resolve(event.data);
+        else reject(Object.assign(new Error(event.error?.message || 'Request failed.'), event.error || {}));
+      });
+      this.send(`/sd ${action} ${JSON.stringify({ ...args, reqId })}`);
+    });
   }
 
   sendList() {
