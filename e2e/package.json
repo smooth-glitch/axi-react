@@ -1,0 +1,6 @@
+{
+  "name": "e2e",
+  "private": true,
+  "scripts": { "test": "node e2e.js" },
+  "dependencies": { "playwright-core": "*" }
+}
