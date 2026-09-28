@@ -3,7 +3,9 @@
 //   1. submissions.update / submissions.delete
 //   2. submissions.list filtered by {tstruct, ref}
 //   3. ref/meta on tstruct.submit
-//   4. tstruct.mine.* -- personal structures, no admin/Option needed
+//   4. tstruct.user.* -- user-created structures: any signed-in user can
+//      make one, org-wide visible immediately, create-only (no edit),
+//      owner-delete-only
 //
 // Same harness/conventions as sandesh_test.mjs (copy of its helpers) so it
 // runs the same way, against a running backend in STRICT mode, scratch Redis:
@@ -168,62 +170,64 @@ async function main() {
     m = await RV.sd("submissions.delete", { id: sub1Id });
     ok("deleting an already-deleted submission is not_found, not a crash", !m.ok && m.error.code === "not_found", m);
 
-    console.log("=== tstruct.mine.* -- personal structures, no admin/Option needed ===");
-    m = await RV.sd("tstruct.mine.list");
-    ok("ravi's personal structure list starts empty", m.ok && m.data.tstructs.length === 0, m);
-    m = await RV.sd("tstruct.mine.save", { name: "budget", caption: "My budget", fields: [
+    console.log("=== tstruct.user.* -- user-created structures: org-wide, create-only, owner-delete-only ===");
+    m = await RV.sd("tstruct.user.list");
+    ok("the user-created structure list starts empty", m.ok && m.data.tstructs.length === 0, m);
+    m = await RV.sd("tstruct.user.save", { name: "budget", caption: "Budget tracker", fields: [
         { name: "item", type: "text", caption: "Item", required: true },
         { name: "cost", type: "number", caption: "Cost", required: true },
     ] });
-    ok("a plain (non-admin, non-unlocked) user can create their own personal structure", m.ok && m.data.tstruct.owner === ravi, m);
-    m = await SM.sd("tstruct.mine.save", { name: "budget", caption: "Sam's totally different budget", fields: [
+    ok("a plain (non-admin, non-unlocked) user can create a structure", m.ok && m.data.tstruct.owner === ravi, m);
+    m = await SM.sd("tstruct.user.get", { name: "budget" });
+    ok("it's visible org-wide immediately -- sam can see ravi's struct with no Option, no admin action", m.ok && m.data.tstruct.fields.length === 2, m);
+    m = await A.sd("tstruct.user.list");
+    ok("...and it shows up in the shared list for anyone, including the admin", m.data.tstructs.some(t => t.name === "budget"), m.data.tstructs);
+    m = await SM.sd("tstruct.user.save", { name: "budget", caption: "Sam's attempt at the same name", fields: [
         { name: "note", type: "text", caption: "Note" },
     ] });
-    ok("sam can create a personal structure with the SAME name -- no collision with ravi's", m.ok, m);
-    m = await RV.sd("tstruct.mine.get", { name: "budget" });
-    ok("ravi's own 'budget' is still his own definition (2 fields), unaffected by sam's", m.ok && m.data.tstruct.fields.length === 2, m);
-    m = await SM.sd("tstruct.mine.get", { name: "budget" });
-    ok("sam's own 'budget' is his own definition (1 field)", m.ok && m.data.tstruct.fields.length === 1, m);
-    m = await SM.sd("tstruct.mine.list");
-    ok("sam's personal list shows only his own struct, not ravi's", m.data.tstructs.length === 1 && m.data.tstructs[0].fields.length === 1, m);
+    ok("a second user can NOT claim the same name -- rejected as duplicate, first-come-first-served", !m.ok && m.error.code === "duplicate", m);
+    m = await RV.sd("tstruct.user.get", { name: "budget" });
+    ok("...and ravi's original definition (2 fields) is untouched by the rejected attempt", m.ok && m.data.tstruct.fields.length === 2, m);
 
-    // A GLOBAL tstruct with the exact same name, to prove the two namespaces
-    // never cross -- addressing "budget" through the global path must reach
-    // the admin's definition, never ravi's or sam's personal one.
-    m = await A.sd("admin.tstruct.save", { name: "budget", caption: "Org budget", fields: [
-        { name: "department", type: "text", caption: "Department", required: true },
-        { name: "quarter", type: "text", caption: "Quarter", required: true },
-        { name: "amount", type: "number", caption: "Amount", required: true },
+    // A DIFFERENT global (admin-managed) tstruct with the exact same name is
+    // still a wholly separate collection -- Option-gated, editable by
+    // re-saving, unlike the user-created one. Proves the two paths coexist.
+    m = await A.sd("admin.tstruct.save", { name: "orgforms_leave", caption: "Org leave form", fields: [
+        { name: "days", type: "wholenumber", caption: "Days", required: true },
     ] });
-    ok("admin creates a GLOBAL 'budget' -- same name as ravi's and sam's personal ones", m.ok, m);
-    m = await A.sd("admin.option.save", { id: "orgbudget", caption: "Org budget", type: "data_input", target: "budget" });
-    ok("admin points an option at it", m.ok, m);
-    m = await RV.sd("tstruct.get", { name: "budget" });
-    ok("tstruct.get('budget') for ravi reaches the GLOBAL definition (3 fields), not his own personal one (2 fields) -- no cross-talk", m.ok && m.data.tstruct.fields.length === 3, m);
-    m = await RV.sd("tstruct.mine.get", { name: "budget" });
-    ok("...while tstruct.mine.get('budget') still reaches ravi's own personal one (2 fields) -- both paths coexist without colliding", m.ok && m.data.tstruct.fields.length === 2, m);
+    ok("admin can still create an admin-managed tstruct through the unrelated old path", m.ok, m);
+    m = await A.sd("tstruct.user.save", { name: "orgforms_leave", caption: "clash attempt", fields: [{ name: "x", type: "text" }] });
+    ok("...and that name is claimed in the user-created collection too if someone tries -- no silent overwrite either direction", m.ok, m); // different collection, no collision expected
+    m = await A.sd("tstruct.user.delete", { name: "orgforms_leave" });
+    ok("admin cleans up their test user-struct (admin is the owner here, so allowed)", m.ok, m);
 
-    m = await RV.sd("tstruct.mine.submit", { name: "budget", values: { item: "Laptop", cost: 1200 } });
-    ok("ravi submits a record against his own personal struct -- no Option, no admin, needed", m.ok && m.data.submission.scope === "mine", m);
-    const mineSubId = m.data.submission.id;
-    m = await SM.sd("tstruct.mine.submit", { name: "vault", values: {} });
-    ok("sam can NOT reach a personal struct he never created just by naming it (get_my_tstruct is scoped to the caller, not a shared namespace)", !m.ok && m.error.code === "not_found", m);
+    m = await SM.sd("tstruct.user.submit", { name: "budget", values: { item: "Laptop", cost: 1200 } });
+    ok("ANY user (not just the creator) can submit a record against a user-created structure -- that's the whole point of it being org-wide", m.ok && m.data.submission.scope === "user", m);
+    const userSubId = m.data.submission.id;
+    m = await SM.sd("submissions.list");
+    ok("the submission shows up in the normal submissions.list for its own submitter", m.data.submissions.some(s => s.id === userSubId), m.data.submissions.map(s=>s.id));
 
-    m = await RV.sd("submissions.list");
-    ok("a personal-struct submission shows up in the normal submissions.list too", m.data.submissions.some(s => s.id === mineSubId), m.data.submissions.map(s=>s.id));
-    m = await RV.sd("submissions.update", { id: mineSubId, values: { item: "Laptop (16GB)", cost: 1300 } });
-    ok("editing a personal-struct submission re-validates against the PERSONAL definition correctly (scope resolution works)", m.ok && m.data.submission.values.cost === 1300, m);
-    m = await RV.sd("submissions.update", { id: mineSubId, values: { item: "Laptop" } }); // cost missing -> required
-    ok("editing it with a required field missing is still validated the same as any other submission", !m.ok && m.error.code === "invalid_values" && !!m.error.details.fields.cost, m);
+    m = await RV.sd("submissions.update", { id: userSubId, values: { item: "x", cost: 1 } });
+    ok("the STRUCTURE's creator (ravi) still can NOT edit SAM's record -- edit rights are per-submission ownership, unrelated to who owns the struct", !m.ok && m.error.code === "forbidden", m);
+    m = await SM.sd("submissions.update", { id: userSubId, values: { item: "Laptop (16GB)", cost: 1300 } });
+    ok("sam (the actual submitter) edits his own record against ravi's structure -- re-validates against ravi's definition correctly", m.ok && m.data.submission.values.cost === 1300, m);
 
-    m = await RV.sd("tstruct.mine.delete", { name: "budget" });
-    ok("ravi deletes his own personal struct", m.ok && m.data.deleted === true, m);
-    m = await RV.sd("tstruct.mine.get", { name: "budget" });
-    ok("...and it's really gone", !m.ok && m.error.code === "not_found", m);
-    m = await SM.sd("tstruct.mine.get", { name: "budget" });
-    ok("...but sam's own 'budget' (same name) is completely unaffected", m.ok, m);
-    m = await RV.sd("submissions.update", { id: mineSubId, values: { item: "still there?", cost: 1 } });
-    ok("editing a submission whose personal struct definition was deleted fails cleanly (not_found), doesn't crash", !m.ok && m.error.code === "not_found", m);
+    m = await RV.sd("tstruct.user.delete", { name: "budget" });
+    ok("the struct's CREATOR (ravi) can delete it -- deleting a struct is owner-only, separate from who can submit records to it", m.ok && m.data.deleted === true, m);
+    m = await RV.sd("tstruct.user.get", { name: "budget" });
+    ok("...and it's really gone, org-wide", !m.ok && m.error.code === "not_found", m);
+    m = await SM.sd("submissions.update", { id: userSubId, values: { item: "still there?", cost: 1 } });
+    ok("editing a submission whose structure was since deleted fails cleanly (not_found), doesn't crash", !m.ok && m.error.code === "not_found", m);
+
+    // Delete-permission check needs its own struct since 'budget' is gone now.
+    m = await RV.sd("tstruct.user.save", { name: "vault", caption: "Vault", fields: [{ name: "note", type: "text" }] });
+    ok("ravi creates another structure to test delete permissions on", m.ok, m);
+    m = await SM.sd("tstruct.user.delete", { name: "vault" });
+    ok("a non-creator (sam) can NOT delete someone else's structure", !m.ok && m.error.code === "forbidden", m);
+    m = await A.sd("tstruct.user.delete", { name: "vault" });
+    ok("...not even an admin -- deletion is creator-only, no admin override", !m.ok && m.error.code === "forbidden", m);
+    m = await RV.sd("tstruct.user.get", { name: "vault" });
+    ok("...so it's still there after both refused attempts", m.ok, m);
 
     A.close(); RV.close(); SM.close();
 

@@ -156,8 +156,8 @@ user_actions() ->
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
      <<"options.list">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
-     <<"tstruct.mine.list">>, <<"tstruct.mine.get">>, <<"tstruct.mine.save">>,
-     <<"tstruct.mine.delete">>, <<"tstruct.mine.submit">>].
+     <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
+     <<"tstruct.user.delete">>, <<"tstruct.user.submit">>].
 
 run(Action, Args, Ctx) ->
     Level = access(Action),
@@ -426,25 +426,25 @@ do(<<"submissions.delete">>, Args, #{user := User}) ->
         _ -> {error, invalid, <<"id (number) is required.">>}
     end;
 
-%% ---- personal structures (any signed-in user, no Option/admin needed) -----------------------------------------------
-do(<<"tstruct.mine.list">>, _Args, #{user := User}) ->
-    {ok, #{<<"tstructs">> => sd_config:list_my_tstructs(User)}};
-do(<<"tstruct.mine.get">>, Args, #{user := User}) ->
+%% ---- user-created structures (any signed-in user; org-wide the moment they exist; create-only, owner-delete-only) ---
+do(<<"tstruct.user.list">>, _Args, #{user := _User}) ->
+    {ok, #{<<"tstructs">> => sd_config:list_user_tstructs()}};
+do(<<"tstruct.user.get">>, Args, #{user := _User}) ->
     with_bin(<<"name">>, Args, fun(N) ->
-        case sd_config:get_my_tstruct(User, N) of
-            undefined -> {error, not_found, <<"No such personal structure.">>};
+        case sd_config:get_user_tstruct(N) of
+            undefined -> {error, not_found, <<"No such structure.">>};
             D -> {ok, #{<<"tstruct">> => D}}
         end
     end);
-do(<<"tstruct.mine.save">>, Args, #{user := User}) ->
-    case sd_config:save_my_tstruct(User, Args) of {ok, D} -> {ok, #{<<"tstruct">> => D}}; Err -> Err end;
-do(<<"tstruct.mine.delete">>, Args, #{user := User}) ->
+do(<<"tstruct.user.save">>, Args, #{user := User}) ->
+    case sd_config:save_user_tstruct(User, Args) of {ok, D} -> {ok, #{<<"tstruct">> => D}}; Err -> Err end;
+do(<<"tstruct.user.delete">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(N) ->
-        case sd_config:delete_my_tstruct(User, N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+        case sd_config:delete_user_tstruct(User, N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
     end);
-do(<<"tstruct.mine.submit">>, Args, #{user := User}) ->
+do(<<"tstruct.user.submit">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(Name) ->
-        case sd_config:submit_mine(User, Name, maps:get(<<"values">>, Args, #{}), submit_opts(Args)) of
+        case sd_config:submit_user_tstruct(User, Name, maps:get(<<"values">>, Args, #{}), submit_opts(Args)) of
             {ok, Sub} -> {ok, #{<<"submission">> => Sub}};
             Err -> Err
         end
@@ -602,7 +602,7 @@ with_bin(Key, Args, Fun) ->
     end.
 
 %% Pulls the optional record-level {ref, meta} out of a tstruct.submit /
-%% tstruct.mine.submit call. sd_config does its own shape-checking on both.
+%% tstruct.user.submit call. sd_config does its own shape-checking on both.
 submit_opts(Args) ->
     #{ref => maps:get(<<"ref">>, Args, undefined), meta => maps:get(<<"meta">>, Args, undefined)}.
 
