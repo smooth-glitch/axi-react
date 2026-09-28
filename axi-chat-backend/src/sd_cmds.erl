@@ -232,7 +232,7 @@ do(<<"me">>, _Args, #{user := User, token := Token}) ->
                                   <<"canManageUsers">> => maps:get(<<"canManageUsers">>, User, false) =:= true},
            <<"pendingRequests">> => sd_reqs:pending_count(Name),
            <<"password">> => sd_auth:password_state(Name),
-           <<"otpDue">> => not sd_auth:otp_fresh(User),
+           <<"totpDue">> => not sd_auth:totp_fresh(User),
            <<"adminUnlocked">> => sd_auth:admin_unlocked(Token)}};
 
 %% ---- associations -----------------------------------------------------------------------------------------
@@ -639,12 +639,20 @@ invite_user(Args, Actor) ->
                            end,
                     case sd_users:create(Args, Opts) of
                         {ok, User} ->
+                            Username = maps:get(<<"username">>, User),
+                            %% Every account needs a password now (mandatory TOTP
+                            %% enrollment happens at first login) -- same
+                            %% default-password-then-forced-change convention as
+                            %% the admin bootstrap.
+                            sd_auth:issue_default_password(Username),
                             sd_notify:deliver(invite,
                                 sd_util:take([<<"name">>, <<"email">>, <<"mobile">>], User),
                                 #{<<"text">> => <<"You've been invited to Sandesh by ",
                                                   (maps:get(<<"name">>, Actor))/binary,
-                                                  ". Sign in with your email or mobile number; "
-                                                  "we'll send you a one-time code.">>}),
+                                                  ". Sign in with your email or mobile number and the "
+                                                  "password \"Sandesh", Username/binary, "\" -- "
+                                                  "you'll be asked to change it and set up an "
+                                                  "authenticator app on first login.">>}),
                             {ok, #{<<"user">> => User}};
                         Err -> Err
                     end

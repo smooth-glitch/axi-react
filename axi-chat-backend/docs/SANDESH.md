@@ -31,6 +31,7 @@ whoever runs, debugs or extends the backend.
 | `sd_users` | user records, indexes (email, mobile), validation, host scope matching, associations |
 | `sd_reqs` | the four approval workflows as one "request" record: onboarding, associate, host_transfer, group_invite |
 | `sd_auth` | first-run setup, OTP, passwords (PBKDF2-SHA256, 100k), sessions, lockout, admin-console unlock |
+| `sd_totp` | optional real two-factor: TOTP enrollment (RFC 6238), login-time verification, recovery codes. Free (no SMS/email cost), self-contained -- see "Two-factor (TOTP)" below |
 | `sd_policy` | **the** place strict mode is decided: handshake, DM, broadcast, group create/add, admin gate; plus safe post-send hooks |
 | `sd_config` | lite tstructs, options + "applicable to", app connections, form validation & submissions |
 | `sd_cards` | message cards, sections, classification, **notifications** (priority / pending / personal / reminders: unread state, counts, read, live pushes, due-reminder firing) |
@@ -56,12 +57,15 @@ per-command session re-check for the two-week rule, `CHAT_RATE_LIMIT_MAX`),
 | `SANDESH_DEV_OTP` | unset | `1` ⇒ API responses echo the OTP as `devOtp`. **Never on a shared server** |
 | `SANDESH_OTP_COOLDOWN_SEC` | `30` | resend cooldown per account/purpose; `0` disables (tests) |
 | `SANDESH_SESSION_TTL_SEC` | `1209600` (14 days) | session lifetime — **fixed, not extended by activity** (the "log in again every two weeks" rule). Shorten only for tests |
+| `SANDESH_TOTP_FRESH_SEC` | `1209600` (14 days) | how long a password-only login is accepted after a TOTP code was last given, before one is demanded again. Shorten only for tests |
 | `SANDESH_SESSION_CHECK_SEC` | `30` | how often an open WebSocket re-checks its session (on its next command); when it has ended the client gets `sd_event session_expired` and the socket closes |
 | `SANDESH_SCHEDULER_TICK_MS` | `15000` | how often due reminders are fired (a reminder is at most one tick late; min 100) |
 | `SANDESH_SETUP_TOKEN` | unset | if set, `setup/start` must send it as `setupToken` — recommended on any reachable server, since first-run is claimable by whoever calls first |
 | `SANDESH_CORS_ORIGIN` | `*` | `Access-Control-Allow-Origin` for `/api/sd/*`; restrict in production |
 | `CHAT_RATE_LIMIT_MAX` | `30` | commands per 10 s per connection (existing limiter, now tunable) |
 | `CHAT_ENCRYPTION_KEY` | unset | already used for message text; also seals stored app-connection credentials (without it they're stored with a `plain:` marker and a warning is logged) |
+| `SANDESH_TOTP_ENC_KEY` | unset | 32 random bytes, base64 (`openssl rand -base64 32`) -- AES-256-GCM key TOTP secrets are encrypted with at rest. Unset ⇒ a fixed, publicly-known dev key is used instead (loudly warned about in strict mode) |
+| `SANDESH_TOTP_ISSUER` | `Sandesh` | the issuer name shown inside the authenticator app next to the account |
 | `REDIS_HOST/PORT/PASSWORD/DB` | as before | unchanged |
 
 `strict` with `SANDESH_OTP_MODE` = `log`/`fixed` logs a loud warning once:
@@ -107,6 +111,7 @@ anyone who can read the log can sign in as anyone.
 | `sd:unlock:<token>` | string, TTL 30 min | admin-console unlock |
 | `sd:otp:<purpose>:<key>`, `sd:otpa:…`, `sd:otpcd:…` | string, TTL | OTP hash, attempt counter, resend cooldown (`purpose`: login/setup/unlock) |
 | `sd:lf:<user>` | string, TTL 15 min | failed-login counter (lockout at 5) |
+| `sd:totp` | hash | username → `{encSecret,enabled,createdTs,confirmedTs,lastCounter,recovery:[{hash,used}]}` (secret AES-256-GCM sealed, never plaintext at rest) |
 | `sd:rl:*` | string, TTL | per-IP/bucket rate limits |
 | `sd:setup:pending` | string, TTL 15 min | the validated first-run profile awaiting its OTP |
 | `sd:assoc:<user>` | hash | peer → `host`\|`user`\|`peer` |
@@ -120,9 +125,97 @@ anyone who can read the log can sign in as anyone.
 Chat data (`msg:*`, `conv:*`, `group:*`, `profile:*`, `known_users`,
 `dm_partners:*`) is untouched.
 
+## Mandatory two-factor (TOTP) -- frontend integration
+
+Every account requires a password AND a code from an authenticator app
+(Google Authenticator, Authy, 1Password, ...) to log in -- there is no
+passwordless or password-only path any more (except within the freshness
+window below), and no email/SMS OTP at login. Free and scalable: the code is
+computed on the user's device from a shared secret, so there's no delivery
+provider, no per-login cost, and nothing external to scale -- verification is
+a couple of HMAC computations plus one Redis round trip.
+
+**Every account gets a password**, set at the moment it's created:
+- First admin (`setup/verify`): the documented default, `"Sandesh"+username`.
+- Invited (`users.invite`): same default-password convention -- the response
+  to the inviter, and the notification sent to the invitee, both carry it.
+- Self-registered (`POST /register`): the user supplies their own `password`
+  in the registration body (validated with the same policy as a password
+  change); registration fails with `weak_password` if it's missing or weak.
+All three are flagged `mustChangePassword` until changed, exactly as before.
+
+**TOTP enrollment is not a separate step -- it happens inline at first
+login.** A password-correct call for an account with no confirmed secret yet
+doubles as the QR-scan flow:
+
+1. `POST /api/sd/login {identifier, password}` → for an unenrolled account,
+   **no `token`**; instead `{totpSetupRequired:true, secret, otpauthUri,
+   issuer, digits, periodSec, recommendedApps}`. Render `otpauthUri` as a QR
+   code (e.g. the `qrcode` npm package) for the user to scan, and show
+   `secret` as text for manual entry. Retrying this call before finishing
+   hands back the *same* pending secret, so the QR the user already scanned
+   keeps working.
+
+   `recommendedApps` is `[{name, ios, android}, ...]` for the two apps this
+   org endorses (Google Authenticator, Microsoft Authenticator) -- App
+   Store/Play Store links for a "don't have an authenticator app?" prompt.
+   Any RFC 6238 app works via `otpauthUri`/`secret` regardless; this is
+   pure onboarding-copy data, not an integration requirement. Google
+   Authenticator only reliably supports SHA1/6-digit/30s codes, which is
+   exactly what `digits`/`periodSec` and the URI's `algorithm=SHA1` already
+   are -- not a coincidence, that pairing is why those were chosen.
+2. `POST /api/sd/login {identifier, password, totp:"123456"}` (the app's
+   current code) → on success, `{token, ..., recoveryCodes:[...10 strings],
+   totpJustEnabled:true}`. **Show the recovery codes exactly once here** --
+   the API never returns them again. A wrong code returns `otp_invalid` and
+   leaves enrollment pending, so the user can just try again; it also counts
+   against the account's failed-attempt lockout (5 / 15 min), same as a
+   wrong password.
+
+`setup/verify` (creating the very first admin) works the same way: its
+response *is* step 1 above (with a `defaultPassword` field so the frontend
+doesn't have to know the "Sandesh"+username convention), not a session --
+`POST /api/sd/login` with that password (+ a code, once scanned) is what
+produces the admin's first session.
+
+**Once enrolled**, a login is password-only for `SANDESH_TOTP_FRESH_SEC`
+(default 14 days) after the last code was given -- mirrors the old "OTP every
+14 days" rule, just re-pointed at TOTP. After that a password-only call
+returns `totp_required` (401), same shape as `otp_required` used to be. Send
+one of:
+   - `{identifier, password, totp:"123456"}` -- the app's current code, or
+   - `{identifier, password, recoveryCode:"ABCDE-FGHJK"}` -- a backup code,
+     for a lost device. Each recovery code works once.
+
+**Managing 2FA once signed in** (Bearer, for an account that's already
+enrolled -- by definition every live session is, since enrollment is what
+produces the first one):
+- `GET /api/sd/2fa/totp` → `{enabled}` (always `true` for a live session;
+  useful right after enrollment to confirm).
+- `POST /api/sd/2fa/totp/disable {password, code}` -- `code` is either the
+  current TOTP code or an unused recovery code. Disabling doesn't turn 2FA
+  *off* for the account -- the next login re-triggers step 1 above (fresh QR,
+  fresh secret), which is the intended way to move to a new device.
+- `POST /api/sd/2fa/totp/recovery/regenerate {password, code}` →
+  `{recoveryCodes:[...10 fresh strings]}`, invalidating every previously
+  issued code (e.g. after a user suspects theirs leaked).
+
+All of these share the login envelope (`{"ok":true,"data":{...}}` /
+`{"ok":false,"error":{"code","message"}}`) and the same error codes table as
+the rest of `sd_http` (`unauthenticated` 401, `otp_invalid` 401,
+`totp_required` 401, `invalid_credentials` 401, `weak_password` 400,
+`already_enabled`/`not_found` 409/404, `rate_limited` 429).
+
+**Locked out** (no phone, no recovery codes, no live session): there's no
+self-service recovery by design -- same posture as a forgotten password. An
+operator clears the account's enrollment with `redis-cli HDEL sd:totp
+<username>` (mirrors the existing `HDEL sd:cred <username>` password reset in
+"Debugging cookbook" below); the next login re-triggers enrollment from
+scratch.
+
 ## Testing
 
-Three suites (255 checks), all plain Node scripts (Node 22+), all driving a
+Four suites (294 checks), all plain Node scripts (Node 22+), all driving a
 **real running backend over real HTTP/WebSocket**. Use scratch Redis DBs
 (never 0); the two Sandesh suites need an **empty** DB because first-run setup
 happens once per DB. Each server needs its own terminal (or clear the `$env:`
@@ -146,7 +239,21 @@ $env:REDIS_DB="10"; $env:SANDESH_MODE="strict"; $env:SANDESH_DEV_OTP="1"; $env:S
 $env:SANDESH_SESSION_TTL_SEC="6"; $env:SANDESH_SESSION_CHECK_SEC="2"
 .\run.ps1 5559 8084
 node test/sandesh_session_test.mjs http://localhost:8084
+
+# 4. TOTP two-factor: enrollment, login gating, replay/recovery  (39 checks)
+redis-cli -n 14 FLUSHDB
+$env:REDIS_DB="14"; $env:SANDESH_MODE="strict"; $env:SANDESH_DEV_OTP="1"; $env:SANDESH_OTP_COOLDOWN_SEC="0"
+$env:CHAT_RATE_LIMIT_MAX="1000"; $env:SANDESH_SCHEDULER_TICK_MS="500"
+.\run.ps1 5560 8090
+node test/sandesh_totp_test.mjs http://localhost:8090
 ```
+
+Suite 4 uses a pure-JS RFC 6238 implementation to generate real codes from
+the `secret` the API returns, so it genuinely exercises the wire format (not
+just the Erlang-internal math). It takes 1-2 minutes to run for real (not
+mocked): the replay-protection checks deliberately wait for the server's own
+30-second window to advance before sending the next code, the same way a
+real authenticator app would.
 
 (On the Windows dev laptop Redis runs inside WSL, so `redis-cli` is used from
 the WSL terminal.) Run (1) after **any** change and before any push: it is the
@@ -158,9 +265,10 @@ over REST and on an open WebSocket.
 
 Verified by hand (not in the scripts, because they need clock or environment
 manipulation): data survives a backend restart; an admin password older than
-30 days forces a change; a last-OTP older than 14 days makes a password-only
-login return `otp_required`; webhook delivery posts the same code the dev
-echo shows; in open mode an invented token cannot borrow an admin's powers.
+30 days forces a change; a last-TOTP-code older than `SANDESH_TOTP_FRESH_SEC`
+(14 days by default) makes a password-only login return `totp_required`;
+webhook delivery posts the same code the dev echo shows; in open mode an
+invented token cannot borrow an admin's powers.
 
 ## Debugging cookbook
 
@@ -175,9 +283,10 @@ Every `/sd` failure has a stable `error.code`; an unexpected server error is
 | "Sign in to Sandesh first" at connect | strict mode and the token isn't a live session. `GET /api/sd/session` with it; 401 ⇒ expired/invalid |
 | `/sd …` → `unauthenticated` on a connected socket | the handshake token wasn't a valid session for *that exact username* (case!), or it's an invented token. `/sd me` shows `authenticated` |
 | DM refused, `code:"not_associated"` (strict) | no association: `/sd admin.user.get {username}` → `associates`; or `redis-cli HGETALL sd:assoc:<user>` |
-| OTP "never arrives" | `SANDESH_OTP_MODE`: `log` ⇒ it's in the backend log (`sd_notify[otp] …`); `webhook` ⇒ check the gateway/`notify webhook` warnings; resend cooldown 30 s ⇒ `sent:false, retryAfter` |
+| OTP (setup / admin-unlock) "never arrives" | `SANDESH_OTP_MODE`: `log` ⇒ it's in the backend log (`sd_notify[otp] …`); `webhook` ⇒ check the gateway/`notify webhook` warnings; resend cooldown 30 s ⇒ `sent:false, retryAfter`. Regular login no longer uses this -- see TOTP rows below |
 | Can't log in / `locked` | 5 failures ⇒ 15 min lock. Clear now: `redis-cli DEL sd:lf:<username>` |
-| Admin forgot the password | `redis-cli HDEL sd:cred <username>` — the admin can then sign in with an emailed OTP and set a new password (no old password needed when none exists) |
+| User forgot the password | Password is mandatory and there's no OTP-only fallback any more, so `HDEL sd:cred` alone would brick the account (no password ⇒ no session ⇒ can't call `/password/change`). From an Erlang remote console on the running node (`erl -remsh axi_chat_backend@<host> -sname ops -setcookie <cookie>`, or `rebar3 shell` against the same node): `sd_auth:issue_default_password(<<"username">>).` sets it back to `"Sandesh"+username` with `mustChangePassword`, same as the invite default |
+| User locked out of TOTP (lost phone + no recovery codes) | `redis-cli HDEL sd:totp <username>` — the next login re-triggers enrollment from scratch (fresh QR); the password is untouched |
 | Admin action → `admin_locked` | strict: `admin.unlock.start` then `admin.unlock {password, otp}` |
 | Approval never reached anyone | `sd_reqs:approvers_for`: hosts whose `hostScope` covers the person, else administrators. `admin.user.get` on the host shows `hostScope`; `req.list {status:"all"}` shows `approvers` |
 | Live push didn't arrive | pushes only go to *currently connected* users; `req.list` / `cards.list` always have the data |
@@ -231,7 +340,7 @@ modules directly, e.g. `sd_users:get(<<"priya">>).`, `sd_reqs:list_for(<<"priya"
 | Self-registration → approval by the covering host | ✅ |
 | Associations: message only your host; invite → accept/ignore/reject; host transfer; admin changes host | ✅ (enforced in strict mode) |
 | Groups: host creates; invitee's host approves | ✅ (strict mode) |
-| Login by email/mobile; OTP first login + every 2 weeks | ✅ · **SSO ❌** |
+| Login by email/mobile; OTP first login + every 2 weeks | ✅ · upgraded to mandatory TOTP (authenticator app) instead of email/SMS OTP, same "every 2 weeks" cadence · **SSO ❌** |
 | Admin console: listings, activate/deactivate (+reassign hosts), change host, add admin, password + OTP, monthly password reset | ✅ |
 | Application connections (name, URL, credentials) | ✅ stored (credentials sealed) · calls to them ❌ |
 | Lite TStruct (all 12 field types, sections, conditions, ranges) | ✅ definition, validation, submission |

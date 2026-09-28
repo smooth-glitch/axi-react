@@ -20,11 +20,11 @@
 %%% lockout after repeated failed logins, per-IP request limits.
 -module(sd_auth).
 -export([setup_start/2, setup_verify/2,
-         otp_send/2, login/2,
+         login/2,
          session/1, session_user/1, session_alive/1, session_expires/1, session_ttl/0, logout/1,
-         change_password/3, set_initial_password/2, password_state/1,
+         change_password/3, set_initial_password/2, password_state/1, check_password_policy/2,
          admin_unlock_start/1, admin_unlock/3, admin_unlocked/1,
-         otp_fresh/1]).
+         totp_fresh/1, password_ok/2, issue_default_password/1]).
 -include_lib("kernel/include/logger.hrl").
 
 -define(OTP_TTL, 300).
@@ -33,7 +33,9 @@
 %% Default session lifetime: two weeks, HARD (not sliding) -- the spec's
 %% "ask the user to login again every two weeks". Overridable for tests/ops.
 -define(SESSION_TTL_DEFAULT, 14 * 24 * 3600).
--define(OTP_FRESH_MS, 14 * 24 * 3600 * 1000).
+%% Once a login proves a fresh TOTP code, password-only logins are accepted
+%% again for this long before a code is demanded once more.
+-define(TOTP_FRESH_MS, 14 * 24 * 3600 * 1000).
 -define(ADMIN_PW_MAX_AGE_MS, 30 * 24 * 3600 * 1000).
 -define(UNLOCK_TTL, 1800).
 -define(LOGIN_FAIL_MAX, 5).
@@ -98,9 +100,14 @@ finish_setup(Pending) ->
                 {ok, User} ->
                     sd_db:del("sd:setup:pending"),
                     store_password(Username, default_password(Username), true),
-                    sd_users:mark_otp(Username),
-                    Session = start_session(sd_users:get(Username)),
-                    {ok, Session#{<<"org">> => Org, <<"user">> => User}};
+                    %% No session yet -- TOTP enrollment (mandatory for every
+                    %% account, including this one) is what finishing login
+                    %% produces. POST /api/sd/login with this default
+                    %% password (+ a code, once scanned) completes it.
+                    {ok, Setup} = sd_totp:login_setup(Username, User),
+                    {ok, Setup#{<<"org">> => Org, <<"user">> => User,
+                                <<"totpSetupRequired">> => true,
+                                <<"defaultPassword">> => default_password(Username)}};
                 {error, _, _} = Err ->
                     %% Roll the claim back so setup can be retried.
                     sd_db:hdel("sd:org", "setup_done"),
@@ -122,28 +129,11 @@ setup_token_ok(Body) ->
 default_password(Username) -> <<"Sandesh", Username/binary>>.
 
 %% =============================================================================
-%% OTP
+%% OTP -- only bootstrap setup and the admin-console unlock gate use a
+%% delivered (email/SMS) code any more; regular login uses sd_totp instead
+%% (see login/2 below). send_otp/3 and check_otp/3 stay generic over Purpose
+%% for those two remaining callers.
 %% =============================================================================
-
-%% Public endpoint. Never reveals whether an identifier exists: unknown
-%% identifiers get the same "ok" as real ones.
-otp_send(Body, Ip) ->
-    Id = trim(sd_util:get(<<"identifier">>, Body)),
-    case {Id, sd_db:rate(["otp:ip:", Ip], 20, 900)} of
-        {<<>>, _} -> {error, invalid, <<"identifier is required.">>};
-        {_, limited} -> {error, rate_limited, <<"Too many requests; try again later.">>};
-        _ ->
-            case sd_users:find(Id) of
-                undefined -> {ok, #{<<"sent">> => true}};
-                User ->
-                    case status_gate(User) of
-                        ok ->
-                            R = send_otp(login, maps:get(<<"username">>, User), User),
-                            {ok, R};
-                        {error, _, _} = Err -> Err
-                    end
-            end
-    end.
 
 status_gate(#{<<"status">> := <<"active">>}) -> ok;
 status_gate(#{<<"status">> := <<"pending">>}) ->
@@ -230,11 +220,18 @@ otp_hash(Salt, Code) ->
 %% Login
 %% =============================================================================
 
-%% Body: identifier + (password and/or otp).
+%% Body: identifier + password, plus (when due) one of: totp (authenticator
+%% app code) or recoveryCode (a TOTP backup code). Password is mandatory for
+%% every account -- there's no passwordless path any more. A code is only
+%% demanded when the account either hasn't finished TOTP enrollment yet, or
+%% its last one is older than ?TOTP_FRESH_MS; a password-only call inside
+%% that freshness window succeeds outright, same shape as the old OTP rule
+%% just re-pointed at TOTP.
 login(Body, Ip) ->
     Id = trim(sd_util:get(<<"identifier">>, Body)),
     Password = sd_util:get(<<"password">>, Body),
-    Otp = sd_util:get(<<"otp">>, Body),
+    Totp = sd_util:get(<<"totp">>, Body),
+    RecoveryCode = sd_util:get(<<"recoveryCode">>, Body),
     case {Id, sd_db:rate(["login:ip:", Ip], 60, 900)} of
         {<<>>, _} -> {error, invalid, <<"identifier is required.">>};
         {_, limited} -> {error, rate_limited, <<"Too many attempts; try again later.">>};
@@ -243,59 +240,81 @@ login(Body, Ip) ->
                 undefined ->
                     burn_time(),
                     {error, invalid_credentials, <<"Wrong details.">>};
-                User -> login_user(User, Password, Otp)
+                User -> login_user(User, Password, Totp, RecoveryCode)
             end
     end.
 
-login_user(User, Password, Otp) ->
+login_user(User, Password, Totp, RecoveryCode) ->
     Username = maps:get(<<"username">>, User),
     case locked(Username) of
         true -> {error, locked, <<"Too many failed attempts; try again in a few minutes.">>};
         false ->
             case status_gate(User) of
                 {error, _, _} = Err -> Err;
-                ok -> authenticate(User, Username, Password, Otp)
+                ok -> authenticate(User, Username, Password, Totp, RecoveryCode)
             end
     end.
 
-authenticate(User, Username, Password, Otp) ->
+authenticate(User, Username, Password, Totp, RecoveryCode) ->
     HasPw = is_binary(Password) andalso Password =/= <<>>,
-    HasOtp = is_binary(Otp) andalso Otp =/= <<>>,
-    case {HasPw, HasOtp} of
-        {false, false} ->
-            {error, invalid, <<"Send a password and/or an otp.">>};
-        {true, false} ->
-            case password_ok(Username, Password) of
-                false -> failed(Username);
+    case HasPw andalso password_ok(Username, Password) of
+        false -> failed(Username);
+        true ->
+            case sd_totp:enabled(Username) of
+                false -> enroll_step(User, Username, Totp);
                 true ->
-                    case otp_fresh(User) of
+                    case totp_fresh(User) of
                         true -> success(User, false);
-                        false ->
-                            %% Password fine but the 14-day OTP check is due.
-                            _ = send_otp(login, Username, User),
-                            {error, otp_required, <<"Enter the one-time code we just sent you.">>}
+                        false -> totp_step(User, Username, Totp, RecoveryCode)
                     end
+            end
+    end.
+
+%% First-ever login for this account (or a previous enrollment attempt that
+%% never finished): no `totp` yet -> hand back a QR/secret to scan. A `totp`
+%% present -> treat it as the code from the app they just scanned, and on a
+%% match, turn TOTP on AND log them in, in the same call. A wrong code here
+%% still counts against the account's failed-attempt lockout, same as a
+%% wrong code post-enrollment, so this can't be brute-forced either.
+enroll_step(User, Username, Totp) ->
+    HasTotp = is_binary(Totp) andalso Totp =/= <<>>,
+    case HasTotp of
+        false ->
+            case sd_totp:login_setup(Username, User) of
+                {ok, Setup} -> {ok, Setup#{<<"totpSetupRequired">> => true}};
+                {error, _, _} = Err -> Err
             end;
-        {false, true} ->
-            case check_otp(login, Username, Otp) of
+        true ->
+            case sd_totp:login_verify_setup(Username, Totp) of
+                {ok, RecoveryCodes} ->
+                    {ok, Session} = success(User, true),
+                    {ok, Session#{<<"recoveryCodes">> => RecoveryCodes, <<"totpJustEnabled">> => true}};
+                {error, _, _} = Err -> count_failure(Username), Err
+            end
+    end.
+
+totp_step(User, Username, Totp, RecoveryCode) ->
+    HasTotp = is_binary(Totp) andalso Totp =/= <<>>,
+    HasRecovery = is_binary(RecoveryCode) andalso RecoveryCode =/= <<>>,
+    case {HasTotp, HasRecovery} of
+        {true, _} ->
+            case sd_totp:verify_login(Username, Totp) of
                 ok -> success(User, true);
                 {error, _, _} = Err -> count_failure(Username), Err
             end;
-        {true, true} ->
-            case password_ok(Username, Password) of
-                false -> failed(Username);
-                true ->
-                    case check_otp(login, Username, Otp) of
-                        ok -> success(User, true);
-                        {error, _, _} = Err -> count_failure(Username), Err
-                    end
-            end
+        {false, true} ->
+            case sd_totp:consume_recovery(Username, RecoveryCode) of
+                ok -> success(User, true);
+                {error, _, _} = Err -> count_failure(Username), Err
+            end;
+        {false, false} ->
+            {error, totp_required, <<"Enter your authenticator app code.">>}
     end.
 
-success(User, OtpUsed) ->
+success(User, TotpUsed) ->
     Username = maps:get(<<"username">>, User),
     sd_db:del(["sd:lf:", sd_util:s(Username)]),
-    OtpUsed andalso sd_users:mark_otp(Username),
+    TotpUsed andalso sd_users:mark_totp(Username),
     sd_users:mark_login(Username),
     Fresh = sd_users:get(Username),
     {ok, start_session(Fresh)}.
@@ -321,9 +340,17 @@ burn_time() ->
     _ = crypto:pbkdf2_hmac(sha256, <<"x">>, <<"y">>, ?PW_ITER, 32),
     ok.
 
-otp_fresh(User) ->
-    case sd_util:get(<<"lastOtpTs">>, User) of
-        T when is_integer(T) -> sd_util:now_ms() - T < ?OTP_FRESH_MS;
+%% SANDESH_TOTP_FRESH_SEC overrides the 14-day default (used by tests, or
+%% to tighten it), same pattern as session_ttl/0.
+totp_fresh_ms() ->
+    case os:getenv("SANDESH_TOTP_FRESH_SEC") of
+        false -> ?TOTP_FRESH_MS;
+        S -> case string:to_integer(S) of {N, []} when N > 0 -> N * 1000; _ -> ?TOTP_FRESH_MS end
+    end.
+
+totp_fresh(User) ->
+    case sd_util:get(<<"lastTotpTs">>, User) of
+        T when is_integer(T) -> sd_util:now_ms() - T < totp_fresh_ms();
         _ -> false
     end.
 
@@ -352,7 +379,7 @@ start_session(User) ->
       <<"expiresTs">> => Expires,
       <<"user">> => sd_users:full(User),
       <<"mustChangePassword">> => maps:get(<<"mustChange">>, State),
-      <<"otpDue">> => not otp_fresh(User)}.
+      <<"totpDue">> => not totp_fresh(User)}.
 
 %% Session info without side effects: {ok, User, #{mustChange}} | error.
 session(Token) when is_binary(Token), Token =/= <<>> ->
@@ -451,10 +478,19 @@ change_password(Token, Old, New) ->
             end
     end.
 
-%% Used at account creation paths that already proved identity (none today
-%% besides setup); kept small and explicit.
+%% Used at account creation paths that already proved identity (a
+%% self-registering user choosing their own password); kept small and
+%% explicit.
 set_initial_password(Username, Password) ->
     store_password(Username, Password, false).
+
+%% Every account needs a password now (mandatory TOTP enrollment happens at
+%% first login, right after the password check). Used for accounts someone
+%% ELSE creates -- invites -- where the new user hasn't chosen a password
+%% yet: same default-password-then-forced-change convention as the admin
+%% bootstrap in finish_setup/1.
+issue_default_password(Username) ->
+    store_password(Username, default_password(Username), true).
 
 check_password_policy(Username, Pw) when is_binary(Pw) ->
     Chars = unicode:characters_to_list(Pw),

@@ -12,7 +12,11 @@
 //   node test/sandesh_test.mjs [http://localhost:8082]
 //
 // SANDESH_DEV_OTP=1 makes the API echo OTP codes (`devOtp`) so no log
-// reading is needed. Uses only Node's built-ins (Node 22+).
+// reading is needed (setup + admin-console unlock still use a delivered
+// code; regular login uses mandatory TOTP instead -- see enrollAndLogin
+// below). Uses only Node's built-ins plus node:crypto (Node 22+).
+
+import crypto from "node:crypto";
 
 const BASE = process.argv[2] || "http://localhost:8082";
 const WS_URL = BASE.replace(/^http/, "ws");
@@ -41,11 +45,49 @@ const post = (p, b, t) => http("POST", p, b ?? {}, t);
 const data = (r) => r.json?.data;
 const code = (r) => r.json?.error?.code;
 
-async function loginWithOtp(identifier) {
-    const s = await post("/api/sd/otp/send", { identifier });
-    const otp = data(s)?.devOtp;
-    const r = await post("/api/sd/login", { identifier, otp });
-    return { send: s, login: r, token: data(r)?.token, otp };
+// RFC 6238 TOTP, pure JS, so this genuinely drives the wire format (not
+// Erlang-internal math). Mirrors the helper in sandesh_totp_test.mjs.
+function b32decode(str) {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const clean = str.replace(/=+$/, "").toUpperCase();
+    let bits = "";
+    for (const c of clean) bits += alphabet.indexOf(c).toString(2).padStart(5, "0");
+    const bytes = [];
+    for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+    return Buffer.from(bytes);
+}
+function totpNow(secretB32) {
+    const secret = b32decode(secretB32);
+    const counter = Math.floor(Date.now() / 1000 / 30);
+    const msg = Buffer.alloc(8);
+    msg.writeBigUInt64BE(BigInt(counter));
+    const hmac = crypto.createHmac("sha1", secret).update(msg).digest();
+    const offset = hmac[hmac.length - 1] & 0x0f;
+    const bin = ((hmac[offset] & 0x7f) << 24) | ((hmac[offset + 1] & 0xff) << 16) |
+                ((hmac[offset + 2] & 0xff) << 8) | (hmac[offset + 3] & 0xff);
+    return String(bin % 1000000).padStart(6, "0");
+}
+
+// Every account needs a password now (invited users get the same
+// "Sandesh<username>" default as the bootstrap admin) AND mandatory TOTP,
+// completed inline at first login: a password-only call returns a QR/secret
+// instead of a session, and a second call with that secret's current code
+// finishes enrollment and logs in. Replaces the old loginWithOtp.
+//
+// A default password is also flagged mustChangePassword, and in strict mode
+// THAT blocks every WS action (not just admin ones -- see require_level in
+// sd_cmds), so this also clears it immediately, transparently, the same way
+// a real onboarding flow would prompt for a new password on first login.
+async function enrollAndLogin(identifier, password = `Sandesh${identifier}`) {
+    const start = await post("/api/sd/login", { identifier, password });
+    const secret = data(start)?.secret;
+    const totp = secret ? totpNow(secret) : undefined;
+    const login = await post("/api/sd/login", { identifier, password, totp });
+    const token = data(login)?.token;
+    if (token && data(login)?.mustChangePassword) {
+        await post("/api/sd/password/change", { oldPassword: password, newPassword: "NewPass99" }, token);
+    }
+    return { start, login, token, secret, totp };
 }
 
 // ---- WebSocket client ---------------------------------------------------------------------------
@@ -119,18 +161,23 @@ async function main() {
     r = await post("/api/sd/setup/verify", { otp: setupOtp === "000000" ? "111111" : "000000" });
     ok("setup/verify rejects a wrong OTP", r.status === 401 && code(r) === "otp_invalid", r);
     r = await post("/api/sd/setup/verify", { otp: setupOtp });
-    ok("setup/verify creates the org + first administrator", r.status === 200 && data(r).user?.role === "admin" && !!data(r).token, r);
-    const admin = { username: data(r).user.username, token: data(r).token };
+    ok("setup/verify creates the org + first administrator -- no session yet, mandatory TOTP enrollment pending", r.status === 200 && data(r).user?.role === "admin" && data(r).totpSetupRequired === true && !data(r).token, r);
+    const admin = { username: data(r).user.username, token: undefined };
+    const adminSecret = data(r).secret;
     ok("admin's username is the one requested", admin.username === adminName, admin.username);
-    ok("first admin must change the default password", data(r).mustChangePassword === true);
+    ok("setup hands back the default password for the enrollment login", data(r).defaultPassword === `Sandesh${adminName}`, r);
     r = await post("/api/sd/setup/start", { org: "Evil Inc", name: "X", email: `x${sfx}@evil.com`, mobile: "+911234567890" });
     ok("a second setup is refused (409 already_setup)", r.status === 409 && code(r) === "already_setup", r);
     r = await http("GET", "/api/sd/public");
     ok("public info now shows the org + seeded categories", data(r).setupDone === true && data(r).org === "Acme Corp" && data(r).categories.includes("Customer") && data(r).categories.includes("Doctor"), data(r));
 
-    console.log("=== Passwords ===");
+    console.log("=== Mandatory TOTP enrollment + passwords ===");
+    r = await post("/api/sd/login", { identifier: adminName, password: `Sandesh${adminName}`, totp: totpNow(adminSecret) });
+    ok("password + first TOTP code finishes enrollment AND logs in, with recovery codes", r.status === 200 && !!data(r).token && Array.isArray(data(r).recoveryCodes) && data(r).recoveryCodes.length === 10 && data(r).totpJustEnabled === true, r);
+    ok("first admin must change the default password", data(r).mustChangePassword === true);
+    admin.token = data(r).token;
     r = await post("/api/sd/login", { identifier: adminName, password: `Sandesh${adminName}` });
-    ok('default admin password is "Sandesh"+username and logs in', r.status === 200 && data(r).mustChangePassword === true, r);
+    ok("password-only login now succeeds (within the TOTP freshness window)", r.status === 200 && data(r).mustChangePassword === true, r);
     const lifetimeDays = (data(r).expiresTs - Date.now()) / 86_400_000;
     ok("a session lasts two weeks (the 'log in again every 14 days' rule)", lifetimeDays > 13.99 && lifetimeDays < 14.01, lifetimeDays);
     admin.token = data(r).token;
@@ -229,21 +276,20 @@ async function main() {
     m = await A.sd("users.invite", { name: "Both", email: `both${sfx}@x.com`, isEmployee: true, affiliate: "Acme Vendors Ltd", branch: "Bangalore HQ", department: "HR", designation: "Engineer" });
     ok("employee + affiliate at once is rejected", !m.ok, m);
 
-    console.log("=== Login for invited users (OTP-only) + brute-force lock ===");
-    const P = await loginWithOtp(priya);
-    ok("invited user logs in with an emailed OTP (no password needed)", P.login.status === 200 && !!P.token, P.login);
-    ok("OTP login marks OTP as fresh (no otpDue)", data(P.login).otpDue === false);
-    r = await post("/api/sd/login", { identifier: priya, otp: P.otp });
-    ok("a used OTP can't be replayed", r.status === 401, r);
-    const S = await loginWithOtp(sam);
-    ok("second invited user logs in", !!S.token, S.login);
-    // lockout uses a throwaway user
+    console.log("=== Login for invited users (mandatory TOTP) + brute-force lock ===");
+    const P = await enrollAndLogin(priya);
+    ok("invited user's first login (default password) hands back a QR to enroll", P.start.status === 200 && !!P.secret && !data(P.start).token, P.start);
+    ok("password + that secret's code finishes enrollment and logs in", P.login.status === 200 && !!P.token && data(P.login).totpJustEnabled === true, P.login);
+    ok("password-only login is now accepted (fresh TOTP window)", (await post("/api/sd/login", { identifier: priya, password: "NewPass99" })).status === 200);
+    const S = await enrollAndLogin(sam);
+    ok("second invited user enrolls + logs in", !!S.token, S.login);
+    // lockout uses a throwaway user -- wrong PASSWORD attempts exercise the
+    // same failed-attempt counter as a wrong TOTP/recovery code would.
     m = await A.sd("users.invite", { name: "Locky", username: `locky${sfx}`, email: `locky${sfx}@acme.com`, isEmployee: true, branch: "Bangalore HQ", department: "HR", designation: "Engineer" });
-    await post("/api/sd/otp/send", { identifier: `locky${sfx}` });
     let last;
-    for (let i = 0; i < 5; i++) last = await post("/api/sd/login", { identifier: `locky${sfx}`, otp: "999999" });
-    ok("wrong OTPs are rejected", last.status === 401, last);
-    r = await post("/api/sd/login", { identifier: `locky${sfx}`, otp: "999999" });
+    for (let i = 0; i < 5; i++) last = await post("/api/sd/login", { identifier: `locky${sfx}`, password: "totally-wrong-1" });
+    ok("wrong passwords are rejected", last.status === 401 && code(last) === "invalid_credentials", last);
+    r = await post("/api/sd/login", { identifier: `locky${sfx}`, password: "totally-wrong-1" });
     ok("after 5 failures the account is temporarily locked (429)", r.status === 429 && code(r) === "locked", r);
 
     console.log("=== Hosts, scope and self-registration approval ===");
@@ -257,19 +303,24 @@ async function main() {
     ok("a host invites an employee inside their scope", m.ok && m.data.user.host === priya, m);
     m = await PR.sd("users.invite", { name: "Vendor Guy", email: `vg${sfx}@x.com`, isEmployee: false, affiliate: "Acme Vendors Ltd", affiliateBranch: "Pune-1" });
     ok("a host can NOT invite someone outside their scope (affiliate member)", !m.ok && m.error.code === "forbidden", m);
-    // self-registration
+    // self-registration -- unlike an invite, a self-registering user chooses
+    // their own password up front (weak/missing password is rejected same
+    // as a password change).
+    const erinPw = "ErinPass99", veraPw = "VeraPass99";
     r = await post("/api/sd/register", { name: "Erin E", username: `erin${sfx}`, email: `erin${sfx}@acme.com`, isEmployee: true, branch: "Bangalore HQ", department: "HR", designation: "Engineer" });
+    ok("self-registration without a password is rejected (weak_password)", r.status === 400 && code(r) === "weak_password", r);
+    r = await post("/api/sd/register", { name: "Erin E", username: `erin${sfx}`, email: `erin${sfx}@acme.com`, isEmployee: true, branch: "Bangalore HQ", department: "HR", designation: "Engineer", password: erinPw });
     ok("employee self-registers -> pending", r.status === 200 && data(r).status === "pending" && data(r).awaitingApprovalFrom === 1, r);
     const erinReq = data(r).requestId;
     const reqPush = await PR.event("request_created");
     ok("the covering host (priya) gets a LIVE push about it", reqPush.data.type === "onboarding" && reqPush.data.subject === `erin${sfx}`, reqPush);
     m = await PR.sd("me");
     ok("/sd me reports how many requests are waiting on priya", m.data.pendingRequests === 1, m.data?.pendingRequests);
-    r = await post("/api/sd/otp/send", { identifier: `erin${sfx}` });
-    ok("a pending user can't get an OTP yet (403 pending_approval)", r.status === 403 && code(r) === "pending_approval", r);
-    r = await post("/api/sd/register", { name: "Erin Again", email: `erin${sfx}@acme.com`, isEmployee: true, branch: "Bangalore HQ", department: "HR", designation: "Engineer" });
+    r = await post("/api/sd/login", { identifier: `erin${sfx}`, password: erinPw });
+    ok("a pending user can't sign in yet (403 pending_approval)", r.status === 403 && code(r) === "pending_approval", r);
+    r = await post("/api/sd/register", { name: "Erin Again", email: `erin${sfx}@acme.com`, isEmployee: true, branch: "Bangalore HQ", department: "HR", designation: "Engineer", password: erinPw });
     ok("registering the same email twice -> email_taken", r.status === 409 && code(r) === "email_taken", r);
-    r = await post("/api/sd/register", { name: "Vera V", username: `vera${sfx}`, email: `vera${sfx}@acme-vendors.com`, isEmployee: false, affiliate: "Acme Vendors Ltd", affiliateBranch: "Pune-1" });
+    r = await post("/api/sd/register", { name: "Vera V", username: `vera${sfx}`, email: `vera${sfx}@acme-vendors.com`, isEmployee: false, affiliate: "Acme Vendors Ltd", affiliateBranch: "Pune-1", password: veraPw });
     ok("affiliate member self-registers -> goes to administrators (no host covers them)", r.status === 200 && data(r).awaitingApprovalFrom === 1, r);
     const veraReq = data(r).requestId;
     m = await PR.sd("req.list");
@@ -287,17 +338,17 @@ async function main() {
     ok("answering the request pushes fresh counts (pending drops to 0 without polling)", chg.data.counts.pending === 0, chg);
     m = await PR.sd("req.respond", { id: erinReq, action: "accept" });
     ok("answering twice -> already_resolved", !m.ok && m.error.code === "already_resolved", m);
-    const E = await loginWithOtp(`erin${sfx}`);
-    ok("Erin can now sign in", !!E.token, E.login);
+    const E = await enrollAndLogin(`erin${sfx}`, erinPw);
+    ok("Erin can now sign in (enroll + login)", !!E.token, E.login);
     m = await A.sd("admin.user.get", { username: `erin${sfx}` });
     ok("Erin's host is priya, active, linked as an associate", m.data.user.host === priya && m.data.user.status === "active" && m.data.associates.some(a => a.username === priya && a.relation === "host"), m);
     m = await A.sd("req.respond", { id: veraReq, action: "accept" });
     ok("the administrator approves Vera (affiliate member)", m.ok, m);
-    const V = await loginWithOtp(`vera${sfx}`);
+    const V = await enrollAndLogin(`vera${sfx}`, veraPw);
     ok("Vera can sign in after approval", !!V.token, V.login);
 
     console.log("=== Messaging rules (strict): only your host + accepted connections ===");
-    const R = await loginWithOtp(ravi);
+    const R = await enrollAndLogin(ravi);
     const RV = await connectAs(ravi, R.token);
     const SM = await connectAs(sam, S.token);
     PR.clear(); RV.clear(); SM.clear();
@@ -520,7 +571,7 @@ async function main() {
     ok("ravi (Engineering employee) sees: leave + help", ravIds === "everyone_help,leave", ravIds);
     m = await SM.sd("options.list");
     ok("sam (HR employee) sees only: help", m.data.options.map(o => o.id).join() === "everyone_help", m.data.options);
-    const V3 = await connectAs(`vera${sfx}`, (await loginWithOtp(`vera${sfx}`)).token).catch(() => null);
+    const V3 = await connectAs(`vera${sfx}`, data(await post("/api/sd/login", { identifier: `vera${sfx}`, password: veraPw }))?.token).catch(() => null);
     if (V3 && V3.first.type === "welcome") {
         m = await V3.sd("options.list");
         ok("vera (that affiliate's member) sees: bills + help", m.data.options.map(o => o.id).sort().join() === "everyone_help,vendor_bills", m.data.options);
@@ -565,7 +616,7 @@ async function main() {
     const dc = await PR.waitFor(x => x.type === "sd_event" && x.event === "disconnected", 3000, "disconnect notice");
     ok("a deactivated user's live connection is dropped", dc.reason === "account_deactivated");
     await sleep(300);
-    r = await post("/api/sd/otp/send", { identifier: priya });
+    r = await post("/api/sd/login", { identifier: priya, password: `Sandesh${priya}` });
     ok("a deactivated user can't sign in (403 account_inactive)", r.status === 403 && code(r) === "account_inactive", r);
     m = await A.sd("admin.host.reassign", { from: priya, to: priya });
     ok("reassign to the same host is refused", !m.ok, m);
@@ -593,7 +644,7 @@ async function main() {
     ok("org summary counts", m.ok && m.data.org.name === "Acme Corp" && m.data.counts.users >= 6, m);
 
     console.log("=== Host transfer ===");
-    const PR2 = await connectAs(priya, (await loginWithOtp(priya)).token).catch(() => null);
+    const PR2 = await connectAs(priya, data(await post("/api/sd/login", { identifier: priya, password: "NewPass99" }))?.token).catch(() => null);
     if (PR2 && PR2.first.type === "welcome") {
         m = await PR2.sd("host.users");
         ok("priya (re-activated) now hosts nobody", m.ok && m.data.users.length === 0, m);
