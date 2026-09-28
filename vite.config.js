@@ -106,6 +106,11 @@ export default defineConfig(() => {
   const resolveAlias = {
     alias: {
       '@': resolve(__dirname, '.'),
+      // Embed the web/tstruct studio directly (same bundle, same port, shared localStorage)
+      '@tstruct/react': resolve(__dirname, 'web/src/embed/index.js'),
+      '@tstruct/ui': resolve(__dirname, 'web/src/ui'),
+      '@tstruct/studio': resolve(__dirname, 'web/src/studio'),
+      '@tstruct/core': resolve(__dirname, 'web/src/core'),
     },
   }
 

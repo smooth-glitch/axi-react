@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 
 export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
   const [formData, setFormData] = useState(() => {
@@ -18,14 +19,19 @@ export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
     }
   });
 
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    let cardPayload;
+    setSubmitError("");
+    setSubmitting(true);
 
+    let cardPayload;
     if (prompt.id === "leave_req") {
       cardPayload = {
         kind: "card",
@@ -99,7 +105,20 @@ export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
       };
     }
 
-    onSubmit(cardPayload);
+    try {
+      await sandeshSocket.sd("tstruct.submit", { name: prompt.id, values: formData });
+      onSubmit(cardPayload);
+    } catch (err) {
+      const code = err?.code;
+      if (code === "forbidden" || code === "not_found") {
+        setSubmitError("This form type is not configured on the server yet. Your record was not saved.");
+        setSubmitting(false);
+      } else {
+        const msg = err?.message || err?.code || "Submission failed";
+        setSubmitError(msg);
+        setSubmitting(false);
+      }
+    }
   };
 
   return (
@@ -298,7 +317,6 @@ export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
           </>
         )}
 
-        {/* Fallback general form */}
         {!["leave_req", "record_vitals", "raise_ticket", "expense_claim", "book_appt"].includes(prompt.id) && (
           <div className="sandesh-input-group">
             <label>Notes / Context for Prompt</label>
@@ -313,12 +331,18 @@ export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
           </div>
         )}
 
+        {submitError && (
+          <div style={{ color: "#e53935", fontSize: "0.82rem", padding: "6px 0 2px", lineHeight: 1.4 }}>
+            {submitError}
+          </div>
+        )}
+
         <div className="sandesh-modal-actions">
-          <button type="button" className="sandesh-btn-secondary-3d" onClick={onClose}>
+          <button type="button" className="sandesh-btn-secondary-3d" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" className="sandesh-btn-primary-3d">
-            Post to Host &amp; Queue
+          <button type="submit" className="sandesh-btn-primary-3d" disabled={submitting}>
+            {submitting ? "Submitting…" : "Post to Host & Queue"}
           </button>
         </div>
       </form>

@@ -21,6 +21,8 @@ class SandeshSocketService {
     this.reconnectTimer = null;
     this.isManualDisconnect = false;
     this.connEpoch = 0;
+    this._sdPending = new Map();
+    this._sdSeq = 0;
   }
 
   subscribe(listener) {
@@ -113,6 +115,15 @@ class SandeshSocketService {
           payload = JSON.parse(event.data);
         } catch {
           payload = { type: '__raw__', text: event.data };
+        }
+
+        if (payload.type === 'sd' && payload.reqId !== undefined) {
+          const p = this._sdPending.get(payload.reqId);
+          if (p) {
+            this._sdPending.delete(payload.reqId);
+            if (payload.ok) p.resolve(payload.data ?? {});
+            else p.reject(payload.error ?? { code: 'error' });
+          }
         }
 
         if (payload.type === 'welcome') {
@@ -275,7 +286,30 @@ class SandeshSocketService {
     return this.send('/conversations');
   }
 
+  sd(action, args = {}) {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        reject({ code: 'not_connected', message: 'Not connected to Sandesh' });
+        return;
+      }
+      const reqId = `r${++this._sdSeq}`;
+      const timer = setTimeout(() => {
+        if (this._sdPending.has(reqId)) {
+          this._sdPending.delete(reqId);
+          reject({ code: 'timeout', message: 'Request timed out' });
+        }
+      }, 10000);
+      this._sdPending.set(reqId, {
+        resolve: (data) => { clearTimeout(timer); resolve(data); },
+        reject: (err) => { clearTimeout(timer); reject(err); },
+      });
+      this.ws.send(`/sd ${action} ${JSON.stringify({ ...args, reqId })}`);
+    });
+  }
+
   disconnect() {
+    this._sdPending.forEach(({ reject: rej }) => rej({ code: 'disconnected' }));
+    this._sdPending.clear();
     this.isManualDisconnect = true;
     this.connEpoch += 1;
     if (this.reconnectTimer) {

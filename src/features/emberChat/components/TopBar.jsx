@@ -7,6 +7,7 @@ export default function TopBar({
   onMenuClick,
   onMembersClick,
   onOpenSmartPrompts,
+  onOpenTStructUser,
   onOpenAdminConsole,
   onOpenAiChat,
   onDeleteChat,
@@ -116,6 +117,17 @@ export default function TopBar({
         >
           <span className="material-icons">bolt</span>
           <span>Smart Prompts</span>
+        </button>
+
+        {/* Org Structures Button */}
+        <button
+          type="button"
+          className="sandesh-action-pill-btn"
+          onClick={onOpenTStructUser}
+          title="Create and manage org-wide user structures"
+        >
+          <span className="material-icons">table_chart</span>
+          <span>Org Structs</span>
         </button>
 
         {/* Group Actions: Add Member & View Members */}

@@ -6,6 +6,7 @@ import NewGroupModal from "./components/modals/NewGroupModal.jsx";
 import MembersModal from "./components/modals/MembersModal.jsx";
 import ProfileModal from "./components/modals/ProfileModal.jsx";
 import SmartStructureModal from "./components/modals/SmartStructureModal.jsx";
+import TStructUserModal from "./components/modals/TStructUserModal.jsx";
 import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
 import ForwardModal from "./components/modals/ForwardModal.jsx";
 import CommandsHelpModal from "./components/modals/CommandsHelpModal.jsx";
@@ -1954,6 +1955,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             setSelectedPrompt(p || { id: "general", label: "Smart Prompt" });
             setModal("smart_structure");
           }}
+          onOpenTStructUser={() => setModal("tstruct_user")}
           onOpenAdminConsole={() => {
             setModalParam({ tab: "users" });
             setModal("admin_console");
@@ -2287,6 +2289,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
                   setSelectedPrompt(null);
                 }}
                 onSubmit={handleSmartStructureSubmit}
+              />
+            )}
+            {modal === "tstruct_user" && (
+              <TStructUserModal
+                onClose={() => setModal(null)}
+                pushToast={pushToast}
+                currentUser={currentUser}
               />
             )}
             {modal === "admin_console" && (
