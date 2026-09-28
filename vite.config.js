@@ -103,8 +103,15 @@ const reactExternals = {
 }
 
 export default defineConfig(() => {
+  const resolveAlias = {
+    alias: {
+      '@': resolve(__dirname, '.'),
+    },
+  }
+
   if (featureKey === 'spa') {
     return {
+      resolve: resolveAlias,
       plugins: [reactPlugin],
       build: {
         outDir: 'dist',
@@ -136,6 +143,7 @@ export default defineConfig(() => {
   }
 
   return {
+    resolve: resolveAlias,
     plugins: [reactPlugin],
     build: {
       outDir: 'dist',

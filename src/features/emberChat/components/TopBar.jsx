@@ -1,3 +1,5 @@
+import Avatar from "./Avatar.jsx";
+
 export default function TopBar({
   chat,
   activeView,
@@ -9,7 +11,26 @@ export default function TopBar({
   onOpenAiChat,
   onDeleteChat,
   isAdmin,
+  onlineUsers = [],
 }) {
+  const isOnline = !chat.isGroup && (chat.isOnline || (onlineUsers || []).some((u) => {
+    const target = (
+      chat.username ||
+      (chat.id?.startsWith("user-") ? chat.id.replace(/^user-/, "") : "") ||
+      chat.name ||
+      ""
+    ).toLowerCase().trim();
+    const uUsername = (u.username || "").toLowerCase().trim();
+    const uName = (u.name || "").toLowerCase().trim();
+    const uId = (u.id || "").toLowerCase().trim();
+    return (
+      (uUsername && uUsername === target) ||
+      (uName && uName === target) ||
+      (uId && uId === target) ||
+      (chat.name && uName === chat.name.toLowerCase().trim())
+    );
+  }));
+
   return (
     <header className="sandesh-topbar-3d">
       <div className="topbar-left">
@@ -21,14 +42,43 @@ export default function TopBar({
           <span className="material-icons">menu</span>
         </button>
 
+        <div className="topbar-avatar-wrap">
+          <Avatar
+            initials={chat.initials || chat.name?.[0]}
+            color={chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
+            group={chat.isGroup}
+            size={40}
+          />
+          {isOnline && <span className="online-presence-dot" title="Online now" />}
+          {chat.isHost && (
+            <span className="host-seal-icon" title="Certified Sandesh Host">
+              <span className="material-icons">verified</span>
+            </span>
+          )}
+        </div>
+
         <div className="chat-title-info">
           <div className="title-row">
             <h2 className="chat-title">{chat.name}</h2>
             {chat.isHost && <span className="host-pill">HOST</span>}
             {chat.isGroup && <span className="group-pill">GROUP</span>}
+            {isOnline && (
+              <span className="online-status-pill">
+                <span className="online-status-dot" /> Online
+              </span>
+            )}
           </div>
           <span className="chat-subtitle">
-            {chat.designation || (chat.isGroup ? (chat.members?.length ? `${chat.members.length} members` : (chat.id === "room-general" ? "Enterprise Global Channel" : "Group Channel")) : "Active Now")}
+            {chat.designation ||
+              (chat.isGroup
+                ? chat.members?.length
+                  ? `${chat.members.length} members`
+                  : chat.id === "room-general"
+                    ? "Enterprise Global Channel"
+                    : "Group Channel"
+                : isOnline
+                  ? "Active Now on Sandesh"
+                  : "Active Now")}
           </span>
         </div>
       </div>
