@@ -25,10 +25,11 @@
          list_appconns/0, save_appconn/1, delete_appconn/1,
          tstruct_for_user/2, submit/4, list_submissions/2,
          update_submission/3, delete_submission/2,
-         list_my_tstructs/1, get_my_tstruct/2, save_my_tstruct/2, delete_my_tstruct/2,
-         submit_mine/4, applies/2]).
+         list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, delete_user_tstruct/2,
+         submit_user_tstruct/4, applies/2]).
 
 -define(TSTRUCTS, "sd:tstructs").
+-define(USER_TSTRUCTS, "sd:tstructs:user").
 -define(OPTIONS, "sd:options").
 -define(APPCONNS, "sd:appconns").
 -define(FIELD_TYPES, [<<"text">>, <<"date">>, <<"time">>, <<"wholenumber">>, <<"number">>,
@@ -386,16 +387,16 @@ submit(User, Name, Values, Opts) when is_map(Values) ->
     end;
 submit(_, _, _, _) -> {error, bad_request, <<"values must be an object.">>}.
 
-%% Same as submit/4, but against a structure from the caller's own personal
-%% collection (see "Personal structures" below) instead of an org-wide one
-%% gated by an Option. No Option/admin check needed -- owning the structure
-%% *is* the permission.
-submit_mine(User, Name, Values, Opts) when is_map(Values) ->
-    case get_my_tstruct(User, Name) of
-        undefined -> {error, not_found, <<"No such personal structure.">>};
-        Def -> do_submit(User, Def, Values, Opts, <<"mine">>)
+%% Same as submit/4, but against a user-created structure (see "User-created
+%% structures" below) instead of an admin-managed one gated by an Option.
+%% Any signed-in user may submit -- a user-created structure is org-visible
+%% the moment it exists, no Option needed.
+submit_user_tstruct(User, Name, Values, Opts) when is_map(Values) ->
+    case get_user_tstruct(Name) of
+        undefined -> {error, not_found, <<"No such structure.">>};
+        Def -> do_submit(User, Def, Values, Opts, <<"user">>)
     end;
-submit_mine(_, _, _, _) -> {error, bad_request, <<"values must be an object.">>}.
+submit_user_tstruct(_, _, _, _) -> {error, bad_request, <<"values must be an object.">>}.
 
 do_submit(User, Def, Values, Opts, Scope) ->
     case {norm_ref(sd_util:get(ref, Opts, undefined)), norm_meta(sd_util:get(meta, Opts, undefined))} of
@@ -564,82 +565,93 @@ delete_submission(_, _) -> {error, bad_request, <<"id (number) is required.">>}.
 
 %% A submission only records the structure's *name*, not which collection
 %% it came from -- "scope" (tagged at submit time) says whether to look it
-%% up in the org-wide sd:tstructs (admin/Option-gated) or the submitter's
-%% own personal collection. Old submissions predate the "scope" field and
-%% can only ever have come from the global side, so they fall through to
-%% that clause correctly.
-def_for_submission(#{<<"scope">> := <<"mine">>, <<"tstruct">> := TName, <<"by">> := By}) ->
-    get_my_tstruct(#{<<"username">> => By}, TName);
+%% up in the admin-managed sd:tstructs (Option-gated) or the user-created
+%% sd:tstructs:user (org-wide, no gating). Old submissions predate the
+%% "scope" field and can only ever have come from the admin-managed side,
+%% so they fall through to that clause correctly.
+def_for_submission(#{<<"scope">> := <<"user">>, <<"tstruct">> := TName}) ->
+    get_user_tstruct(TName);
 def_for_submission(#{<<"tstruct">> := TName}) ->
     get_tstruct(TName).
 
 %% =============================================================================
-%% Personal structures -- "any signed-in user defines their own forms"
-%% =============================================================================
+%% User-created structures -- "any signed-in user can define a form; once
+%% made, it's the org's" =====================================================
 %%
 %% Deliberately a *separate* collection from sd:tstructs, not a variant of
-%% it: an org-wide TStruct is admin-owned, named in one global namespace,
-%% and only reachable through an Option someone configured. A personal
-%% structure is the opposite on every axis -- any signed-in user, their own
-%% private namespace (one Redis hash per user, so two people can both have
-%% a struct named "expenses" with zero collision), no Option needed to
-%% reach it. Keeping them fully separate means none of the existing
-%% admin/Option-gated behaviour (tested by sandesh_test.mjs) had to change
-%% to add this -- a personal structure literally cannot collide with, hide,
-%% or be mistaken for an org-wide one.
+%% it: an admin-managed TStruct can be edited freely by re-saving it, and is
+%% only reachable by a regular user through an Option someone configured. A
+%% user-created structure is the opposite on both axes:
+%%  - any signed-in user can make one -- no admin, no unlock;
+%%  - once made, it's visible org-wide to any signed-in user, immediately,
+%%    with no Option needed.
+%% What it keeps in common with a personal/private design (which this
+%% isn't) is the immutability angle: creating one is a one-shot -- there is
+%% no "edit the definition" path at all, by anyone, ever, including the
+%% creator. Names are a single shared namespace (sd:tstructs:user, distinct
+%% from admin's sd:tstructs), so a name is claimed on a first-come basis --
+%% save rejects a name already in use (duplicate), the same shape as
+%% username_taken/email_taken elsewhere in this module. Only the creator
+%% (<<"owner">>) may delete it; deleting does not touch submissions already
+%% made against it (same graceful degrade as an admin-deleted TStruct: a
+%% later edit of such a submission fails cleanly with not_found via
+%% def_for_submission, it doesn't crash).
 %%
 %% Field/section validation is identical (validate_fields/1,
-%% validate_sections/2, check_field_refs/3) -- a personal structure obeys
-%% the same field-type and condition rules as an org-wide one, just with a
-%% different owner check instead of an Option check.
+%% validate_sections/2, check_field_refs/3) -- a user-created structure
+%% obeys the same field-type and condition rules as an admin-managed one.
 
-my_key(Username) -> "sd:tstructs:mine:" ++ sd_util:s(Username).
-
-list_my_tstructs(User) ->
-    Username = maps:get(<<"username">>, User),
+list_user_tstructs() ->
     lists:sort(fun(A, B) -> maps:get(<<"name">>, A) =< maps:get(<<"name">>, B) end,
-               [T || {_, T} <- sd_db:hgetall_json(my_key(Username)), is_map(T)]).
+               [T || {_, T} <- sd_db:hgetall_json(?USER_TSTRUCTS), is_map(T)]).
 
-get_my_tstruct(User, Name) ->
-    Username = maps:get(<<"username">>, User),
-    sd_db:hget_json(my_key(Username), key(Name)).
+get_user_tstruct(Name) -> sd_db:hget_json(?USER_TSTRUCTS, key(Name)).
 
-save_my_tstruct(User, Raw) when is_map(Raw) ->
+save_user_tstruct(User, Raw) when is_map(Raw) ->
     Name = sd_util:get(<<"name">>, Raw),
     case valid_ident(Name) of
         false -> {error, invalid, <<"name must be letters/digits/underscore, starting with a letter.">>};
         true ->
-            case validate_fields(sd_util:get(<<"fields">>, Raw, [])) of
-                {ok, Fields} ->
-                    FieldNames = [maps:get(<<"name">>, F) || F <- Fields],
-                    case validate_sections(sd_util:get(<<"sections">>, Raw, []), FieldNames) of
-                        {ok, Sections} ->
-                            case check_field_refs(Fields, Sections, FieldNames) of
-                                ok ->
-                                    Username = maps:get(<<"username">>, User),
-                                    Def = #{<<"name">> => Name,
-                                            <<"caption">> => text(sd_util:get(<<"caption">>, Raw), Name),
-                                            <<"description">> => text(sd_util:get(<<"description">>, Raw), <<>>),
-                                            <<"fields">> => Fields, <<"sections">> => Sections,
-                                            <<"owner">> => Username},
-                                    sd_db:hset_json(my_key(Username), key(Name), Def),
-                                    {ok, Def};
+            case get_user_tstruct(Name) of
+                Existing when is_map(Existing) ->
+                    {error, duplicate, <<"That name is already in use.">>};
+                undefined ->
+                    case validate_fields(sd_util:get(<<"fields">>, Raw, [])) of
+                        {ok, Fields} ->
+                            FieldNames = [maps:get(<<"name">>, F) || F <- Fields],
+                            case validate_sections(sd_util:get(<<"sections">>, Raw, []), FieldNames) of
+                                {ok, Sections} ->
+                                    case check_field_refs(Fields, Sections, FieldNames) of
+                                        ok ->
+                                            Username = maps:get(<<"username">>, User),
+                                            Def = #{<<"name">> => Name,
+                                                    <<"caption">> => text(sd_util:get(<<"caption">>, Raw), Name),
+                                                    <<"description">> => text(sd_util:get(<<"description">>, Raw), <<>>),
+                                                    <<"fields">> => Fields, <<"sections">> => Sections,
+                                                    <<"owner">> => Username},
+                                            sd_db:hset_json(?USER_TSTRUCTS, key(Name), Def),
+                                            {ok, Def};
+                                        Err -> Err
+                                    end;
                                 Err -> Err
                             end;
                         Err -> Err
-                    end;
-                Err -> Err
+                    end
             end
     end;
-save_my_tstruct(_, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
+save_user_tstruct(_, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
 
-delete_my_tstruct(User, Name) ->
-    case get_my_tstruct(User, Name) of
-        undefined -> {error, not_found, <<"No such personal structure.">>};
+delete_user_tstruct(User, Name) ->
+    case get_user_tstruct(Name) of
+        undefined -> {error, not_found, <<"No such structure.">>};
         Def ->
             Username = maps:get(<<"username">>, User),
-            sd_db:hdel(my_key(Username), key(maps:get(<<"name">>, Def))),
-            ok
+            case maps:get(<<"owner">>, Def, undefined) =:= Username of
+                false -> {error, forbidden, <<"Only the creator can delete this structure.">>};
+                true ->
+                    sd_db:hdel(?USER_TSTRUCTS, key(maps:get(<<"name">>, Def))),
+                    ok
+            end
     end.
 
 %% ---- value checking -------------------------------------------------------------------------------
