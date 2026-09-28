@@ -154,7 +154,10 @@ user_actions() ->
      <<"cards.list">>, <<"cards.dismiss">>, <<"sections.list">>, <<"sections.save">>,
      <<"sections.delete">>, <<"reminder.add">>,
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
-     <<"options.list">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>].
+     <<"options.list">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
+     <<"submissions.update">>, <<"submissions.delete">>,
+     <<"tstruct.mine.list">>, <<"tstruct.mine.get">>, <<"tstruct.mine.save">>,
+     <<"tstruct.mine.delete">>, <<"tstruct.mine.submit">>].
 
 run(Action, Args, Ctx) ->
     Level = access(Action),
@@ -397,13 +400,55 @@ do(<<"tstruct.get">>, Args, #{user := User}) ->
     end);
 do(<<"tstruct.submit">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(Name) ->
-        case sd_config:submit(User, Name, maps:get(<<"values">>, Args, #{})) of
+        case sd_config:submit(User, Name, maps:get(<<"values">>, Args, #{}), submit_opts(Args)) of
             {ok, Sub} -> {ok, #{<<"submission">> => Sub}};
             Err -> Err
         end
     end);
-do(<<"submissions.list">>, _Args, #{user := User}) ->
-    {ok, #{<<"submissions">> => sd_config:list_submissions(User)}};
+do(<<"submissions.list">>, Args, #{user := User}) ->
+    {ok, #{<<"submissions">> => sd_config:list_submissions(User, Args)}};
+do(<<"submissions.update">>, Args, #{user := User}) ->
+    case maps:get(<<"id">>, Args, undefined) of
+        Id when is_integer(Id) ->
+            case sd_config:update_submission(User, Id, Args) of
+                {ok, Sub} -> {ok, #{<<"submission">> => Sub}};
+                Err -> Err
+            end;
+        _ -> {error, invalid, <<"id (number) is required.">>}
+    end;
+do(<<"submissions.delete">>, Args, #{user := User}) ->
+    case maps:get(<<"id">>, Args, undefined) of
+        Id when is_integer(Id) ->
+            case sd_config:delete_submission(User, Id) of
+                ok -> {ok, #{<<"deleted">> => true}};
+                Err -> Err
+            end;
+        _ -> {error, invalid, <<"id (number) is required.">>}
+    end;
+
+%% ---- personal structures (any signed-in user, no Option/admin needed) -----------------------------------------------
+do(<<"tstruct.mine.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"tstructs">> => sd_config:list_my_tstructs(User)}};
+do(<<"tstruct.mine.get">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_config:get_my_tstruct(User, N) of
+            undefined -> {error, not_found, <<"No such personal structure.">>};
+            D -> {ok, #{<<"tstruct">> => D}}
+        end
+    end);
+do(<<"tstruct.mine.save">>, Args, #{user := User}) ->
+    case sd_config:save_my_tstruct(User, Args) of {ok, D} -> {ok, #{<<"tstruct">> => D}}; Err -> Err end;
+do(<<"tstruct.mine.delete">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_config:delete_my_tstruct(User, N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+    end);
+do(<<"tstruct.mine.submit">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(Name) ->
+        case sd_config:submit_mine(User, Name, maps:get(<<"values">>, Args, #{}), submit_opts(Args)) of
+            {ok, Sub} -> {ok, #{<<"submission">> => Sub}};
+            Err -> Err
+        end
+    end);
 
 %% ---- admin console unlock (password + OTP) -----------------------------------------------------------------------
 do(<<"admin.unlock.start">>, _Args, #{token := Token}) ->
@@ -555,6 +600,11 @@ with_bin(Key, Args, Fun) ->
         V when is_binary(V), V =/= <<>> -> Fun(V);
         _ -> {error, invalid, <<Key/binary, " is required.">>}
     end.
+
+%% Pulls the optional record-level {ref, meta} out of a tstruct.submit /
+%% tstruct.mine.submit call. sd_config does its own shape-checking on both.
+submit_opts(Args) ->
+    #{ref => maps:get(<<"ref">>, Args, undefined), meta => maps:get(<<"meta">>, Args, undefined)}.
 
 %% Kinds are looked up in a fixed table -- never turned into atoms from
 %% client input.
