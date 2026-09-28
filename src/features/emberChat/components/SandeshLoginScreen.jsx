@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { authorizedUsers } from "../data/sampleData.js";
 import sandeshLogo from "../../../assets/sandesh-logo.png";
 import { SmokeyBackground } from "@/components/ui/login-form";
 import {
@@ -17,6 +16,16 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+
+const getApiBase = () => {
+  if (typeof window === 'undefined') return 'http://localhost:8080';
+  const isDev =
+    ['5173', '3000', '5174'].includes(window.location.port) ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+  if (window.location.protocol === 'https:') return `https://${window.location.host}`;
+  return isDev ? `http://${window.location.hostname}:8080` : `http://${window.location.host}`;
+};
 
 export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [activeTab, setActiveTab] = useState("signin"); // "signin" | "first_admin" | "self_reg"
@@ -52,7 +61,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [successNotice, setSuccessNotice] = useState("");
 
-  const handleSignIn = (e) => {
+  const handleSignIn = async (e) => {
     e.preventDefault();
     if (!signInIdentifier) {
       setErrorMsg("Please enter your username, email, or name.");
@@ -61,30 +70,33 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
     setErrorMsg("");
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
-      const raw = signInIdentifier.trim().toLowerCase();
-      const foundUser = authorizedUsers.find(
-        (u) =>
-          u.username.toLowerCase() === raw ||
-          u.name.toLowerCase() === raw ||
-          u.name.toLowerCase().includes(raw) ||
-          (u.email && u.email.toLowerCase() === raw)
-      );
+    try {
+      const body = signInWithOtp
+        ? { identifier: signInIdentifier.trim(), otp: signInOtp }
+        : { identifier: signInIdentifier.trim(), password: signInPassword };
 
-      if (!foundUser) {
-        setErrorMsg(
-          "Access restricted: Only authorized personnel (Sabarish, Nageshwari, Gunn Kataria, Anish, Arjun) are permitted to sign in."
-        );
+      const res = await fetch(`${getApiBase()}/api/sd/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrorMsg(data.error || data.message || `Sign-in failed (${res.status})`);
         return;
       }
 
-      onLoginSuccess({
-        ...foundUser,
-        token: "sandesh-jwt-" + Date.now(),
-        armSessionId: "arm-sess-" + Date.now(),
-      });
-    }, 500);
+      const sessionUser = { ...(data.user || {}), token: data.token };
+      try { localStorage.setItem('sandesh_session_user', JSON.stringify(sessionUser)); } catch {}
+
+      onLoginSuccess(sessionUser);
+    } catch {
+      setErrorMsg("Cannot reach Sandesh server. Is the backend running on port 8080?");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFirstAdminSetup = (e) => {
