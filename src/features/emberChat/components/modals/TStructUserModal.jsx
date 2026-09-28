@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AppThemeProvider, { GlobalStyle } from "@tstruct/ui/theme";
 import { ToastProvider } from "@tstruct/ui/kit";
@@ -17,10 +17,11 @@ import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 // is shared — the user session set by the chat app is available to api.js automatically.
 export default function TStructUserModal({ onClose, currentUser }) {
   // Wire the tstruct API to the host app's already-authenticated socket.
-  // This avoids opening a second WebSocket connection for the same user.
-  useEffect(() => {
+  // useMemo runs synchronously during render — before any child useEffect fires —
+  // so listStructs() in StructsProvider already has the socket available on first call.
+  useMemo(() => {
     configure({ user: currentUser, socket: sandeshSocket });
-  }, [currentUser]);
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div

@@ -26,6 +26,19 @@ export function configure(next = {}) {
 }
 export const getConfig = () => config;
 
+// ─── Minimal Sandesh WebSocket client ─────────────────────────────────────────
+// Used only when no shared socket has been injected (standalone mode).
+
+const getWsUrl = () => {
+  if (typeof window === 'undefined') return null;
+  const isDev =
+    ['5173', '3000', '5174'].includes(window.location.port) ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+  if (window.location.protocol === 'https:') return `wss://${window.location.host}/ws`;
+  return isDev ? `ws://${window.location.hostname}:8080` : `ws://${window.location.host}/ws`;
+};
+
 class SandeshClient {
   constructor() {
     this._ws = null;
