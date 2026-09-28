@@ -1,5 +1,22 @@
 import { useState } from "react";
 import { authorizedUsers } from "../data/sampleData.js";
+import sandeshLogo from "../../../assets/sandesh-logo.png";
+import { SmokeyBackground } from "@/components/ui/login-form";
+import {
+  User,
+  Lock,
+  ArrowRight,
+  ShieldCheck,
+  Building2,
+  Phone,
+  Mail,
+  KeyRound,
+  Layers,
+  Briefcase,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 
 export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [activeTab, setActiveTab] = useState("signin"); // "signin" | "first_admin" | "self_reg"
@@ -10,6 +27,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [signInWithOtp, setSignInWithOtp] = useState(false);
   const [signInOtp, setSignInOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // First Time Setup State
   const [adminOrg, setAdminOrg] = useState("Agile Labs Enterprise");
@@ -140,6 +158,15 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
   return (
     <div className="sandesh-auth-wrapper">
+      {/* Interactive WebGL Shader Smokey Background in Sandesh Coral & Peach */}
+      <SmokeyBackground
+        color="#ff7a59"
+        backgroundColor="#fff3eb"
+        accentColor="#ff5757"
+        backdropBlurAmount="md"
+        className="sandesh-webgl-smokey"
+      />
+
       {/* 3D Ambient Peach Lighting & Glow Orbs */}
       <div className="sandesh-ambient-canvas">
         <div className="peach-orb peach-orb-1" />
@@ -154,12 +181,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
           {/* Header Brand */}
           <div className="sandesh-auth-header">
             <div className="sandesh-brand-badge-3d">
-              <span className="sandesh-badge-icon">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                </svg>
-              </span>
-              <div className="sandesh-badge-shine" />
+              <img src={sandeshLogo} alt="Sandesh Logo" className="sandesh-brand-badge-img" />
             </div>
             <h1 className="sandesh-auth-title">Sandesh</h1>
             <p className="sandesh-auth-tagline">Enterprise Messaging &amp; Collaboration Platform</p>
@@ -203,7 +225,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
               <div className="sandesh-input-group">
                 <label>Username, Email, or Mobile</label>
                 <div className="sandesh-input-box-3d">
-                  <span className="material-icons input-icon">person</span>
+                  <User size={18} className="sandesh-lucide-icon" />
                   <input
                     type="text"
                     placeholder="e.g. alice, bob, arjun"
@@ -231,14 +253,23 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                     </button>
                   </div>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">lock</span>
+                    <Lock size={18} className="sandesh-lucide-icon" />
                     <input
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       placeholder="Enter your Sandesh password"
                       value={signInPassword}
                       onChange={(e) => setSignInPassword(e.target.value)}
                       required
                     />
+                    <button
+                      type="button"
+                      className="sandesh-input-action-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      title={showPassword ? "Hide password" : "Show password"}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -254,7 +285,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                     </button>
                   </div>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">sms</span>
+                    <KeyRound size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       placeholder="Enter 6-digit OTP (e.g. 123456)"
@@ -271,7 +302,8 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 className="sandesh-btn-primary-3d"
                 disabled={loading}
               >
-                {loading ? "Authenticating..." : "Sign In to Sandesh"}
+                <span>{loading ? "Authenticating..." : "Sign In to Sandesh"}</span>
+                <ArrowRight size={18} className="sandesh-btn-arrow" />
               </button>
 
               <div className="sandesh-quick-demo-accounts">
@@ -336,7 +368,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
               <div className="sandesh-input-group">
                 <label>Organization Name</label>
                 <div className="sandesh-input-box-3d">
-                  <span className="material-icons input-icon">business</span>
+                  <Building2 size={18} className="sandesh-lucide-icon" />
                   <input
                     type="text"
                     placeholder="e.g. Agile Labs Private Limited"
@@ -351,7 +383,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Administrator Name</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">badge</span>
+                    <ShieldCheck size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       placeholder="Full Name"
@@ -365,7 +397,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Mobile Number</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">phone</span>
+                    <Phone size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       placeholder="+91 98860 00000"
@@ -380,7 +412,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
               <div className="sandesh-input-group">
                 <label>Admin Corporate Email ID</label>
                 <div className="sandesh-input-box-3d">
-                  <span className="material-icons input-icon">mail</span>
+                  <Mail size={18} className="sandesh-lucide-icon" />
                   <input
                     type="email"
                     placeholder="admin@organization.com"
@@ -395,7 +427,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Validation OTP (Demo Code: 123456)</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">verified</span>
+                    <CheckCircle2 size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       placeholder="Enter 123456"
@@ -412,9 +444,14 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 className="sandesh-btn-primary-3d"
                 disabled={loading}
               >
-                {loading
-                  ? "Setting up..."
-                  : (!adminOtpSent ? "Validate Credentials & Send OTP" : "Verify OTP & Launch Sandesh Platform")}
+                <span>
+                  {loading
+                    ? "Setting up..."
+                    : !adminOtpSent
+                      ? "Validate Credentials & Send OTP"
+                      : "Verify OTP & Launch Sandesh Platform"}
+                </span>
+                <ArrowRight size={18} className="sandesh-btn-arrow" />
               </button>
             </form>
           )}
@@ -426,7 +463,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Full Name</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">person</span>
+                    <User size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       placeholder="Your name"
@@ -439,7 +476,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>User Category</label>
                   <div className="sandesh-input-box-3d select-box">
-                    <span className="material-icons input-icon">category</span>
+                    <Layers size={18} className="sandesh-lucide-icon" />
                     <select
                       value={regCategory}
                       onChange={(e) => setRegCategory(e.target.value)}
@@ -460,7 +497,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Email Address</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">email</span>
+                    <Mail size={18} className="sandesh-lucide-icon" />
                     <input
                       type="email"
                       placeholder="name@company.com"
@@ -473,7 +510,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Mobile Number</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">phone</span>
+                    <Phone size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       placeholder="+91..."
@@ -488,7 +525,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Organization / Branch</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">domain</span>
+                    <Building2 size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       value={regOrg}
@@ -499,7 +536,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <div className="sandesh-input-group">
                   <label>Designation / Role</label>
                   <div className="sandesh-input-box-3d">
-                    <span className="material-icons input-icon">work</span>
+                    <Briefcase size={18} className="sandesh-lucide-icon" />
                     <input
                       type="text"
                       value={regDesignation}
@@ -514,7 +551,8 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 className="sandesh-btn-primary-3d"
                 disabled={loading}
               >
-                {loading ? "Submitting Registration..." : "Request Onboarding & Continue"}
+                <span>{loading ? "Submitting Registration..." : "Request Onboarding & Continue"}</span>
+                <ArrowRight size={18} className="sandesh-btn-arrow" />
               </button>
             </form>
           )}
