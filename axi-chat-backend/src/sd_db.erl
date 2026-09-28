@@ -6,7 +6,7 @@
 -export([q/1, hget/2, hset/3, hdel/2, hgetall/1, hkeys/1, hlen/1,
          get/1, set/2, setex/3, del/1, incr/1, expire/2, ttl/1,
          sadd/2, srem/2, smembers/1, sismember/2,
-         zadd/3, zrevrange/3, ztrim/2,
+         zadd/3, zrem/2, zrevrange/3, ztrim/2,
          hget_json/2, hset_json/3, hgetall_json/1,
          get_json/1, setex_json/3,
          rate/3, flush_test_db/0]).
@@ -57,6 +57,7 @@ smembers(Key) -> q(["SMEMBERS", Key]).
 sismember(Key, Member) -> q(["SISMEMBER", Key, Member]) =:= <<"1">>.
 
 zadd(Key, Score, Member) -> q(["ZADD", Key, integer_to_list(Score), Member]), ok.
+zrem(Key, Member) -> q(["ZREM", Key, Member]), ok.
 %% Newest first, indexes inclusive.
 zrevrange(Key, From, To) -> q(["ZREVRANGE", Key, integer_to_list(From), integer_to_list(To)]).
 %% Keep only the newest Max members.

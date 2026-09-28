@@ -23,7 +23,10 @@
 -export([list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_types/0,
          list_appconns/0, save_appconn/1, delete_appconn/1,
-         tstruct_for_user/2, submit/3, list_submissions/1, applies/2]).
+         tstruct_for_user/2, submit/4, list_submissions/2,
+         update_submission/3, delete_submission/2,
+         list_my_tstructs/1, get_my_tstruct/2, save_my_tstruct/2, delete_my_tstruct/2,
+         submit_mine/4, applies/2]).
 
 -define(TSTRUCTS, "sd:tstructs").
 -define(OPTIONS, "sd:options").
@@ -371,46 +374,273 @@ tstruct_for_user(User, Name) ->
             end
     end.
 
-%% Values: #{fieldName => value}. Returns {ok, Submission} or
+%% Values: #{fieldName => value}. Opts is #{ref => binary()|undefined,
+%% meta => map()|undefined} -- both optional, record-level metadata that
+%% sits alongside the form's own fields (not validated as a field, just
+%% stored + indexed for lookup). Returns {ok, Submission} or
 %% {error, invalid_values, Msg, #{<<"fields">> => #{Field => Message}}}.
-submit(User, Name, Values) when is_map(Values) ->
+submit(User, Name, Values, Opts) when is_map(Values) ->
     case tstruct_for_user(User, Name) of
         {error, _, _} = Err -> Err;
-        {ok, Def} ->
+        {ok, Def} -> do_submit(User, Def, Values, Opts, <<"global">>)
+    end;
+submit(_, _, _, _) -> {error, bad_request, <<"values must be an object.">>}.
+
+%% Same as submit/4, but against a structure from the caller's own personal
+%% collection (see "Personal structures" below) instead of an org-wide one
+%% gated by an Option. No Option/admin check needed -- owning the structure
+%% *is* the permission.
+submit_mine(User, Name, Values, Opts) when is_map(Values) ->
+    case get_my_tstruct(User, Name) of
+        undefined -> {error, not_found, <<"No such personal structure.">>};
+        Def -> do_submit(User, Def, Values, Opts, <<"mine">>)
+    end;
+submit_mine(_, _, _, _) -> {error, bad_request, <<"values must be an object.">>}.
+
+do_submit(User, Def, Values, Opts, Scope) ->
+    case {norm_ref(sd_util:get(ref, Opts, undefined)), norm_meta(sd_util:get(meta, Opts, undefined))} of
+        {invalid_ref, _} -> {error, invalid, <<"ref must be text, at most 200 characters.">>};
+        {_, invalid_meta} -> {error, invalid, <<"meta must be a JSON object.">>};
+        {Ref, Meta} ->
             case check_values(Def, Values) of
-                {ok, Clean} ->
-                    Id = sd_db:incr("sd:seq:sub"),
-                    Username = maps:get(<<"username">>, User),
-                    Host = sd_util:get(<<"host">>, User),
-                    Sub = #{<<"id">> => Id, <<"tstruct">> => maps:get(<<"name">>, Def),
-                            <<"by">> => Username, <<"host">> => Host,
-                            <<"values">> => Clean, <<"ts">> => sd_util:now_ms()},
-                    sd_db:hset_json("sd:subs", integer_to_list(Id), Sub),
-                    Members = [Username | case Host of H when is_binary(H) -> [H]; _ -> [] end],
-                    lists:foreach(fun(M) ->
-                                      sd_db:zadd("sd:subs:u:" ++ sd_util:s(M), maps:get(<<"ts">>, Sub),
-                                                 integer_to_binary(Id))
-                                  end, Members),
-                    case Host of
-                        H2 when is_binary(H2) ->
-                            sd_cards:add(H2, #{<<"kind">> => <<"system">>, <<"from">> => Username,
-                                               <<"text">> => <<(maps:get(<<"name">>, User))/binary,
-                                                               " submitted ",
-                                                               (maps:get(<<"caption">>, Def))/binary>>,
-                                               <<"ref">> => #{<<"submissionId">> => Id}});
-                        _ -> ok
-                    end,
-                    {ok, Sub};
+                {ok, Clean} -> store_submission(User, Def, Clean, Ref, Meta, Scope);
                 {error, Fields} ->
                     {error, invalid_values, <<"Some fields need attention.">>, #{<<"fields">> => Fields}}
             end
-    end;
-submit(_, _, _) -> {error, bad_request, <<"values must be an object.">>}.
+    end.
 
-%% The user's own submissions plus those from users they host, newest first.
-list_submissions(User) ->
-    Ids = sd_db:zrevrange("sd:subs:u:" ++ sd_util:s(maps:get(<<"username">>, User)), 0, 99),
-    [S || B <- Ids, S <- [sd_db:hget_json("sd:subs", binary_to_list(B))], is_map(S)].
+store_submission(User, Def, Clean, Ref, Meta, Scope) ->
+    Id = sd_db:incr("sd:seq:sub"),
+    Username = maps:get(<<"username">>, User),
+    Host = sd_util:get(<<"host">>, User),
+    TName = maps:get(<<"name">>, Def),
+    Sub0 = #{<<"id">> => Id, <<"tstruct">> => TName, <<"scope">> => Scope,
+             <<"by">> => Username, <<"host">> => Host,
+             <<"values">> => Clean, <<"ts">> => sd_util:now_ms()},
+    Sub1 = case Ref of undefined -> Sub0; _ -> Sub0#{<<"ref">> => Ref} end,
+    Sub  = case Meta of undefined -> Sub1; _ -> Sub1#{<<"meta">> => Meta} end,
+    sd_db:hset_json("sd:subs", integer_to_list(Id), Sub),
+    Ts = maps:get(<<"ts">>, Sub),
+    IdBin = integer_to_binary(Id),
+    Members = [Username | case Host of H when is_binary(H) -> [H]; _ -> [] end],
+    lists:foreach(fun(M) -> sd_db:zadd("sd:subs:u:" ++ sd_util:s(M), Ts, IdBin) end, Members),
+    TKey = key(TName),
+    sd_db:zadd("sd:subs:t:" ++ TKey, Ts, IdBin),
+    case Ref of
+        undefined -> ok;
+        _ -> sd_db:zadd("sd:subs:tr:" ++ TKey ++ ":" ++ sd_util:s(Ref), Ts, IdBin)
+    end,
+    case Host of
+        H2 when is_binary(H2) ->
+            sd_cards:add(H2, #{<<"kind">> => <<"system">>, <<"from">> => Username,
+                               <<"text">> => <<(maps:get(<<"name">>, User))/binary,
+                                               " submitted ",
+                                               (maps:get(<<"caption">>, Def))/binary>>,
+                               <<"ref">> => #{<<"submissionId">> => Id}});
+        _ -> ok
+    end,
+    {ok, Sub}.
+
+norm_ref(undefined) -> undefined;
+norm_ref(null) -> undefined;
+norm_ref(R) when is_binary(R), R =/= <<>>, byte_size(R) =< 200 -> R;
+norm_ref(_) -> invalid_ref.
+
+norm_meta(undefined) -> undefined;
+norm_meta(null) -> undefined;
+norm_meta(M) when is_map(M) -> M;
+norm_meta(_) -> invalid_meta.
+
+%% Args (all optional): #{<<"tstruct">> => Name, <<"ref">> => Ref}.
+%%  - neither given: the user's own submissions plus those from users they
+%%    host, newest first (unchanged default behaviour).
+%%  - tstruct given (with or without ref): every submission of that
+%%    structure the *caller* is allowed to see (their own, or ones made by
+%%    someone they host, or any if admin) -- still scoped, just indexed
+%%    differently since it's no longer keyed off one user's own set.
+list_submissions(User, Args) ->
+    Username = maps:get(<<"username">>, User),
+    TName = case sd_util:get(<<"tstruct">>, Args, undefined) of
+                RawT when is_binary(RawT), RawT =/= <<>> -> key(RawT);
+                _ -> undefined
+            end,
+    Ref = case sd_util:get(<<"ref">>, Args, undefined) of
+              RawR when is_binary(RawR), RawR =/= <<>> -> RawR;
+              _ -> undefined
+          end,
+    Ids = case {TName, Ref} of
+              {undefined, _} -> sd_db:zrevrange("sd:subs:u:" ++ sd_util:s(Username), 0, 99);
+              {TK, undefined} -> sd_db:zrevrange("sd:subs:t:" ++ TK, 0, 199);
+              {TK, RV} -> sd_db:zrevrange("sd:subs:tr:" ++ TK ++ ":" ++ sd_util:s(RV), 0, 199)
+          end,
+    Subs = [S || B <- Ids, S <- [sd_db:hget_json("sd:subs", binary_to_list(B))], is_map(S)],
+    case TName of
+        undefined -> Subs; %% sd:subs:u:<user> is already correctly scoped
+        _ -> [S || S <- Subs, can_see_submission(User, S)]
+    end.
+
+can_see_submission(User, Sub) ->
+    Username = maps:get(<<"username">>, User),
+    sd_users:is_admin(User) orelse maps:get(<<"by">>, Sub) =:= Username
+        orelse maps:get(<<"host">>, Sub, null) =:= Username.
+
+%% Only the person who made a submission may edit or delete it -- no time
+%% limit, no host override (deliberately the simplest rule that needed no
+%% new "is this locked" state on a submission; tighten later if a workflow
+%% needs it, e.g. once something can act on a submission the way req.respond
+%% acts on a request).
+%%
+%% Edits re-validate against the *same* structure the submission was made
+%% against (its own definition may since have changed -- that's fine, the
+%% new values must satisfy the current definition). `ref` is not editable
+%% here (it's part of how the record is indexed/found; changing it needs
+%% moving index entries, deliberately left out of v1). `values` and `meta`
+%% are.
+update_submission(User, Id, Changes) when is_integer(Id), is_map(Changes) ->
+    case sd_db:hget_json("sd:subs", integer_to_list(Id)) of
+        undefined -> {error, not_found, <<"No such submission.">>};
+        Sub ->
+            Username = maps:get(<<"username">>, User),
+            case maps:get(<<"by">>, Sub) =:= Username of
+                false -> {error, forbidden, <<"You can only edit your own submission.">>};
+                true ->
+                    case def_for_submission(Sub) of
+                        undefined ->
+                            {error, not_found,
+                             <<"The structure this was submitted against no longer exists.">>};
+                        Def ->
+                            NewValues = case sd_util:get(<<"values">>, Changes, undefined) of
+                                             V when is_map(V) -> V;
+                                             _ -> maps:get(<<"values">>, Sub)
+                                         end,
+                            case norm_meta(sd_util:get(<<"meta">>, Changes, undefined)) of
+                                invalid_meta -> {error, invalid, <<"meta must be a JSON object.">>};
+                                Meta ->
+                                    case check_values(Def, NewValues) of
+                                        {ok, Clean} ->
+                                            Sub1 = Sub#{<<"values">> => Clean,
+                                                        <<"editedTs">> => sd_util:now_ms()},
+                                            Sub2 = case Meta of
+                                                       undefined -> Sub1;
+                                                       _ -> Sub1#{<<"meta">> => Meta}
+                                                   end,
+                                            sd_db:hset_json("sd:subs", integer_to_list(Id), Sub2),
+                                            {ok, Sub2};
+                                        {error, Fields} ->
+                                            {error, invalid_values, <<"Some fields need attention.">>,
+                                             #{<<"fields">> => Fields}}
+                                    end
+                            end
+                    end
+            end
+    end;
+update_submission(_, _, _) -> {error, bad_request, <<"id (number) and changes are required.">>}.
+
+delete_submission(User, Id) when is_integer(Id) ->
+    case sd_db:hget_json("sd:subs", integer_to_list(Id)) of
+        undefined -> {error, not_found, <<"No such submission.">>};
+        Sub ->
+            Username = maps:get(<<"username">>, User),
+            case maps:get(<<"by">>, Sub) =:= Username of
+                false -> {error, forbidden, <<"You can only delete your own submission.">>};
+                true ->
+                    IdBin = integer_to_binary(Id),
+                    sd_db:hdel("sd:subs", integer_to_list(Id)),
+                    sd_db:zrem("sd:subs:u:" ++ sd_util:s(Username), IdBin),
+                    case maps:get(<<"host">>, Sub, null) of
+                        H when is_binary(H) -> sd_db:zrem("sd:subs:u:" ++ sd_util:s(H), IdBin);
+                        _ -> ok
+                    end,
+                    TKey = key(maps:get(<<"tstruct">>, Sub)),
+                    sd_db:zrem("sd:subs:t:" ++ TKey, IdBin),
+                    case maps:get(<<"ref">>, Sub, undefined) of
+                        undefined -> ok;
+                        Ref -> sd_db:zrem("sd:subs:tr:" ++ TKey ++ ":" ++ sd_util:s(Ref), IdBin)
+                    end,
+                    ok
+            end
+    end;
+delete_submission(_, _) -> {error, bad_request, <<"id (number) is required.">>}.
+
+%% A submission only records the structure's *name*, not which collection
+%% it came from -- "scope" (tagged at submit time) says whether to look it
+%% up in the org-wide sd:tstructs (admin/Option-gated) or the submitter's
+%% own personal collection. Old submissions predate the "scope" field and
+%% can only ever have come from the global side, so they fall through to
+%% that clause correctly.
+def_for_submission(#{<<"scope">> := <<"mine">>, <<"tstruct">> := TName, <<"by">> := By}) ->
+    get_my_tstruct(#{<<"username">> => By}, TName);
+def_for_submission(#{<<"tstruct">> := TName}) ->
+    get_tstruct(TName).
+
+%% =============================================================================
+%% Personal structures -- "any signed-in user defines their own forms"
+%% =============================================================================
+%%
+%% Deliberately a *separate* collection from sd:tstructs, not a variant of
+%% it: an org-wide TStruct is admin-owned, named in one global namespace,
+%% and only reachable through an Option someone configured. A personal
+%% structure is the opposite on every axis -- any signed-in user, their own
+%% private namespace (one Redis hash per user, so two people can both have
+%% a struct named "expenses" with zero collision), no Option needed to
+%% reach it. Keeping them fully separate means none of the existing
+%% admin/Option-gated behaviour (tested by sandesh_test.mjs) had to change
+%% to add this -- a personal structure literally cannot collide with, hide,
+%% or be mistaken for an org-wide one.
+%%
+%% Field/section validation is identical (validate_fields/1,
+%% validate_sections/2, check_field_refs/3) -- a personal structure obeys
+%% the same field-type and condition rules as an org-wide one, just with a
+%% different owner check instead of an Option check.
+
+my_key(Username) -> "sd:tstructs:mine:" ++ sd_util:s(Username).
+
+list_my_tstructs(User) ->
+    Username = maps:get(<<"username">>, User),
+    lists:sort(fun(A, B) -> maps:get(<<"name">>, A) =< maps:get(<<"name">>, B) end,
+               [T || {_, T} <- sd_db:hgetall_json(my_key(Username)), is_map(T)]).
+
+get_my_tstruct(User, Name) ->
+    Username = maps:get(<<"username">>, User),
+    sd_db:hget_json(my_key(Username), key(Name)).
+
+save_my_tstruct(User, Raw) when is_map(Raw) ->
+    Name = sd_util:get(<<"name">>, Raw),
+    case valid_ident(Name) of
+        false -> {error, invalid, <<"name must be letters/digits/underscore, starting with a letter.">>};
+        true ->
+            case validate_fields(sd_util:get(<<"fields">>, Raw, [])) of
+                {ok, Fields} ->
+                    FieldNames = [maps:get(<<"name">>, F) || F <- Fields],
+                    case validate_sections(sd_util:get(<<"sections">>, Raw, []), FieldNames) of
+                        {ok, Sections} ->
+                            case check_field_refs(Fields, Sections, FieldNames) of
+                                ok ->
+                                    Username = maps:get(<<"username">>, User),
+                                    Def = #{<<"name">> => Name,
+                                            <<"caption">> => text(sd_util:get(<<"caption">>, Raw), Name),
+                                            <<"description">> => text(sd_util:get(<<"description">>, Raw), <<>>),
+                                            <<"fields">> => Fields, <<"sections">> => Sections,
+                                            <<"owner">> => Username},
+                                    sd_db:hset_json(my_key(Username), key(Name), Def),
+                                    {ok, Def};
+                                Err -> Err
+                            end;
+                        Err -> Err
+                    end;
+                Err -> Err
+            end
+    end;
+save_my_tstruct(_, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
+
+delete_my_tstruct(User, Name) ->
+    case get_my_tstruct(User, Name) of
+        undefined -> {error, not_found, <<"No such personal structure.">>};
+        Def ->
+            Username = maps:get(<<"username">>, User),
+            sd_db:hdel(my_key(Username), key(maps:get(<<"name">>, Def))),
+            ok
+    end.
 
 %% ---- value checking -------------------------------------------------------------------------------
 
