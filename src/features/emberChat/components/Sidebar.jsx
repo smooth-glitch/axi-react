@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Avatar from "./Avatar.jsx";
+import sandeshLogo from "../../../assets/sandesh-logo.png";
 
 export default function Sidebar({
   me,
@@ -23,7 +24,67 @@ export default function Sidebar({
   const [categoryFilter, setCategoryFilter] = useState("all"); // "all" | "hosts" | "direct"
   const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredChats = chats.filter((c) => {
+  // Determine if a chat or associate is online
+  const isChatOnline = (chat) => {
+    if (chat.isGroup) return false;
+    if (chat.isOnline) return true;
+    const target = (
+      chat.username ||
+      (chat.id?.startsWith("user-") ? chat.id.replace(/^user-/, "") : "") ||
+      chat.name ||
+      ""
+    ).toLowerCase().trim();
+
+    return (onlineUsers || []).some((u) => {
+      const uUsername = (u.username || "").toLowerCase().trim();
+      const uName = (u.name || "").toLowerCase().trim();
+      const uId = (u.id || "").toLowerCase().trim();
+      return (
+        (uUsername && uUsername === target) ||
+        (uName && uName === target) ||
+        (uId && uId === target) ||
+        (chat.name && uName === chat.name.toLowerCase().trim())
+      );
+    });
+  };
+
+  // Combine existing chats with any online associates not yet in chat list
+  const allConversations = useMemo(() => {
+    const list = [...(chats || [])];
+    (onlineUsers || []).forEach((user) => {
+      const uUsername = (user.username || user.id || user.name || "").toLowerCase().trim();
+      const alreadyHasChat = list.some((c) => {
+        const cTarget = (
+          c.username ||
+          (c.id?.startsWith("user-") ? c.id.replace(/^user-/, "") : "") ||
+          c.name ||
+          ""
+        ).toLowerCase().trim();
+        return cTarget === uUsername || c.id === `user-${uUsername}`;
+      });
+
+      if (!alreadyHasChat && uUsername) {
+        list.push({
+          id: `user-${uUsername}`,
+          username: uUsername,
+          name: user.name || uUsername,
+          isGroup: false,
+          category: "direct",
+          designation: user.status || "Active Associate",
+          preview: user.status || "Online on Sandesh",
+          time: "now",
+          unread: 0,
+          initials: user.initials || (user.name || uUsername).slice(0, 2).toUpperCase(),
+          color: user.color || "#34c759",
+          isOnline: true,
+          originalUser: user,
+        });
+      }
+    });
+    return list;
+  }, [chats, onlineUsers]);
+
+  const filteredChats = allConversations.filter((c) => {
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.preview && c.preview.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!matchesSearch) return false;
@@ -39,9 +100,7 @@ export default function Sidebar({
       <div className="sandesh-sidebar-header">
         <div className="sandesh-brand-row">
           <div className="sandesh-logo-mark">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-            </svg>
+            <img src={sandeshLogo} alt="Sandesh" className="sandesh-logo-mark-img" />
           </div>
           <div className="sandesh-brand-info">
             <span className="brand-name">Sandesh</span>
@@ -60,7 +119,10 @@ export default function Sidebar({
         {/* User Card */}
         <div className="sandesh-user-glass-card">
           <div className="user-info-left" onClick={onEditProfile} role="button" tabIndex={0}>
-            <Avatar initials={me.initials || "AS"} color={me.color || "#ff7a59"} />
+            <div className="avatar-wrapper">
+              <Avatar initials={me.initials || "AS"} color={me.color || "#ff7a59"} />
+              <span className="online-presence-dot" title="Active (You)" />
+            </div>
             <div className="user-details">
               <div className="user-name-line">
                 <span className="user-name">{me.name}</span>
@@ -175,96 +237,62 @@ export default function Sidebar({
       <div className="sandesh-chat-list-scroll">
         <div className="section-label">Active Conversations</div>
         <ul className="sandesh-chat-list">
-          {filteredChats.map((chat) => (
-            <li
-              key={chat.id}
-              className={`sandesh-chat-item-3d ${chat.id === activeChatId ? "active" : ""}`}
-              onClick={() => {
-                onSelectChat?.(chat.id);
-                onClose?.();
-              }}
-            >
-              <div className="avatar-wrapper">
-                <Avatar
-                  initials={chat.name[0]}
-                  color={chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c"}
-                  group={chat.isGroup}
-                />
-                {chat.isHost && (
-                  <span className="host-seal-icon" title="Certified Sandesh Host">
-                    <span className="material-icons">verified</span>
-                  </span>
-                )}
-              </div>
-              <div className="chat-meta">
-                <div className="chat-name-row">
-                  <span className="chat-name">{chat.name}</span>
-                  <span className="chat-time">{chat.time}</span>
-                </div>
-                <div className="chat-preview-row">
-                  <span className="chat-preview">{chat.preview}</span>
-                  {chat.unread > 0 && <span className="sandesh-unread-badge-3d">{chat.unread}</span>}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="sandesh-chat-delete-btn"
-                title="Delete conversation"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.confirm(`Delete conversation "${chat.name}"?`)) {
-                    onDeleteChat?.(chat.id);
+          {filteredChats.map((chat) => {
+            const isOnline = isChatOnline(chat);
+            return (
+              <li
+                key={chat.id}
+                className={`sandesh-chat-item-3d ${chat.id === activeChatId ? "active" : ""}`}
+                onClick={() => {
+                  if (chat.originalUser && onSelectOnlineUser) {
+                    onSelectOnlineUser(chat.originalUser);
+                  } else {
+                    onSelectChat?.(chat.id);
                   }
+                  onClose?.();
                 }}
               >
-                <span className="material-icons">delete_outline</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        {/* Online Directory */}
-        <div className="section-label">Online Associates ({onlineUsers.length})</div>
-        <ul className="sandesh-online-list">
-          {onlineUsers.map((user) => (
-            <li
-              key={user.id}
-              className="sandesh-online-item-3d"
-              onClick={() => {
-                if (onSelectOnlineUser) {
-                  onSelectOnlineUser(user);
-                } else {
-                  onSelectChat?.(`user-${user.id}`);
-                }
-                onClose?.();
-              }}
-            >
-              <div className="avatar-wrapper">
-                <Avatar initials={user.initials} color={user.color} />
-                <span className="online-presence-dot" />
-              </div>
-              <div className="chat-meta">
-                <span className="chat-name">{user.name}</span>
-                <span className="chat-preview">{user.status}</span>
-              </div>
-            </li>
-          ))}
-
-          {/* AI Assistant Navigation Item */}
-          <li
-            className="sandesh-online-item-3d sandesh-ai-nav-item"
-            id="sandesh-ai-assistant-btn"
-            onClick={onOpenAiChat}
-          >
-            <div className="avatar-wrapper">
-              <Avatar initials="AI" color="#5856d6" />
-            </div>
-            <div className="chat-meta">
-              <span className="chat-name">Sandesh AI Assistant</span>
-              <span className="chat-preview">Switch to full AI workspace</span>
-            </div>
-            <span className="material-icons arrow-icon">arrow_forward</span>
-          </li>
+                <div className="avatar-wrapper">
+                  <Avatar
+                    initials={chat.initials || chat.name[0]}
+                    color={chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
+                    group={chat.isGroup}
+                  />
+                  {isOnline && (
+                    <span className="online-presence-dot" title="Online now" />
+                  )}
+                  {chat.isHost && (
+                    <span className="host-seal-icon" title="Certified Sandesh Host">
+                      <span className="material-icons">verified</span>
+                    </span>
+                  )}
+                </div>
+                <div className="chat-meta">
+                  <div className="chat-name-row">
+                    <span className="chat-name">{chat.name}</span>
+                    <span className="chat-time">{chat.time}</span>
+                  </div>
+                  <div className="chat-preview-row">
+                    <span className="chat-preview">{chat.preview}</span>
+                    {chat.unread > 0 && <span className="sandesh-unread-badge-3d">{chat.unread}</span>}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="sandesh-chat-delete-btn"
+                  title="Delete conversation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Delete conversation "${chat.name}"?`)) {
+                      onDeleteChat?.(chat.id);
+                    }
+                  }}
+                >
+                  <span className="material-icons">delete_outline</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </aside>

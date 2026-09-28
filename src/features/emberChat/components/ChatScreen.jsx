@@ -93,6 +93,7 @@ export default function ChatScreen({
         onOpenAiChat={onOpenAiChat}
         onDeleteChat={onDeleteChat}
         isAdmin={isAdmin}
+        onlineUsers={onlineUsers}
       />
 
       {activeView === "episodes" ? (

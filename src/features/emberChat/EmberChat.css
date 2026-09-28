@@ -92,6 +92,33 @@
   -webkit-box-shadow: none !important;
 }
 
+/* Interactive WebGL Smokey Shader Background */
+.sandesh-webgl-smokey,
+.sandesh-webgl-smokey-container {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+.sandesh-webgl-smokey canvas,
+.sandesh-webgl-smokey-container canvas {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+  pointer-events: auto !important;
+  z-index: 0 !important;
+}
+
 /* 3D Ambient Peach Lighting & Glow Canvas */
 .sandesh-ambient-canvas {
   position: absolute;
@@ -179,25 +206,30 @@
 }
 
 .sandesh-brand-badge-3d {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 14px;
-  border-radius: 20px;
-  background: var(--sandesh-coral-grad);
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 16px;
+  border-radius: 22px;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 10px 24px rgba(255, 122, 89, 0.42), inset 0 2px 2px rgba(255, 255, 255, 0.6);
   position: relative;
-  overflow: hidden;
+  filter: drop-shadow(0 10px 24px rgba(255, 110, 75, 0.45));
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
 }
 
-.sandesh-badge-shine {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, rgba(255, 255, 255, 0.5) 0%, transparent 45%, transparent 100%);
-  pointer-events: none;
+.sandesh-brand-badge-3d:hover {
+  transform: translateY(-2px) scale(1.04);
+  filter: drop-shadow(0 14px 28px rgba(255, 110, 75, 0.55));
+}
+
+.sandesh-brand-badge-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 20px;
+  display: block;
 }
 
 .sandesh-auth-title {
@@ -346,10 +378,45 @@
   -webkit-box-shadow: none !important;
 }
 
-.sandesh-input-box-3d .input-icon {
+.sandesh-input-box-3d .input-icon,
+.sandesh-input-box-3d .sandesh-lucide-icon {
   font-size: 18px;
   color: var(--sandesh-text-subtle);
-  margin-right: 8px;
+  margin-right: 10px;
+  flex-shrink: 0;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.sandesh-input-box-3d:focus-within .sandesh-lucide-icon {
+  color: var(--sandesh-coral-accent);
+  transform: scale(1.06);
+}
+
+.sandesh-input-action-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--sandesh-text-subtle);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.sandesh-input-action-btn:hover {
+  color: var(--sandesh-coral-accent);
+  background: rgba(255, 122, 89, 0.1);
+}
+
+.sandesh-btn-arrow {
+  margin-left: 6px;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.sandesh-btn-primary-3d:hover .sandesh-btn-arrow {
+  transform: translateX(4px);
 }
 
 .sandesh-form-row {
@@ -589,13 +656,26 @@
 .sandesh-logo-mark {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
-  background: var(--sandesh-coral-grad);
+  border-radius: 10px;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(255, 122, 89, 0.35);
+  filter: drop-shadow(0 3px 8px rgba(255, 110, 75, 0.38));
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.sandesh-logo-mark:hover {
+  transform: scale(1.05);
+}
+
+.sandesh-logo-mark-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  display: block;
 }
 
 .sandesh-brand-info {
@@ -972,13 +1052,47 @@
 
 .online-presence-dot {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 9px;
-  height: 9px;
+  bottom: 0px;
+  right: 0px;
+  width: 10.5px;
+  height: 10.5px;
   border-radius: 50%;
   background: #10b981;
-  border: 1.5px solid #fff;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1.5px rgba(16, 185, 129, 0.35), 0 1px 3px rgba(0, 0, 0, 0.18);
+  z-index: 3;
+}
+
+.topbar-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.online-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.3px;
+  line-height: 1.4;
+}
+
+.online-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 5px rgba(16, 185, 129, 0.8);
 }
 
 .chat-meta {
