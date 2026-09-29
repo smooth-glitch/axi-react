@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from 'styled-components';
-import { Inbox, Pencil, Plus } from 'lucide-react';
+import { Inbox, Pencil, Plus, Trash2 } from 'lucide-react';
 import Page from '../Page';
 import RecordsBrowser from '../../ui/RecordsBrowser';
 import { StructForm } from '../../ui/StructForm';
+import ConfirmSheet from '../../ui/ConfirmSheet';
 import { Alert, Button, EmptyState, IconButton, Skeleton, useToast } from '../../ui/kit';
-import { useWindowWidth } from '../../ui/hooks';
-import { getStruct, listRecords } from '../../core/api';
+import { useLiveChanges, useWindowWidth } from '../../ui/hooks';
+import { deleteRecord, deleteStruct, getStruct, isMine, listRecords } from '../../core/api';
 import { fullDate } from '../../core/format';
 import { useStructs } from '../StructsContext';
 
@@ -17,10 +18,12 @@ export function Records() {
   const navigate = useNavigate();
   const t = useTheme();
   const width = useWindowWidth();
+  const toast = useToast();
   const { refresh } = useStructs();
   const [struct, setStruct] = useState(null);
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(null);
+  const [confirmStruct, setConfirmStruct] = useState(false);
   const narrow = width < t.layout.tableBreakpoint;
 
   const load = useCallback(() => {
@@ -39,6 +42,26 @@ export function Records() {
     load();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Live: re-read quietly (no skeleton) when this struct or its records change anywhere; leave if it was deleted.
+  const leaveDeleted = useCallback(() => {
+    toast.show({ title: 'Struct deleted', message: 'This struct was deleted, so it was closed.' });
+    refresh();
+    navigate('/structs', { replace: true });
+  }, [navigate, refresh, toast]);
+  useLiveChanges((c) => {
+    const mine = c.name === id || c.tstruct === id;
+    if (c.event === 'tstructs_changed' && c.name === id && c.action === 'deleted') return leaveDeleted();
+    if (!(mine || c.event === 'resync')) return;
+    Promise.all([getStruct(id), listRecords(id)])
+      .then(([s, r]) => {
+        setStruct(s);
+        setRecords(r);
+      })
+      .catch((e) => {
+        if (e.status === 404) leaveDeleted();
+      });
+  });
+
   const add = () => navigate(`/structs/${id}/form`);
   const edit = () => navigate(`/structs/${id}/edit`);
   const total = records?.length ?? 0;
@@ -49,11 +72,20 @@ export function Records() {
       subtitle={records ? `${total} record${total === 1 ? '' : 's'}` : 'Loading…'}
       actions={
         <div style={{ display: 'flex', gap: t.spacing.sm }}>
-          {narrow ? (
-            <IconButton icon={Pencil} label="Edit definition" size={40} onPress={edit} testID="edit-definition" />
-          ) : (
-            <Button title="Edit definition" icon={Pencil} variant="secondary" onPress={edit} testID="edit-definition" />
-          )}
+          {struct && isMine(struct.createdBy) ? (
+            narrow ? (
+              <IconButton icon={Pencil} label="Edit definition" size={40} onPress={edit} testID="edit-definition" />
+            ) : (
+              <Button title="Edit definition" icon={Pencil} variant="secondary" onPress={edit} testID="edit-definition" />
+            )
+          ) : null}
+          {struct && isMine(struct.createdBy) ? (
+            narrow ? (
+              <IconButton icon={Trash2} label="Delete definition" size={40} onPress={() => setConfirmStruct(true)} testID="delete-definition" />
+            ) : (
+              <Button title="Delete definition" icon={Trash2} variant="secondary" onPress={() => setConfirmStruct(true)} testID="delete-definition" />
+            )
+          ) : null}
           <Button title="New record" icon={Plus} onPress={add} testID="add-record" />
         </div>
       }
@@ -68,8 +100,31 @@ export function Records() {
           ))}
         </div>
       ) : (
-        <RecordsBrowser struct={struct} records={records} onAdd={add} onEdit={(rec) => navigate(`/structs/${id}/record/${rec.id}`)} />
+        <RecordsBrowser
+          struct={struct}
+          records={records}
+          onAdd={add}
+          onEdit={(rec) => navigate(`/structs/${id}/record/${rec.id}`)}
+          canEdit={(rec) => isMine(rec.createdBy)}
+          onDelete={async (rec) => {
+            await deleteRecord(id, rec.id);
+            toast.show({ title: 'Record deleted', message: `Record #${rec.id} was removed.` });
+            load();
+          }}
+        />
       )}
+      <ConfirmSheet
+        visible={confirmStruct}
+        title={`Delete ${struct?.name || 'this struct'}?`}
+        message={`This deletes the struct definition. Records already submitted against it are kept by the server but can no longer be edited, and nobody will be able to add new ones.\n\nThis can't be undone.`}
+        onClose={() => setConfirmStruct(false)}
+        onConfirm={async () => {
+          await deleteStruct(id);
+          toast.show({ title: 'Struct deleted', message: `${struct?.name || 'The struct'} was removed.` });
+          await refresh();
+          navigate('/structs', { replace: true });
+        }}
+      />
     </Page>
   );
 }
@@ -106,10 +161,19 @@ export function EditRecord() {
   const toast = useToast();
   const { refresh } = useStructs();
   const [info, setInfo] = useState({});
+  const [confirm, setConfirm] = useState(false);
   const toRecords = () => navigate(`/structs/${id}/records`, { replace: true });
+  const mine = info.record && isMine(info.record.createdBy);
 
   return (
-    <Page title={info.struct ? `Edit ${info.struct.name} record` : 'Edit record'} subtitle={info.record ? `Created ${fullDate(info.record.createdAt)}` : undefined} onBack={toRecords} width="full">
+    <Page
+      title={info.struct ? `Edit ${info.struct.name} record` : 'Edit record'}
+      subtitle={info.record ? `Created ${fullDate(info.record.createdAt)}` : undefined}
+      onBack={toRecords}
+      width="full"
+      actions={mine ? <Button title="Delete record" icon={Trash2} variant="secondary" onPress={() => setConfirm(true)} testID="delete-record-page" /> : undefined}
+    >
+      {info.record && !mine ? <Alert tone="warning">Only the person who created this record can change or delete it, so saving will be refused.</Alert> : null}
       <StructForm
         struct={id}
         mode="edit"
@@ -119,6 +183,18 @@ export function EditRecord() {
         onSubmitted={(record, { struct: s }) => {
           refresh();
           toast.show({ title: 'Record updated', message: `${s.name} record saved.` });
+          toRecords();
+        }}
+      />
+      <ConfirmSheet
+        visible={confirm}
+        title="Delete this record?"
+        message="This record will be permanently deleted. This can't be undone."
+        onClose={() => setConfirm(false)}
+        onConfirm={async () => {
+          await deleteRecord(id, recordId);
+          refresh();
+          toast.show({ title: 'Record deleted', message: 'The record was removed.' });
           toRecords();
         }}
       />

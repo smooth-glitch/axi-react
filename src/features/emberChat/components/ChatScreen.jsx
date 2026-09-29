@@ -23,6 +23,9 @@ export default function ChatScreen({
   onDeleteChat,
   onActionCardClick,
   onOpenSmartPrompts,
+  options,
+  onOpenSubmissions,
+  onOpenTStructUser,
   onOpenAdminConsole,
   onOpenAiChat,
   typingUser,
@@ -110,6 +113,7 @@ export default function ChatScreen({
         onMenuClick={chat.id === "workspace" || chat.isWorkspace ? onToggleChatsSlider : onMenuClick}
         onMembersClick={onMembersClick}
         onOpenSmartPrompts={onOpenSmartPrompts}
+        onOpenTStructUser={onOpenTStructUser}
         onOpenAdminConsole={onOpenAdminConsole}
         onOpenAiChat={onOpenAiChat}
         onDeleteChat={onDeleteChat}
@@ -208,6 +212,8 @@ export default function ChatScreen({
             onSend={handleSend}
             onAttachFile={onAttachFile}
             onOpenSmartPromptModal={onOpenSmartPrompts}
+            options={options}
+            onOpenSubmissions={onOpenSubmissions}
             onTyping={onTyping}
             disabled={disabled}
             pushToast={pushToast}

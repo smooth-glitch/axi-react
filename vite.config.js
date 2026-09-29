@@ -98,14 +98,19 @@ const reactPlugin = react({ jsxRuntime: 'classic' })
 // bundle exposes createRoot directly on window.ReactDOM, so it maps to the
 // same global as 'react-dom'.
 const reactExternals = {
-  external: ['react', 'react-dom', 'react-dom/client'],
-  globals: { react: 'React', 'react-dom': 'ReactDOM', 'react-dom/client': 'ReactDOM' },
+  external: ['react', 'react-dom', 'react-dom/client', 'leaflet'],
+  globals: { react: 'React', 'react-dom': 'ReactDOM', 'react-dom/client': 'ReactDOM', leaflet: 'L' },
 }
 
 export default defineConfig(() => {
   const resolveAlias = {
     alias: {
       '@': resolve(__dirname, '.'),
+      // Embed the web/tstruct studio directly (same bundle, same port, shared localStorage)
+      '@tstruct/react': resolve(__dirname, 'web/src/embed/index.js'),
+      '@tstruct/ui': resolve(__dirname, 'web/src/ui'),
+      '@tstruct/studio': resolve(__dirname, 'web/src/studio'),
+      '@tstruct/core': resolve(__dirname, 'web/src/core'),
     },
   }
 

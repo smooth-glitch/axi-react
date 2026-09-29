@@ -307,6 +307,11 @@ class SandeshSocketService {
   }
 
   disconnect() {
+    this.pendingSd.forEach(({ resolve, timer }) => {
+      clearTimeout(timer);
+      resolve({ type: 'sd', ok: false, error: { code: 'disconnected', message: 'Disconnected from the Sandesh server.' } });
+    });
+    this.pendingSd.clear();
     this.isManualDisconnect = true;
     this.connEpoch += 1;
     if (this.reconnectTimer) {

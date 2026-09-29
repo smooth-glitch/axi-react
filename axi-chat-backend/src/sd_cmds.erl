@@ -157,7 +157,10 @@ user_actions() ->
      <<"options.list">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
-     <<"tstruct.user.delete">>, <<"tstruct.user.submit">>].
+     <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
+     <<"tstruct.user.open">>,
+     <<"cfg.lookups">>,
+     <<"option.user.list">>, <<"option.user.save">>, <<"option.user.delete">>].
 
 run(Action, Args, Ctx) ->
     Level = access(Action),
@@ -393,7 +396,27 @@ do(<<"notifications.read">>, Args, #{user := User}) ->
         _ -> {error, invalid, <<"Send {\"ids\":[...]}, {\"category\":\"personal\"} or {\"all\":true}.">>}
     end;
 
-%% ---- options / forms -----------------------------------------------------------------------------------------------
+%% ---- org config lookups (user-level, name-only) -----------------------------------------------
+%% Used by the Option Builder's "Applicable to" step to populate dropdowns for
+%% branches, departments, designations, affiliates, and categories.
+%% Returns only names (+ affiliate category/branch structure for affiliates)
+%% -- no admin-only fields (city, pin, descriptions). Same data sd_org:public/0
+%% uses for self-registration forms, just shaped for dropdown consumption.
+do(<<"cfg.lookups">>, _Args, _Ctx) ->
+    Names = fun(Kind) ->
+        [maps:get(<<"name">>, I) || I <- sd_org:active(Kind, all)]
+    end,
+    Affiliates = [#{<<"name">> => maps:get(<<"name">>, A),
+                    <<"category">> => maps:get(<<"category">>, A, null)}
+                  || A <- sd_org:list(affiliates)],
+    Categories = Names(categories),
+    {ok, #{<<"branches">>     => Names(branches),
+           <<"departments">>  => Names(departments),
+           <<"designations">> => Names(designations),
+           <<"categories">>   => Categories,
+           <<"affiliates">>   => Affiliates}};
+
+%% ---- options / forms -------------------------------------------------------------------------
 do(<<"options.list">>, _Args, #{user := User}) ->
     {ok, #{<<"options">> => sd_config:options_for(User)}};
 do(<<"tstruct.get">>, Args, #{user := User}) ->
@@ -406,7 +429,7 @@ do(<<"tstruct.get">>, Args, #{user := User}) ->
 do(<<"tstruct.submit">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(Name) ->
         case sd_config:submit(User, Name, maps:get(<<"values">>, Args, #{}), submit_opts(Args)) of
-            {ok, Sub} -> {ok, #{<<"submission">> => Sub}};
+            {ok, Sub} -> announce_submission(<<"created">>, Sub), {ok, #{<<"submission">> => Sub}};
             Err -> Err
         end
     end);
@@ -416,7 +439,7 @@ do(<<"submissions.update">>, Args, #{user := User}) ->
     case maps:get(<<"id">>, Args, undefined) of
         Id when is_integer(Id) ->
             case sd_config:update_submission(User, Id, Args) of
-                {ok, Sub} -> {ok, #{<<"submission">> => Sub}};
+                {ok, Sub} -> announce_submission(<<"updated">>, Sub), {ok, #{<<"submission">> => Sub}};
                 Err -> Err
             end;
         _ -> {error, invalid, <<"id (number) is required.">>}
@@ -424,8 +447,11 @@ do(<<"submissions.update">>, Args, #{user := User}) ->
 do(<<"submissions.delete">>, Args, #{user := User}) ->
     case maps:get(<<"id">>, Args, undefined) of
         Id when is_integer(Id) ->
+            %% read it first: once it is gone we can't tell who else was looking at it
+            Before = sd_db:hget_json("sd:subs", integer_to_list(Id)),
             case sd_config:delete_submission(User, Id) of
-                ok -> {ok, #{<<"deleted">> => true}};
+                ok -> case Before of undefined -> ok; _ -> announce_submission(<<"deleted">>, Before) end,
+                      {ok, #{<<"deleted">> => true}};
                 Err -> Err
             end;
         _ -> {error, invalid, <<"id (number) is required.">>}
@@ -441,16 +467,84 @@ do(<<"tstruct.user.get">>, Args, #{user := _User}) ->
             D -> {ok, #{<<"tstruct">> => D}}
         end
     end);
+%% Open a user-created tstruct in the lite viewer: returns the definition
+%% together with the caller's own submissions against it, so the frontend
+%% can render the viewer and the record list in a single round-trip.
+%% Looks up user-created structs first; falls back to admin-managed ones
+%% (gated by the normal tstruct_for_user/2 options check) so one command
+%% covers both collections.
+do(<<"tstruct.user.open">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        %% Try user-created collection first; fall back to admin-managed.
+        {Def, Scope} = case sd_config:get_user_tstruct(N) of
+            D when is_map(D) -> {D, <<"user">>};
+            undefined ->
+                case sd_config:tstruct_for_user(User, N) of
+                    {ok, D2} -> {D2, <<"admin">>};
+                    _ -> {undefined, undefined}
+                end
+        end,
+        case Def of
+            undefined -> {error, not_found, <<"No such structure, or it is not available to you.">>};
+            _ ->
+                %% Submissions scoped to this user for this tstruct.
+                MySubs = sd_config:list_submissions(User, #{<<"tstruct">> => N}),
+                OwnSubs = [S || S <- MySubs,
+                                maps:get(<<"by">>, S) =:= maps:get(<<"username">>, User)],
+                %% editRecordId: passed by #tstruct-edit so the frontend knows which
+                %% record to pre-select/pre-fill in the edit form. Passed through
+                %% as-is (integer or null) -- the server does not validate it here;
+                %% the actual update is a separate submissions.update call with full
+                %% values once the user confirms the edit.
+                EditId = case maps:get(<<"editRecordId">>, Args, undefined) of
+                    V when is_integer(V) -> V;
+                    _ -> null
+                end,
+                Base = #{<<"tstruct">> => Def, <<"scope">> => Scope,
+                         <<"submissions">> => OwnSubs},
+                Resp = case EditId of
+                    null -> Base;
+                    _    -> Base#{<<"editRecordId">> => EditId}
+                end,
+                {ok, Resp}
+        end
+    end);
 do(<<"tstruct.user.save">>, Args, #{user := User}) ->
-    case sd_config:save_user_tstruct(User, Args) of {ok, D} -> {ok, #{<<"tstruct">> => D}}; Err -> Err end;
+    case sd_config:save_user_tstruct(User, Args) of
+        {ok, D} -> announce_struct(<<"user">>, <<"created">>, D, User), {ok, #{<<"tstruct">> => D}};
+        Err -> Err
+    end;
+do(<<"tstruct.user.update">>, Args, #{user := User}) ->
+    case sd_config:update_user_tstruct(User, Args) of
+        {ok, D} -> announce_struct(<<"user">>, <<"updated">>, D, User), {ok, #{<<"tstruct">> => D}};
+        Err -> Err
+    end;
+%% ---- options the caller made (any user), see sd_config:save_user_option/2 -------------------------------------------
+do(<<"option.user.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"options">> => sd_config:list_user_options(User), <<"types">> => sd_config:option_types()}};
+do(<<"option.user.save">>, Args, #{user := User}) ->
+    case sd_config:save_user_option(User, Args) of
+        {ok, O} -> announce_option(<<"saved">>, maps:get(<<"id">>, O), User), {ok, #{<<"option">> => O}};
+        Err -> Err
+    end;
+do(<<"option.user.delete">>, Args, #{user := User}) ->
+    with_bin(<<"id">>, Args, fun(Id) ->
+        case sd_config:delete_user_option(User, Id) of
+            ok -> announce_option(<<"deleted">>, Id, User), {ok, #{<<"deleted">> => true}};
+            Err -> Err
+        end
+    end);
 do(<<"tstruct.user.delete">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(N) ->
-        case sd_config:delete_user_tstruct(User, N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+        case sd_config:delete_user_tstruct(User, N) of
+            ok -> announce_struct(<<"user">>, <<"deleted">>, #{<<"name">> => N}, User), {ok, #{<<"deleted">> => true}};
+            Err -> Err
+        end
     end);
 do(<<"tstruct.user.submit">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(Name) ->
         case sd_config:submit_user_tstruct(User, Name, maps:get(<<"values">>, Args, #{}), submit_opts(Args)) of
-            {ok, Sub} -> {ok, #{<<"submission">> => Sub}};
+            {ok, Sub} -> announce_submission(<<"created">>, Sub), {ok, #{<<"submission">> => Sub}};
             Err -> Err
         end
     end);
@@ -563,19 +657,32 @@ do(<<"admin.tstruct.get">>, Args, _Ctx) ->
             D -> {ok, #{<<"tstruct">> => D}}
         end
     end);
-do(<<"admin.tstruct.save">>, Args, _Ctx) ->
-    case sd_config:save_tstruct(Args) of {ok, D} -> {ok, #{<<"tstruct">> => D}}; Err -> Err end;
-do(<<"admin.tstruct.delete">>, Args, _Ctx) ->
+do(<<"admin.tstruct.save">>, Args, Ctx) ->
+    case sd_config:save_tstruct(Args) of
+        {ok, D} -> announce_struct(<<"admin">>, <<"saved">>, D, maps:get(user, Ctx, #{})), {ok, #{<<"tstruct">> => D}};
+        Err -> Err
+    end;
+do(<<"admin.tstruct.delete">>, Args, Ctx) ->
     with_bin(<<"name">>, Args, fun(N) ->
-        case sd_config:delete_tstruct(N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+        case sd_config:delete_tstruct(N) of
+            ok -> announce_struct(<<"admin">>, <<"deleted">>, #{<<"name">> => N}, maps:get(user, Ctx, #{})),
+                  {ok, #{<<"deleted">> => true}};
+            Err -> Err
+        end
     end);
 do(<<"admin.option.list">>, _Args, _Ctx) ->
     {ok, #{<<"options">> => sd_config:list_options(), <<"types">> => sd_config:option_types()}};
-do(<<"admin.option.save">>, Args, _Ctx) ->
-    case sd_config:save_option(Args) of {ok, O} -> {ok, #{<<"option">> => O}}; Err -> Err end;
-do(<<"admin.option.delete">>, Args, _Ctx) ->
+do(<<"admin.option.save">>, Args, Ctx) ->
+    case sd_config:save_option(Args) of
+        {ok, O} -> announce_option(<<"saved">>, maps:get(<<"id">>, O), maps:get(user, Ctx, #{})), {ok, #{<<"option">> => O}};
+        Err -> Err
+    end;
+do(<<"admin.option.delete">>, Args, Ctx) ->
     with_bin(<<"id">>, Args, fun(Id) ->
-        case sd_config:delete_option(Id) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+        case sd_config:delete_option(Id) of
+            ok -> announce_option(<<"deleted">>, Id, maps:get(user, Ctx, #{})), {ok, #{<<"deleted">> => true}};
+            Err -> Err
+        end
     end);
 do(<<"admin.appconn.list">>, _Args, _Ctx) -> {ok, #{<<"connections">> => sd_config:list_appconns()}};
 do(<<"admin.appconn.save">>, Args, _Ctx) ->
@@ -599,6 +706,45 @@ action_atom(<<"accept">>) -> accept;
 action_atom(<<"reject">>) -> reject;
 action_atom(<<"ignore">>) -> ignore;
 action_atom(_) -> error.
+
+%% ---- live "something changed" hints ----------------------------------------------------------------------------------
+%% The lite-tstruct screens (studio, chat prompt bar, admin console, submissions) re-read what they show when one of
+%% these arrives, so a change made anywhere appears everywhere without a refresh. They carry no data beyond what
+%% changed -- the client fetches the current state itself (which also keeps "applicable to" and access rules in force).
+%%   tstructs_changed    {scope: user|admin, name, action: created|updated|saved|deleted, by}   -> everyone online
+%%   options_changed     {id, action: saved|deleted, by}                                        -> everyone online
+%%   submissions_changed {id, tstruct, action: created|updated|deleted, by}                     -> submitter, host, admins
+%% A failure to notify must never fail the change itself.
+announce_struct(Scope, Action, Def, User) ->
+    safely_announce(fun() ->
+        sd_notify:broadcast_event(<<"tstructs_changed">>,
+                                  #{<<"scope">> => Scope, <<"name">> => maps:get(<<"name">>, Def), <<"action">> => Action,
+                                    <<"by">> => maps:get(<<"username">>, User, null)})
+    end).
+
+announce_option(Action, Id, User) ->
+    safely_announce(fun() ->
+        sd_notify:broadcast_event(<<"options_changed">>,
+                                  #{<<"id">> => Id, <<"action">> => Action, <<"by">> => maps:get(<<"username">>, User, null)})
+    end).
+
+announce_submission(Action, Sub) ->
+    safely_announce(fun() ->
+        Admins = [maps:get(<<"username">>, A) || A <- sd_users:admins()],
+        sd_notify:push_event_to([maps:get(<<"by">>, Sub, null), maps:get(<<"host">>, Sub, null) | Admins],
+                                <<"submissions_changed">>,
+                                #{<<"id">> => maps:get(<<"id">>, Sub), <<"tstruct">> => maps:get(<<"tstruct">>, Sub, null),
+                                  <<"action">> => Action, <<"by">> => maps:get(<<"by">>, Sub, null)})
+    end).
+
+safely_announce(Fun) ->
+    %% Fire in a separate process so the caller's WS reply is never held up
+    %% by the broadcast -- other clients get the event asynchronously, but
+    %% the originator already has their {ok, ...} reply on the wire.
+    spawn(fun() ->
+        try Fun() catch C:R -> ?LOG_WARNING("live change notice failed: ~p:~p", [C, R]) end
+    end),
+    ok.
 
 with_bin(Key, Args, Fun) ->
     case maps:get(Key, Args, undefined) of

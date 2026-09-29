@@ -14,7 +14,7 @@
 %%% SANDESH_DEV_OTP=1 additionally echoes the OTP in the API response so a
 %%% frontend developer (or a test) can finish a login without reading logs.
 -module(sd_notify).
--export([otp_code/0, deliver/3, dev_echo/0, push/2, push_event/3, disconnect/1]).
+-export([otp_code/0, deliver/3, dev_echo/0, push/2, push_event/3, push_event_to/3, broadcast_event/2, disconnect/1, replaced/1]).
 -include_lib("kernel/include/logger.hrl").
 
 %% The code to issue. `fixed` mode makes it predictable for demos.
@@ -102,6 +102,25 @@ push(Username, JsonBin) when is_binary(JsonBin) ->
 push_event(Username, Event, Data) ->
     push(Username, sd_util:jenc(#{<<"type">> => <<"sd_event">>,
                                   <<"event">> => sd_util:b(Event), <<"data">> => Data})).
+
+%% The same event to several users (each at most once), and to everyone online. Used for
+%% "something you may be looking at changed" hints: the client re-reads what it shows.
+push_event_to(Usernames, Event, Data) ->
+    lists:foreach(fun(U) -> push_event(U, Event, Data) end,
+                  lists:usort([sd_util:s(U) || U <- Usernames, is_binary(U) orelse is_list(U)])),
+    ok.
+
+broadcast_event(Event, Data) ->
+    Online = try chat_room:list_users() catch _:_ -> [] end,
+    push_event_to(Online, Event, Data).
+
+%% Ends the user's live connection because they signed in somewhere else
+%% (one active session per account). The client gets `session_replaced`.
+replaced(Username) ->
+    case chat_room:get_pid(sd_util:s(Username)) of
+        {ok, Pid} -> Pid ! sd_replaced, ok;
+        error -> offline
+    end.
 
 %% Ends the user's live connection (used when an account is deactivated).
 disconnect(Username) ->

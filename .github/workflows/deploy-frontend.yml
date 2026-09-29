@@ -24,7 +24,14 @@ jobs:
   deploy:
     runs-on: [self-hosted, axi-vm]
     steps:
+      # clean: false -- this runner's workspace is shared with the backend deploy
+      # (deploy-backend.yml builds axi-chat-backend/_build here and the service loads
+      # its modules from it). The default checkout runs `git clean -ffdx`, which
+      # deletes that ignored build directory; the backend then crashed with `undef`
+      # the first time it needed a module it had not loaded yet (e.g. on login).
       - uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Install dependencies
         run: npm ci

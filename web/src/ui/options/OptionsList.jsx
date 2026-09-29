@@ -6,6 +6,7 @@ import { Alert, Badge, Button, EmptyState, HoverCard, IconButton, IconTile, Inpu
 import { iconFor } from '../icons';
 import { Ensure } from '../Provider';
 import { deleteOption, listOptions } from '../../core/api';
+import { useLiveChanges } from '../hooks';
 import { applicableSummary, optionType } from '../../core/options';
 import { timeAgo } from '../../core/format';
 
@@ -32,6 +33,11 @@ function OptionsListInner({ onNew, onEdit, onRun, onDeleted, onLoaded, refreshKe
   useEffect(() => {
     load();
   }, [load, refreshKey]);
+
+  // an option made, changed or removed anywhere (or a struct it opens) shows up here at once
+  useLiveChanges((c) => {
+    if (c.event === 'options_changed' || c.event === 'tstructs_changed' || c.event === 'resync') load();
+  });
 
   const shown = useMemo(() => (options || []).filter((o) => o.caption.toLowerCase().includes(q.trim().toLowerCase())), [options, q]);
 
@@ -85,16 +91,16 @@ function OptionsListInner({ onNew, onEdit, onRun, onDeleted, onLoaded, refreshKe
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: t.spacing.xs, alignItems: 'center' }}>
                         <Badge tone={ty.functional ? 'primary' : 'neutral'}>{ty.label}</Badge>
                         {ty.functional ? null : <Badge tone="warning">Config only</Badge>}
-                        <Badge>{`For: ${applicableSummary(o.applicableTo)}`}</Badge>
+                        {o.applicableTo ? <Badge>{`For: ${applicableSummary(o.applicableTo)}`}</Badge> : <Badge>Shared with you</Badge>}
                         <Text $variant="caption" $color="textFaint" $inline>
-                          {o.modifiedAt ? `edited ${timeAgo(o.modifiedAt)}` : `created ${timeAgo(o.createdAt)}`}
+                          {o.modifiedAt ? `edited ${timeAgo(o.modifiedAt)}` : o.createdAt ? `created ${timeAgo(o.createdAt)}` : ''}
                         </Text>
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: t.spacing.xs, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                       {onRun ? <Button title="Run" size="sm" icon={Play} onPress={() => onRun(o)} testID={`run-${o.caption}`} /> : null}
-                      {onEdit ? <IconButton icon={Pencil} label={`Edit ${o.caption}`} onPress={() => onEdit(o)} testID={`edit-option-${o.caption}`} /> : null}
-                      <IconButton icon={Trash2} label={`Delete ${o.caption}`} color={t.danger} hoverBg={t.dangerSoft} onPress={() => setConfirm(o)} testID={`delete-option-${o.caption}`} />
+                      {onEdit && o.canManage !== false ? <IconButton icon={Pencil} label={`Edit ${o.caption}`} onPress={() => onEdit(o)} testID={`edit-option-${o.caption}`} /> : null}
+                      {o.canManage !== false ? <IconButton icon={Trash2} label={`Delete ${o.caption}`} color={t.danger} hoverBg={t.dangerSoft} onPress={() => setConfirm(o)} testID={`delete-option-${o.caption}`} /> : null}
                     </div>
                   </div>
                 </HoverCard>

@@ -1,9 +1,27 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { Info, Layers, X } from 'lucide-react';
+import { Info, Layers, Search, X } from 'lucide-react';
 import { Badge, Card, FieldLabel, Text } from '../kit';
+import { listCfgLookups } from '../../core/api';
 import { BLOCKS, KNOWN_CATEGORIES, visibleBlocks } from '../../core/options';
+
+// Branches/departments/designations/affiliates come from the org's own config (Redis-backed on the
+// server), fetched once via cfg.lookups. Best-effort: an empty/failed fetch just shows "Nothing
+// configured yet" instead of blocking the form.
+function useCfgLookups() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    listCfgLookups()
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setData({ branches: [], departments: [], designations: [], categories: [], affiliates: [] }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return data;
+}
 
 const Seg = styled.div`
   display: inline-flex;
@@ -103,6 +121,84 @@ function TagInput({ values, onChange, placeholder, testID }) {
   );
 }
 
+const SearchBox = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${(p) => p.theme.spacing.sm}px;
+  min-height: ${(p) => p.theme.layout.controlHeight}px;
+  padding: 0 ${(p) => p.theme.spacing.sm}px;
+  border: 1px solid ${(p) => p.theme.border};
+  border-radius: ${(p) => p.theme.radius.lg}px;
+  background: ${(p) => p.theme.surface};
+  margin-bottom: ${(p) => p.theme.spacing.sm}px;
+  &:focus-within { border-color: ${(p) => p.theme.primary}; box-shadow: ${(p) => p.theme.shadow.focus(p.theme.primary)}; }
+  input { flex: 1; min-width: 0; border: 0; outline: 0; box-shadow: none; background: transparent; padding: ${(p) => p.theme.spacing.xs}px 0; color: ${(p) => p.theme.text}; font-size: ${(p) => p.theme.type.body.size}px; }
+`;
+
+const PILL_SEARCH_AT = 8; // show a filter box from this many options
+
+// Dropdown-backed multi-select (branches/departments/designations/affiliates from cfg.lookups):
+// toggle pills, with a filter box once the list is long enough to need one.
+function MultiPick({ testID, options, selected, onChange, loading }) {
+  const t = useTheme();
+  const [q, setQ] = useState('');
+  const filtered = useMemo(() => (q.trim() ? options.filter((o) => o.toLowerCase().includes(q.trim().toLowerCase())) : options), [options, q]);
+
+  if (loading) {
+    return (
+      <Text $variant="small" $color="textMuted">
+        Loading…
+      </Text>
+    );
+  }
+  if (!options.length) {
+    return (
+      <Text $variant="small" $color="textMuted">
+        Nothing configured yet — an administrator can add these under Admin Console.
+      </Text>
+    );
+  }
+  return (
+    <div>
+      {options.length >= PILL_SEARCH_AT ? (
+        <SearchBox>
+          <Search size={14} color={t.textFaint} />
+          <input
+            data-testid={`${testID}-filter`}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Filter…"
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+          />
+        </SearchBox>
+      ) : null}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: t.spacing.sm }}>
+        {filtered.map((o) => (
+          <Toggle
+            key={o}
+            type="button"
+            data-testid={`${testID}-${o}`}
+            aria-pressed={selected.includes(o)}
+            $on={selected.includes(o)}
+            onClick={() => onChange(selected.includes(o) ? selected.filter((x) => x !== o) : [...selected, o])}
+          >
+            {o}
+          </Toggle>
+        ))}
+        {filtered.length === 0 ? (
+          <Text $variant="small" $color="textMuted">
+            No matches.
+          </Text>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 const Toggle = styled.button`
   padding: ${(p) => p.theme.spacing.xs + 2}px ${(p) => p.theme.spacing.md}px;
   border-radius: ${(p) => p.theme.radius.pill}px;
@@ -118,8 +214,8 @@ const Toggle = styled.button`
 
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-// A field that is "All" or a chosen list.
-function ScopeField({ id, label, value, onChange, placeholder }) {
+// A field that is "All" or a chosen list, picked from the org's own config (cfg.lookups).
+function ScopeField({ id, label, value, onChange, options, loading }) {
   const t = useTheme();
   return (
     <div>
@@ -127,7 +223,7 @@ function ScopeField({ id, label, value, onChange, placeholder }) {
       <Segmented id={id} value={value.scope} onChange={(scope) => onChange({ ...value, scope })} />
       {value.scope === 'selected' ? (
         <div style={{ marginTop: t.spacing.sm }}>
-          <TagInput testID={`${id}-input`} values={value.selected} onChange={(selected) => onChange({ ...value, selected })} placeholder={placeholder} />
+          <MultiPick testID={`${id}-pick`} options={options} loading={loading} selected={value.selected} onChange={(selected) => onChange({ ...value, selected })} />
         </div>
       ) : null}
     </div>
@@ -141,6 +237,7 @@ function ScopeField({ id, label, value, onChange, placeholder }) {
  */
 export default function ApplicableTo({ value, onChange }) {
   const t = useTheme();
+  const lookups = useCfgLookups();
   const uc = value.userCategories;
   const blocks = visibleBlocks(value);
   const setUc = (next) => onChange({ ...value, userCategories: next });
@@ -187,7 +284,8 @@ export default function ApplicableTo({ value, onChange }) {
                   key={f.id}
                   id={`scope-${b.id}-${f.id}`}
                   label={f.label}
-                  placeholder={f.placeholder}
+                  options={lookups ? lookups[f.id] || [] : []}
+                  loading={!lookups}
                   value={value[b.id][f.id]}
                   onChange={(next) => onChange({ ...value, [b.id]: { ...value[b.id], [f.id]: next } })}
                 />

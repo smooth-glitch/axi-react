@@ -9,6 +9,7 @@ export const formatValue = (v) => {
 export const hasValue = (v) => v !== undefined && v !== null && v !== '';
 
 export const timeAgo = (iso) => {
+  if (!iso) return ''; // unknown date (records from before dates were kept) -- not 1 Jan 1970
   const m = Math.round((Date.now() - new Date(iso)) / 60000);
   if (m < 1) return 'just now';
   if (m < 60) return `${m} min ago`;
@@ -16,7 +17,7 @@ export const timeAgo = (iso) => {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-export const fullDate = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+export const fullDate = (iso) => !iso ? '' : new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 // 1536 -> "1.5 KB"
 export const formatBytes = (n) => {

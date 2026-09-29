@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import ContentPanel from "./ContentPanel.jsx";
 import CommandMenuPopup from "./CommandMenuPopup.jsx";
-import { smartPromptsByCategory, quickReactions } from "../data/sampleData.js";
+import { quickReactions } from "../data/sampleData.js";
 import {
   DEFAULT_COMMANDS_CATALOG,
   filterCatalogCommands,
@@ -24,6 +24,8 @@ export default function Composer({
   disabled = false,
   pushToast,
   userCategory = "employee",
+  options = [],
+  onOpenSubmissions,
   currentUser = null,
   onlineUsers = [],
   availableUsers = [],
@@ -59,7 +61,7 @@ export default function Composer({
   const audioChunksRef = useRef([]);
 
   const hasText = text.trim().length > 0;
-  const activePrompts = smartPromptsByCategory[userCategory] || smartPromptsByCategory.employee;
+  const activePrompts = options;
 
   // Sync initialText if supplied externally (e.g. from #help modal)
   useEffect(() => {
@@ -510,6 +512,47 @@ export default function Composer({
 
   return (
     <div className={`sandesh-composer-wrapper ${disabled ? "composer-disabled" : ""}`}>
+      {/* 1. Smart Prompts Quick Bar */}
+      <div className="sandesh-smart-prompts-bar">
+        <span className="prompts-label">
+          <span className="material-icons prompt-icon">bolt</span> Smart Prompts:
+        </span>
+        <div className="prompts-chips-scroll">
+          {activePrompts.length === 0 && (
+            <span className="section-note" style={{ padding: "0 8px" }}>
+              No options set up for you yet.{" "}
+              {currentUser?.isAdmin
+                ? "Add forms and options under Admin Console → Forms / Options."
+                : "Ask an administrator, or make your own under Org Structs → Options."}
+            </span>
+          )}
+          {activePrompts.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="sandesh-prompt-chip-3d"
+              onClick={() => !disabled && onOpenSmartPromptModal?.(p)}
+              title={p.type === "data_input" ? p.caption : `${p.caption} (${p.type})`}
+              disabled={disabled}
+            >
+              <span className="material-icons prompt-chip-icon">
+                {p.type === "data_input" ? "edit_note" : p.type === "download" ? "download" : p.type === "upload" ? "upload" : p.type === "pay" ? "payments" : "widgets"}
+              </span>
+              <span>{p.caption}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="sandesh-prompt-chip-3d"
+            onClick={() => !disabled && onOpenSubmissions?.()}
+            title="Your submissions, and those from users you host"
+            disabled={disabled}
+          >
+            <span className="material-icons prompt-chip-icon">history</span>
+            <span>My Submissions</span>
+          </button>
+        </div>
+      </div>
       {/* 2. Replying-to Banner */}
       {replyingTo && (
         <div className="sandesh-reply-banner-3d">

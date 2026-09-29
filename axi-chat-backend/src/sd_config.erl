@@ -25,8 +25,9 @@
          list_appconns/0, save_appconn/1, delete_appconn/1,
          tstruct_for_user/2, submit/4, list_submissions/2,
          update_submission/3, delete_submission/2,
-         list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, delete_user_tstruct/2,
-         submit_user_tstruct/4, applies/2]).
+         list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
+         delete_user_tstruct/2, submit_user_tstruct/4, applies/2,
+         list_user_options/1, save_user_option/2, delete_user_option/2, option_targets_file/2]).
 
 -define(TSTRUCTS, "sd:tstructs").
 -define(USER_TSTRUCTS, "sd:tstructs:user").
@@ -34,7 +35,7 @@
 -define(APPCONNS, "sd:appconns").
 -define(FIELD_TYPES, [<<"text">>, <<"date">>, <<"time">>, <<"wholenumber">>, <<"number">>,
                       <<"email">>, <<"url">>, <<"mobile">>, <<"location">>, <<"list">>,
-                      <<"selection">>, <<"fill">>]).
+                      <<"selection">>, <<"fill">>, <<"barcode">>]).
 -define(OPTION_TYPES, [<<"data_input">>, <<"get_data">>, <<"download">>, <<"upload">>, <<"pay">>,
                        <<"axpert_tstruct">>, <<"axpert_smartview">>, <<"axpert_iview">>,
                        <<"axpert_page">>]).
@@ -134,7 +135,12 @@ field_extras(<<"text">>, F, _) ->
     {ok, #{<<"multiline">> => sd_util:is_true(sd_util:get(<<"multiline">>, F, false)),
            <<"rich">> => sd_util:is_true(sd_util:get(<<"rich">>, F, false))}};
 field_extras(<<"mobile">>, F, _) ->
-    {ok, #{<<"withCountryCode">> => sd_util:is_true(sd_util:get(<<"withCountryCode">>, F, false))}};
+    %% countryPicker / defaultCountry are display hints kept for the studio's editor; only
+    %% withCountryCode changes validation.
+    {ok, maps:filter(fun(_, V) -> V =/= undefined end,
+                     #{<<"withCountryCode">> => sd_util:is_true(sd_util:get(<<"withCountryCode">>, F, false)),
+                       <<"countryPicker">> => sd_util:is_true(sd_util:get(<<"countryPicker">>, F, false)),
+                       <<"defaultCountry">> => opt_bin(F, <<"defaultCountry">>)})};
 field_extras(<<"list">>, F, Name) ->
     case sd_util:get(<<"options">>, F) of
         L when is_list(L), L =/= [] ->
@@ -148,7 +154,12 @@ field_extras(<<"list">>, F, Name) ->
 field_extras(<<"selection">>, F, _) ->
     {ok, #{<<"api">> => sd_util:get(<<"api">>, F, null)}};
 field_extras(<<"fill">>, F, _) ->
-    {ok, #{<<"fillFrom">> => sd_util:get(<<"fillFrom">>, F, null)}};
+    {ok, #{<<"fillFrom">> => sd_util:get(<<"fillFrom">>, F, null),
+           <<"sourceProp">> => sd_util:get(<<"sourceProp">>, F, null)}};
+%% barcode/QR: scanned value is a plain string; no required extras for v1.
+%% (A future `formats` list could restrict accepted symbologies, e.g.
+%%  ["qr","ean13","code128"], but there's no concrete need to restrict yet.)
+field_extras(<<"barcode">>, _F, _) -> {ok, #{}};
 field_extras(_, _, _) -> {ok, #{}}.
 
 validate_sections(L, _FieldNames) when not is_list(L) ->
@@ -205,7 +216,20 @@ list_options() ->
                end,
                [O || {_, O} <- sd_db:hgetall_json(?OPTIONS), is_map(O)]).
 
-save_option(Raw) when is_map(Raw) ->
+%% Admin console path: an administrator saves any option; a new one has no owner.
+save_option(Raw) -> do_save_option(Raw, undefined, null).
+
+%% Any signed-in user may make options of their own (owner = them). They can only
+%% edit/delete their own; an administrator can manage all of them.
+save_user_option(User, Raw) when is_map(Raw) ->
+    Id = case sd_util:get(<<"id">>, Raw) of
+             V when is_binary(V), V =/= <<>> -> V;
+             _ -> <<"o", (integer_to_binary(sd_db:incr("sd:seq:option")))/binary>>
+         end,
+    do_save_option(Raw#{<<"id">> => Id}, User, maps:get(<<"username">>, User));
+save_user_option(_, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
+
+do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
     Id = sd_util:get(<<"id">>, Raw),
     Type = sd_util:get(<<"type">>, Raw),
     Caption = text(sd_util:get(<<"caption">>, Raw), <<>>),
@@ -215,37 +239,90 @@ save_option(Raw) when is_map(Raw) ->
         {_, false, _} -> {error, invalid, <<"type must be one of ", (join(?OPTION_TYPES))/binary>>};
         {_, _, <<>>} -> {error, invalid, <<"caption is required.">>};
         _ ->
-            Target = text(sd_util:get(<<"target">>, Raw), <<>>),
-            case check_target(Type, Target) of
+            Existing = sd_db:hget_json(?OPTIONS, sd_util:s(string:lowercase(Id))),
+            Actor = case User of
+                        undefined -> admin;
+                        _ -> case sd_users:is_admin(User) of true -> admin; false -> {user, User} end
+                    end,
+            case may_change_option(Existing, Actor) of
+                {error, _, _} = Err -> Err;
                 ok ->
-                    case validate_applicable(sd_util:get(<<"applicable">>, Raw, #{})) of
-                        {ok, Ap} ->
-                            Opt = #{<<"id">> => Id, <<"caption">> => Caption, <<"type">> => Type,
-                                    <<"target">> => Target,
-                                    <<"display">> => display(Type, sd_util:get(<<"display">>, Raw)),
-                                    <<"applicable">> => Ap,
-                                    <<"active">> => sd_util:get(<<"active">>, Raw, true) =/= false,
-                                    <<"order">> => case sd_util:get(<<"order">>, Raw, 0) of
-                                                       O when is_integer(O) -> O;
-                                                       _ -> 0
-                                                   end},
-                            sd_db:hset_json(?OPTIONS, sd_util:s(string:lowercase(Id)), Opt),
-                            {ok, Opt};
+                    Owner = case Existing of
+                                #{<<"owner">> := O} -> O;
+                                _ -> OwnerForNew
+                            end,
+                    Target = text(sd_util:get(<<"target">>, Raw), <<>>),
+                    case check_target(Type, Target, Actor) of
+                        {ok, Scope} ->
+                            case validate_applicable(sd_util:get(<<"applicable">>, Raw, #{})) of
+                                {ok, Ap} ->
+                                    Opt = #{<<"id">> => Id, <<"caption">> => Caption, <<"type">> => Type,
+                                            <<"target">> => Target, <<"targetScope">> => Scope,
+                                            <<"owner">> => Owner,
+                                            <<"createdTs">> => case Existing of
+                                                                   #{<<"createdTs">> := C} when is_integer(C) -> C;
+                                                                   _ -> sd_util:now_ms()
+                                                               end,
+                                            <<"modifiedTs">> => case Existing of undefined -> null; _ -> sd_util:now_ms() end,
+                                            <<"display">> => display(Type, sd_util:get(<<"display">>, Raw)),
+                                            <<"applicable">> => Ap,
+                                            <<"active">> => sd_util:get(<<"active">>, Raw, true) =/= false,
+                                            <<"order">> => case sd_util:get(<<"order">>, Raw, 0) of
+                                                               Ord when is_integer(Ord) -> Ord;
+                                                               _ -> 0
+                                                           end},
+                                    sd_db:hset_json(?OPTIONS, sd_util:s(string:lowercase(Id)), Opt),
+                                    {ok, Opt};
+                                Err -> Err
+                            end;
                         Err -> Err
-                    end;
-                Err -> Err
+                    end
             end
     end;
-save_option(_) -> {error, bad_request, <<"Expected a JSON object.">>}.
+do_save_option(_, _, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
 
-check_target(<<"data_input">>, Target) ->
-    case get_tstruct(Target) of
-        undefined -> {error, invalid, <<"target must be an existing lite structure name.">>};
-        _ -> ok
+%% New id, an administrator, or the option's own creator may save it.
+may_change_option(undefined, _) -> ok;
+may_change_option(_, admin) -> ok;
+may_change_option(#{<<"owner">> := Owner}, {user, User}) when is_binary(Owner) ->
+    case Owner =:= maps:get(<<"username">>, User) of
+        true -> ok;
+        false -> {error, forbidden, <<"That option belongs to someone else.">>}
     end;
-check_target(Type, <<>>) when Type =/= <<"upload">>, Type =/= <<"pay">>, Type =/= <<"download">> ->
+may_change_option(_, {user, _}) ->
+    {error, forbidden, <<"Only an administrator can change this option.">>}.
+
+%% -> {ok, TargetScope} | Error. TargetScope says which kind of form a data_input option opens.
+check_target(<<"data_input">>, Target, Actor) ->
+    case {get_tstruct(Target), get_user_tstruct(Target), Actor} of
+        {Adm, _, admin} when is_map(Adm) -> {ok, <<"admin">>};
+        {_, Usr, _} when is_map(Usr) -> {ok, <<"user">>};
+        {Adm, _, {user, _}} when is_map(Adm) ->
+            %% A user-made option would otherwise hand everyone access to a restricted form.
+            {error, forbidden, <<"Only an administrator can point an option at an admin-managed form.">>};
+        _ -> {error, invalid, <<"target must be the name of an existing form.">>}
+    end;
+check_target(<<"download">>, Target, Actor) ->
+    case Target of
+        <<>> -> {ok, null};
+        _ ->
+            case sd_files:get(Target) of
+                undefined -> {error, invalid, <<"target must be the id of an uploaded file.">>};
+                #{<<"by">> := By} ->
+                    case Actor of
+                        admin -> {ok, null};
+                        {user, U} ->
+                            %% You can only share a file you uploaded yourself.
+                            case By =:= maps:get(<<"username">>, U) of
+                                true -> {ok, null};
+                                false -> {error, forbidden, <<"You can only share a file you uploaded.">>}
+                            end
+                    end
+            end
+    end;
+check_target(Type, <<>>, _) when Type =/= <<"upload">>, Type =/= <<"pay">> ->
     {error, invalid, <<"target is required for this option type.">>};
-check_target(_, _) -> ok.
+check_target(_, _, _) -> {ok, null}.
 
 display(<<"get_data">>, D) when D =:= <<"table">>; D =:= <<"name_value">>; D =:= <<"text">> -> D;
 display(<<"get_data">>, _) -> <<"table">>;
@@ -257,6 +334,35 @@ delete_option(Id) ->
         undefined -> {error, not_found, <<"No such option.">>};
         _ -> sd_db:hdel(?OPTIONS, K), ok
     end.
+
+%% Options the caller manages: their own; an administrator manages all.
+list_user_options(User) ->
+    Name = maps:get(<<"username">>, User),
+    case sd_users:is_admin(User) of
+        true -> list_options();
+        false -> [O || O <- list_options(), maps:get(<<"owner">>, O, null) =:= Name]
+    end.
+
+delete_user_option(User, Id) ->
+    K = sd_util:s(string:lowercase(sd_util:b(Id))),
+    Actor = case sd_users:is_admin(User) of true -> admin; false -> {user, User} end,
+    case sd_db:hget_json(?OPTIONS, K) of
+        undefined -> {error, not_found, <<"No such option.">>};
+        Existing ->
+            case may_change_option(Existing, Actor) of
+                ok -> sd_db:hdel(?OPTIONS, K), ok;
+                Err -> Err
+            end
+    end.
+
+%% Does an active download option pointing at this file apply to the user? (= may they fetch it)
+option_targets_file(FileId, User) ->
+    lists:any(fun(O) ->
+                  maps:get(<<"type">>, O) =:= <<"download">> andalso
+                  maps:get(<<"target">>, O, <<>>) =:= FileId andalso
+                  maps:get(<<"active">>, O, true) =/= false andalso
+                  applies(O, User)
+              end, list_options()).
 
 %% "Applicable to": all or selected user categories; if Affiliate is among
 %% them, all or selected affiliates; if Employee is among them, all or
@@ -287,7 +393,7 @@ check_applicable(K, _, _) -> {error, invalid, <<"applicable.", K/binary, " must 
 options_for(User) ->
     [strip(O) || O <- list_options(), maps:get(<<"active">>, O, true) =/= false, applies(O, User)].
 
-strip(O) -> maps:with([<<"id">>, <<"caption">>, <<"type">>, <<"target">>, <<"display">>, <<"order">>], O).
+strip(O) -> maps:with([<<"id">>, <<"caption">>, <<"type">>, <<"target">>, <<"targetScope">>, <<"owner">>, <<"display">>, <<"order">>], O).
 
 applies(Option, User) ->
     Ap = maps:get(<<"applicable">>, Option, #{}),
@@ -365,9 +471,12 @@ tstruct_for_user(User, Name) ->
         undefined -> {error, not_found, <<"No such form.">>};
         Def ->
             RealName = maps:get(<<"name">>, Def),
+            %% Only options an administrator made can open an admin-managed form: a
+            %% user-made option (owner set) must never widen who can reach one.
             Allowed = sd_users:is_admin(User) orelse
                 lists:any(fun(O) -> maps:get(<<"type">>, O) =:= <<"data_input">> andalso
-                                    maps:get(<<"target">>, O) =:= RealName
+                                    maps:get(<<"target">>, O) =:= RealName andalso
+                                    maps:get(<<"targetScope">>, O, <<"admin">>) =/= <<"user">>
                           end, options_for(User)),
             case Allowed of
                 true -> {ok, Def};
@@ -628,7 +737,8 @@ save_user_tstruct(User, Raw) when is_map(Raw) ->
                                                     <<"caption">> => text(sd_util:get(<<"caption">>, Raw), Name),
                                                     <<"description">> => text(sd_util:get(<<"description">>, Raw), <<>>),
                                                     <<"fields">> => Fields, <<"sections">> => Sections,
-                                                    <<"owner">> => Username},
+                                                    <<"owner">> => Username,
+                                                    <<"createdTs">> => sd_util:now_ms()},
                                             sd_db:hset_json(?USER_TSTRUCTS, key(Name), Def),
                                             {ok, Def};
                                         Err -> Err
@@ -640,6 +750,43 @@ save_user_tstruct(User, Raw) when is_map(Raw) ->
             end
     end;
 save_user_tstruct(_, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
+
+%% Only the creator may change a structure. The name (its identity) and owner stay;
+%% caption/description/fields/sections are replaced. Records already submitted are not
+%% rewritten -- they are re-checked against the new definition when next edited.
+update_user_tstruct(User, Raw) when is_map(Raw) ->
+    Name = sd_util:get(<<"name">>, Raw),
+    case is_binary(Name) andalso get_user_tstruct(Name) of
+        false -> {error, invalid, <<"name is required.">>};
+        undefined -> {error, not_found, <<"No such structure.">>};
+        Existing ->
+            Username = maps:get(<<"username">>, User),
+            case maps:get(<<"owner">>, Existing, undefined) =:= Username of
+                false -> {error, forbidden, <<"Only the creator can edit this structure.">>};
+                true ->
+                    case validate_fields(sd_util:get(<<"fields">>, Raw, [])) of
+                        {ok, Fields} ->
+                            FieldNames = [maps:get(<<"name">>, F) || F <- Fields],
+                            case validate_sections(sd_util:get(<<"sections">>, Raw, []), FieldNames) of
+                                {ok, Sections} ->
+                                    case check_field_refs(Fields, Sections, FieldNames) of
+                                        ok ->
+                                            RealName = maps:get(<<"name">>, Existing),
+                                            Def = Existing#{<<"caption">> => text(sd_util:get(<<"caption">>, Raw), RealName),
+                                                            <<"description">> => text(sd_util:get(<<"description">>, Raw), <<>>),
+                                                            <<"fields">> => Fields, <<"sections">> => Sections,
+                                                            <<"modifiedTs">> => sd_util:now_ms()},
+                                            sd_db:hset_json(?USER_TSTRUCTS, key(RealName), Def),
+                                            {ok, Def};
+                                        Err -> Err
+                                    end;
+                                Err -> Err
+                            end;
+                        Err -> Err
+                    end
+            end
+    end;
+update_user_tstruct(_, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
 
 delete_user_tstruct(User, Name) ->
     case get_user_tstruct(Name) of
@@ -747,6 +894,10 @@ num(_) -> error.
 
 check_type(<<"text">>, V, _) when is_binary(V) ->
     case byte_size(V) =< 5000 of true -> {ok, V}; false -> {error, <<"Too long (max 5000 characters).">>} end;
+%% barcode/QR: the scanned result is a plain string (same cap as text).
+check_type(<<"barcode">>, V, _) when is_binary(V) ->
+    case byte_size(V) =< 5000 of true -> {ok, V}; false -> {error, <<"Too long (max 5000 characters).">>} end;
+check_type(<<"barcode">>, _, _) -> {error, <<"Barcode value must be text.">>};
 check_type(<<"email">>, V, _) when is_binary(V) ->
     E = sd_util:norm_email(V),
     case sd_util:valid_email(E) of true -> {ok, E}; false -> {error, <<"Enter a valid email address.">>} end;

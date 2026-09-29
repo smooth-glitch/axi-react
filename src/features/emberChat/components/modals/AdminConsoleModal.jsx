@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
+import AdminFormsPanel from "./AdminFormsPanel.jsx";
+import AdminOptionsPanel from "./AdminOptionsPanel.jsx";
 
 const EMPTY_DATA = {
   users: [],
@@ -377,6 +379,20 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
         </button>
         <button
           type="button"
+          className={`sandesh-tab-pill ${activeTab === "forms" ? "active" : ""}`}
+          onClick={() => setActiveTab("forms")}
+        >
+          <span className="material-icons pill-icon">description</span> Forms
+        </button>
+        <button
+          type="button"
+          className={`sandesh-tab-pill ${activeTab === "options" ? "active" : ""}`}
+          onClick={() => setActiveTab("options")}
+        >
+          <span className="material-icons pill-icon">tune</span> Options
+        </button>
+        <button
+          type="button"
           className={`sandesh-tab-pill ${activeTab === "invite" ? "active" : ""}`}
           onClick={() => setActiveTab("invite")}
         >
@@ -385,8 +401,8 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
       </div>
 
       <div className="sandesh-modal-body admin-content-scroll">
-        {loading && <p className="section-note" style={{ padding: 16 }}>Loading…</p>}
-        {!loading && loadError && (
+        {loading && !["forms", "options"].includes(activeTab) && <p className="section-note" style={{ padding: 16 }}>Loading…</p>}
+        {!loading && loadError && !["forms", "options"].includes(activeTab) && (
           <div className="sandesh-alert sandesh-alert-danger" style={{ margin: 16 }}>
             {loadError}{" "}
             <button type="button" className="sandesh-btn-link" onClick={loadAll}>
@@ -694,6 +710,10 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
             ))}
           </div>
         )}
+
+        {/* TABS 5-6: LITE TSTRUCT FORMS + OPTIONS (load their own data) */}
+        {activeTab === "forms" && <AdminFormsPanel pushToast={pushToast} />}
+        {activeTab === "options" && <AdminOptionsPanel pushToast={pushToast} />}
 
         {/* TAB 4: INVITE USER */}
         {!loading && !loadError && activeTab === "invite" && (

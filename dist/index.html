@@ -29,6 +29,25 @@
     <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 
+    <!-- CJS require() polyfill: some packages bundled into the IIFE (e.g. react-is,
+         used by styled-components) still call require("react") at runtime.
+         This shim maps known ids to the already-loaded UMD globals above. -->
+    <script>
+      window.require = (function () {
+        var known = {
+          react: function () { return window.React; },
+          'react-dom': function () { return window.ReactDOM; },
+          'react-dom/client': function () { return window.ReactDOM; },
+        };
+        return function require(id) {
+          if (known[id]) return known[id]();
+          // Unrecognised module — return empty object so the bundle keeps loading
+          console.warn('[require shim] unknown module:', id);
+          return {};
+        };
+      })();
+    </script>
+
     <!-- Data Bin + Admin backend/persistence layers — real ARM-API-integrated
          code, kept exactly as-is (not React, not ES modules) per the
          migration's risk tradeoff: this logic is tested against the live
@@ -76,8 +95,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
+    <!-- Leaflet (used by tstruct studio's location field) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <link rel="stylesheet" href="/styles.css" />
-    <script type="module" crossorigin src="/assets/index-DhEI87MK.js"></script>
+    <script type="module" crossorigin src="/assets/index-Dde7aUOg.js"></script>
   </head>
   <body>
     <div id="root"></div>

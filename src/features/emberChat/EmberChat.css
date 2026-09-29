@@ -369,6 +369,12 @@
   transition: all 0.2s ease;
 }
 
+.sandesh-input-box-3d:has(textarea) {
+  align-items: stretch;
+  height: auto;
+  padding: 10px 12px;
+}
+
 .sandesh-input-box-3d:focus-within {
   border-color: var(--sandesh-coral-accent);
   box-shadow: 0 0 0 3px rgba(255, 122, 89, 0.18), inset 0 1px 2px rgba(0, 0, 0, 0.02);
@@ -376,11 +382,13 @@
 }
 
 .sandesh-input-box-3d input,
-.sandesh-input-box-3d select {
+.sandesh-input-box-3d select,
+.sandesh-input-box-3d textarea {
   flex: 1;
   border: none !important;
   background: transparent;
   font-size: 12.5px;
+  font-family: inherit;
   color: var(--sandesh-text-main);
   outline: none !important;
   box-shadow: none !important;
@@ -388,10 +396,29 @@
   width: 100%;
 }
 
+.sandesh-input-box-3d select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23a08b7d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 2px center;
+  padding-right: 20px;
+}
+
+.sandesh-input-box-3d textarea {
+  resize: vertical;
+  min-height: 84px;
+  line-height: 1.5;
+  padding: 0;
+}
+
 .sandesh-input-box-3d input:focus,
 .sandesh-input-box-3d input:focus-visible,
 .sandesh-input-box-3d select:focus,
-.sandesh-input-box-3d select:focus-visible {
+.sandesh-input-box-3d select:focus-visible,
+.sandesh-input-box-3d textarea:focus,
+.sandesh-input-box-3d textarea:focus-visible {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
@@ -1680,6 +1707,29 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* The bar has a fixed height and many pills (Smart Prompts, Org Structs, Add Member, Approvals...):
+     never clip the right-hand ones off-screen -- shrink to the space left and scroll if it still doesn't fit. */
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.topbar-right > * {
+  flex-shrink: 0;
+}
+.topbar-left {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* On narrower windows the pills go icon-only (each keeps its tooltip) so all of them stay visible. */
+@media (max-width: 1500px) {
+  .topbar-right .sandesh-action-pill-btn > span:not(.material-icons) {
+    display: none;
+  }
+  .topbar-right .sandesh-action-pill-btn {
+    padding: 6px 9px;
+  }
 }
 
 .sandesh-action-pill-btn {
