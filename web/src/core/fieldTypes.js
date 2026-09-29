@@ -17,6 +17,7 @@ export const FIELD_CATALOG = [
   { category: 'Special fields', type: 'email', label: 'Email', icon: 'Mail', tone: 'primary', hint: 'Email address' },
   { category: 'Special fields', type: 'url', label: 'URL', icon: 'Link2', tone: 'primary', hint: 'Web address' },
   { category: 'Special fields', type: 'location', label: 'Location', icon: 'MapPin', tone: 'danger', hint: 'Capture GPS or pin a spot on a map' },
+  { category: 'Special fields', type: 'barcode', label: 'Barcode / QR', icon: 'ScanBarcode', tone: 'danger', hint: 'Scan a barcode or QR code with the camera' },
 ];
 
 // Lookup for a draft/field (multiline text gets the Large Text look).

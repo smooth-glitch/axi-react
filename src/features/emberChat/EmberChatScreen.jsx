@@ -834,6 +834,36 @@ export function EmberChatScreen({ onOpenAiChat }) {
           setAssociates(event.data.associates);
         } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
           setNotifications(event.data.notifications);
+        } else if (event.reqId === "#tstruct" && event.ok && event.data?.tstruct) {
+          // Browsing existing records needs a list view, which only the Studio has --
+          // SmartStructureModal is a fill-in form only, no list.
+          setModalParam({ initialPath: `/structs/${event.data.tstruct.name}/records` });
+          setModal("tstruct_user");
+        } else if ((event.reqId === "#tstruct-add" || event.reqId === "#tstruct-edit") && event.ok && event.data?.tstruct) {
+          // Adding/editing a single record fits the same lightweight form the chat's
+          // Smart Prompts already use (SubmissionsModal's "Edit" does the same thing).
+          const { tstruct, scope, submissions, editRecordId } = event.data;
+          const stubOption = {
+            id: `#tstruct-${tstruct.name}`,
+            caption: tstruct.caption || tstruct.name,
+            type: "data_input",
+            target: tstruct.name,
+            targetScope: scope || "user",
+          };
+          if (event.reqId === "#tstruct-edit") {
+            const record = (submissions || []).find((s) => s.id === editRecordId);
+            if (!record) {
+              pushToast(`Record #${editRecordId} not found.`, true);
+              return;
+            }
+            setEditingSubmission(record);
+          } else {
+            setEditingSubmission(null);
+          }
+          setSelectedPrompt(stubOption);
+          setModal("smart_structure");
+        } else if (event.reqId === "#tstruct-delete" && event.ok) {
+          pushToast("Record deleted.");
         } else if (!event.ok && event.error?.message) {
           pushToast(event);
         }
@@ -2426,9 +2456,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "tstruct_user" && (
               <TStructUserModal
-                onClose={() => setModal(null)}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
                 pushToast={pushToast}
                 currentUser={currentUser}
+                initialPath={modalParam?.initialPath}
               />
             )}
             {modal === "admin_console" && (

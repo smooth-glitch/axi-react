@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
+import BarcodeInput from "../BarcodeScanner.jsx";
 import OptionActionPanel from "./OptionActionPanel.jsx";
 import { useLiveChanges } from "../../utils/useLiveChanges.js";
 import {
@@ -140,6 +141,8 @@ function FieldInput({ field, value, onChange, readOnly }) {
       );
     case "selection":
       return <SelectionField field={field} value={value} onChange={onChange} />;
+    case "barcode":
+      return <BarcodeInput value={value} onChange={onChange} />;
     case "fill":
       // Auto Fill: read-only, copied from the chosen item of the selection field it names (fillFrom + sourceProp)
       return <input id={id} type="text" value={value || ""} readOnly placeholder="Filled in automatically" />;

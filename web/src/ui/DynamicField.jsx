@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
 import { AlertCircle, CloudDownload, Crosshair, Map as MapIcon, MapPin, WandSparkles } from 'lucide-react';
 import { Button, FieldLabel, Input, Select, Text } from './kit';
+import { BarcodeInput } from './BarcodeScanner';
 import { iconFor } from './icons';
 import { fetchSelectionItems } from '../core/api';
 import { metaFor } from '../core/fieldTypes';
@@ -211,6 +212,9 @@ export default function DynamicField({ field, value, onChange, onHydrate, error,
       break;
     case 'location':
       control = <LocationInput value={value} onChange={onChange} invalid={invalid} />;
+      break;
+    case 'barcode':
+      control = <BarcodeInput value={value} onChange={onChange} invalid={invalid} />;
       break;
     case 'list':
       control = <Select value={value} onChange={onChange} options={field.options || []} invalid={invalid} icon={Icon} />;

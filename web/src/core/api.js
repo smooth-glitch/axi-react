@@ -412,11 +412,34 @@ export function subscribeChanges(handler) {
 // remembers which is which so records are saved through the right action.
 const scopeByName = new Map();
 
+// Org config lookups (branches / departments / designations / categories / affiliates) for the Option
+// Builder's "Applicable to" dropdowns. User-level, names only.
+export const listCfgLookups = () =>
+  _client.sd('cfg.lookups')
+    .then((r) => ({
+      branches: r.branches || [],
+      departments: r.departments || [],
+      designations: r.designations || [],
+      categories: r.categories || [],
+      affiliates: (r.affiliates || []).map((a) => a.name),
+    }))
+    .catch((e) => { throw toApiError(e); });
+
 export const listStructs = () =>
   _client.sd('tstruct.user.list')
-    .then((r) => {
+    .then(async (r) => {
       const structs = (r.tstructs || []).map(sandeshStructToWeb);
       structs.forEach((x) => scopeByName.set(x.id.toLowerCase(), 'user'));
+      // tstruct.user.list doesn't include how many records each struct has, so fetch it
+      // per struct. Best-effort: a struct whose count fails to load just shows 0.
+      const counts = await Promise.all(
+        structs.map((s) =>
+          _client.sd('submissions.list', { tstruct: s.id })
+            .then((res) => (res.submissions || []).length)
+            .catch(() => 0)
+        )
+      );
+      structs.forEach((s, i) => { s.recordCount = counts[i]; });
       return structs;
     })
     .catch((e) => { throw toApiError(e); });

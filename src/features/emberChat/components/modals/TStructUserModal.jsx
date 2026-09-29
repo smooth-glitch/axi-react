@@ -17,7 +17,7 @@ import { sandeshApi } from "../../../../services/sandeshApi.js";
 // Uses MemoryRouter so navigation stays in-memory and doesn't affect the browser URL.
 // Because this code is bundled with the chat app (same port/origin), localStorage
 // is shared — the user session set by the chat app is available to api.js automatically.
-export default function TStructUserModal({ onClose, currentUser }) {
+export default function TStructUserModal({ onClose, currentUser, initialPath }) {
   // Wire the tstruct API to the host app's already-authenticated socket.
   // useMemo runs synchronously during render — before any child useEffect fires —
   // so listStructs() in StructsProvider already has the socket available on first call.
@@ -88,7 +88,7 @@ export default function TStructUserModal({ onClose, currentUser }) {
         <div style={{ flex: 1, overflow: "hidden" }}>
           <AppThemeProvider>
             <GlobalStyle />
-            <MemoryRouter>
+            <MemoryRouter initialEntries={[initialPath || "/"]}>
               <StructsProvider>
                 <ToastProvider>
                   <Routes>

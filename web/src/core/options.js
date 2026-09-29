@@ -45,16 +45,16 @@ export const BLOCKS = [
     id: 'affiliate',
     label: 'Affiliate scope',
     condition: { field: 'userCategories', operator: 'contains', value: 'affiliate' },
-    fields: [{ id: 'affiliates', label: 'Affiliates', placeholder: 'Add an affiliate and press Enter' }],
+    fields: [{ id: 'affiliates', label: 'Affiliates' }],
   },
   {
     id: 'employee',
     label: 'Employee scope',
     condition: { field: 'userCategories', operator: 'contains', value: 'employee' },
     fields: [
-      { id: 'departments', label: 'Departments', placeholder: 'Add a department and press Enter' },
-      { id: 'branches', label: 'Branches', placeholder: 'Add a branch and press Enter' },
-      { id: 'designations', label: 'Designations', placeholder: 'Add a designation and press Enter' },
+      { id: 'departments', label: 'Departments' },
+      { id: 'branches', label: 'Branches' },
+      { id: 'designations', label: 'Designations' },
     ],
   },
 ];

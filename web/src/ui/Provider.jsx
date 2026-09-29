@@ -30,7 +30,7 @@ export function TstructProvider({ apiUrl, getAuthToken, user, headers, storageNa
   }, [apiUrl, getAuthToken, user, headers, storageName, maxUploadMb]);
 
   return (
-    <AppThemeProvider mode={colorMode} overrides={theme} persist={false}>
+    <AppThemeProvider mode={colorMode} overrides={theme}>
       <TstructRoot>
         <ToastProvider>{children}</ToastProvider>
       </TstructRoot>
