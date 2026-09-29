@@ -90,6 +90,15 @@ class SandeshSocketService {
       this.ws = null;
     }
 
+    // A live chat connection must present the real session token from POST /api/sd/login. The backend
+    // (SANDESH_REQUIRE_SESSION=1) refuses anything else, so don't open a socket with an invented token.
+    if (!user.token) {
+      console.warn('[SandeshSocket] No session token for this user; not connecting. Sign in again.');
+      this.status = 'disconnected';
+      this.notify({ type: 'status_change', status: this.status });
+      return;
+    }
+
     this.status = 'connecting';
     this.notify({ type: 'status_change', status: this.status });
 
@@ -121,7 +130,7 @@ class SandeshSocketService {
         const cleanUsername = rawUsername.replace(/\s+/g, '_').slice(0, 24);
         const handshake = {
           username: cleanUsername,
-          token: user.token || 'sandesh-token-' + Date.now(),
+          token: user.token,
           armSessionId: user.armSessionId || 'sess-' + Date.now(),
         };
         socket.send(JSON.stringify(handshake));
