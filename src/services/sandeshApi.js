@@ -46,6 +46,16 @@ class SandeshApiService {
   }
 
   getBaseUrl() {
+    const base = this._resolveBaseUrl();
+    // An https page can't call an http:// API (mixed content is blocked); the same host serves
+    // the API over https too, so upgrade the scheme when the page itself is https.
+    if (typeof window !== 'undefined' && window.location?.protocol === 'https:') {
+      return base.replace(/^http:\/\//i, 'https://');
+    }
+    return base;
+  }
+
+  _resolveBaseUrl() {
     try {
       const stored = localStorage.getItem('sandesh_api_base');
       if (stored) return stored.replace(/\/+$/, '');
