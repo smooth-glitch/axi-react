@@ -291,6 +291,30 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
           setErrorMsg(ERROR_MESSAGES.invalid_credentials);
         } else if (error.code === "pending_approval") {
           setErrorMsg(ERROR_MESSAGES.pending_approval);
+          try {
+            const existing = JSON.parse(localStorage.getItem("sandesh_pending_registrations") || "[]");
+            const uClean = signInIdentifier.trim().toLowerCase();
+            if (!existing.some((x) => (x.username || "").toLowerCase() === uClean)) {
+              existing.unshift({
+                id: error.requestId || Date.now(),
+                type: "registration",
+                status: "pending",
+                title: `Pending User: @${signInIdentifier}`,
+                name: signInIdentifier,
+                username: signInIdentifier,
+                email: signInIdentifier.includes("@") ? signInIdentifier : `${signInIdentifier}@agilelabs.com`,
+                category: "Self-Registered Applicant",
+                department: "General",
+                designation: "Associate",
+                time: "Recently",
+                details: "Account registered on Sandesh backend, waiting for admin clearance to enter chat.",
+                fromUser: signInIdentifier,
+              });
+              localStorage.setItem("sandesh_pending_registrations", JSON.stringify(existing));
+            }
+          } catch {
+            // ignore
+          }
         } else if (error.code === "locked") {
           setErrorMsg(ERROR_MESSAGES.locked);
         } else if (error.code === "rate_limited") {
@@ -885,6 +909,31 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
       if (res.ok && res.data) {
         setSelfRegSuccess(res.data);
+        try {
+          const existing = JSON.parse(localStorage.getItem("sandesh_pending_registrations") || "[]");
+          const uName = payload.username || payload.name.toLowerCase().replace(/\s+/g, "");
+          const record = {
+            id: res.data.requestId || Date.now(),
+            type: "registration",
+            status: res.data.status === "approved" ? "accepted" : "pending",
+            title: `New User Registration: ${payload.name}`,
+            name: payload.name,
+            username: uName,
+            email: payload.email,
+            mobile: payload.mobile,
+            category: payload.category || (payload.isEmployee ? "Employee" : "Associate"),
+            department: payload.department || (payload.isEmployee ? "Engineering" : "General"),
+            designation: payload.designation || (payload.isEmployee ? "Associate" : "Partner"),
+            time: "Just now",
+            details: "Self-registered and waiting for admin permission to enter chat interface.",
+            fromUser: uName,
+            registeredAt: new Date().toISOString(),
+          };
+          const updated = [record, ...existing.filter((x) => x.username !== uName)];
+          localStorage.setItem("sandesh_pending_registrations", JSON.stringify(updated));
+        } catch {
+          // ignore
+        }
       } else {
         setErrorMsg(sandeshApi.getFriendlyErrorMessage(res.error));
       }

@@ -20,6 +20,8 @@ export default function Sidebar({
   socketStatus,
   onReconnectSocket,
   onDeleteChat,
+  onOpenApprovals,
+  pendingApprovalsCount = 0,
 }) {
   const [categoryFilter, setCategoryFilter] = useState("all"); // "all" | "hosts" | "direct"
   const [searchTerm, setSearchTerm] = useState("");
@@ -142,15 +144,32 @@ export default function Sidebar({
               <span className="material-icons">terminal</span>
             </button>
             {me.isAdmin && (
-              <button
-                type="button"
-                className="sandesh-icon-btn-3d"
-                onClick={onOpenAdminConsole}
-                title="Open Sandesh Admin Console"
-                aria-label="Admin console"
-              >
-                <span className="material-icons">settings</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="sandesh-icon-btn-3d"
+                  onClick={onOpenApprovals}
+                  title={`User Approvals ${pendingApprovalsCount > 0 ? `(${pendingApprovalsCount} waiting)` : ""}`}
+                  aria-label="User approvals"
+                  style={{ position: "relative" }}
+                >
+                  <span className="material-icons" style={{ color: pendingApprovalsCount > 0 ? "var(--sandesh-coral-accent)" : "inherit" }}>
+                    how_to_reg
+                  </span>
+                  {pendingApprovalsCount > 0 && (
+                    <span className="sandesh-sidebar-pulse-dot">{pendingApprovalsCount}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="sandesh-icon-btn-3d"
+                  onClick={onOpenAdminConsole}
+                  title="Open Sandesh Admin Console"
+                  aria-label="Admin console"
+                >
+                  <span className="material-icons">settings</span>
+                </button>
+              </>
             )}
             <button
               type="button"

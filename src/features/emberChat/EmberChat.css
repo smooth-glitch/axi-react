@@ -5029,6 +5029,262 @@
   color: var(--sandesh-text-muted);
 }
 
+/* Enhanced User Access & Registration Approval Styles */
+.applicant-approval-card {
+  border-left: 4px solid var(--sandesh-coral-accent);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.applicant-approval-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+.applicant-category-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: rgba(0, 122, 255, 0.12);
+  color: #007aff;
+  letter-spacing: 0.3px;
+}
+
+.applicant-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 12px 0 10px 0;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.025);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+}
+
+.applicant-info-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.applicant-info-item .item-icon {
+  font-size: 16px;
+  color: var(--sandesh-coral-accent);
+  opacity: 0.85;
+}
+
+.applicant-info-item .item-text {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.applicant-info-item .item-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.applicant-info-item .item-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sandesh-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.approval-desc-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sandesh-text-muted);
+  background: rgba(255, 122, 89, 0.06);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.applicant-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.sandesh-btn-allow-entry {
+  background: linear-gradient(135deg, #34c759, #28a745) !important;
+  color: #fff !important;
+  padding: 7px 16px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 3px 10px rgba(52, 199, 89, 0.35) !important;
+  gap: 6px !important;
+}
+
+.sandesh-btn-allow-entry:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(52, 199, 89, 0.45) !important;
+}
+
+.sandesh-btn-deny-entry {
+  background: rgba(255, 59, 48, 0.12) !important;
+  color: #ff3b30 !important;
+  border: 1px solid rgba(255, 59, 48, 0.3) !important;
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border-radius: 10px !important;
+  gap: 5px !important;
+}
+
+.sandesh-btn-deny-entry:hover {
+  background: rgba(255, 59, 48, 0.2) !important;
+}
+
+.approval-granted-bar,
+.approval-rejected-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+
+.approval-granted-bar {
+  background: rgba(52, 199, 89, 0.1);
+  border: 1px solid rgba(52, 199, 89, 0.25);
+}
+
+.approval-rejected-bar {
+  background: rgba(255, 59, 48, 0.08);
+  border: 1px solid rgba(255, 59, 48, 0.2);
+}
+
+/* Floating Banner in Chat Interface for Admins */
+.sandesh-pending-approval-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(255, 245, 235, 0.95), rgba(255, 238, 230, 0.95));
+  border: 1px solid rgba(255, 122, 89, 0.35);
+  border-radius: 14px;
+  padding: 10px 18px;
+  margin: 10px 18px 4px 18px;
+  box-shadow: 0 4px 16px rgba(255, 122, 89, 0.12);
+  backdrop-filter: blur(12px);
+  animation: slideDownBanner 0.25s ease-out;
+  z-index: 10;
+}
+
+@keyframes slideDownBanner {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.approval-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.approval-banner-left .banner-icon {
+  font-size: 24px;
+  color: var(--sandesh-coral-accent);
+  background: rgba(255, 122, 89, 0.15);
+  padding: 8px;
+  border-radius: 50%;
+}
+
+.approval-banner-left .banner-text-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.approval-banner-left strong {
+  font-size: 13.5px;
+  color: var(--sandesh-text-main);
+}
+
+.approval-banner-left span {
+  font-size: 12px;
+  color: var(--sandesh-text-muted);
+}
+
+.sandesh-btn-banner-approve {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--sandesh-coral-accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(255, 122, 89, 0.35);
+  transition: all 0.15s ease;
+}
+
+.sandesh-btn-banner-approve:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(255, 122, 89, 0.45);
+}
+
+.topbar-approval-badge {
+  background: var(--sandesh-coral-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  margin-left: 4px;
+  animation: pulseBadge 2s infinite;
+}
+
+.sandesh-sidebar-pulse-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--sandesh-coral-accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 0 0 2px #fff;
+  animation: pulseBadge 2s infinite;
+}
+
+@keyframes pulseBadge {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); box-shadow: 0 0 10px rgba(255, 122, 89, 0.6); }
+  100% { transform: scale(1); }
+}
+
 /* 6. Notifications Modal */
 .notif-cards-stack {
   display: flex;
