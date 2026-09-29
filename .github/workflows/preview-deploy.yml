@@ -88,54 +88,40 @@ jobs:
           sudo rm -f /etc/nginx/conf.d/preview-*.conf
 
           sudo tee "/etc/nginx/conf.d/previews/preview-$SLOT.conf" > /dev/null <<EOF
-          # Preview slot $SLOT ($SLUG) — served over HTTPS using the shared
-          # self-signed cert from nginx/setup-tls.sh. Clients (browsers, devices)
-          # must have axi.crt installed as a trusted root for the cert to be accepted.
-          server {
-              listen 443 ssl;
-              server_name _;
-
-              ssl_certificate     /etc/nginx/ssl/axi.crt;
-              ssl_certificate_key /etc/nginx/ssl/axi.key;
-              ssl_protocols       TLSv1.2 TLSv1.3;
-
-              # WebSocket (wss://) — required for camera/getUserMedia (secure context)
-              location /preview/$SLUG/ws {
-                  proxy_pass http://127.0.0.1:$PORT/;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade \$http_upgrade;
-                  proxy_set_header Connection \$connection_upgrade;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-                  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto \$scheme;
-                  proxy_read_timeout 3600s;
-                  proxy_send_timeout 3600s;
-              }
-              location /preview/$SLUG/upload {
-                  proxy_pass http://127.0.0.1:$PORT/upload;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-                  client_max_body_size 9m;
-              }
-              location /preview/$SLUG/uploads/ {
-                  proxy_pass http://127.0.0.1:$PORT/uploads/;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-              }
-              # Sandesh REST API (first-time setup, register, OTP, login, session --
-              # see docs/SANDESH_API.md). Longer prefix than the frontend block
-              # below, so nginx picks this one for /api/sd/... X-Real-IP matters:
-              # the per-visitor limits on codes/logins/registrations key off it.
-              location /preview/$SLUG/api/sd/ {
-                  proxy_pass http://127.0.0.1:$PORT/api/sd/;
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-              }
-              location /preview/$SLUG/ {
-                  alias /opt/preview/$SLOT/frontend/dist/;
-                  try_files \$uri \$uri/ /preview/$SLUG/index.html;
-              }
+          location /preview/$SLUG/ws {
+              proxy_pass http://127.0.0.1:$PORT/;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection \$connection_upgrade;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+              proxy_read_timeout 3600s;
+              proxy_send_timeout 3600s;
+          }
+          location /preview/$SLUG/upload {
+              proxy_pass http://127.0.0.1:$PORT/upload;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+          }
+          location /preview/$SLUG/uploads/ {
+              proxy_pass http://127.0.0.1:$PORT/uploads/;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+          }
+          # Sandesh REST API (first-time setup, register, OTP, login, session --
+          # see docs/SANDESH_API.md). Longer prefix than the frontend block
+          # below, so nginx picks this one for /api/sd/... X-Real-IP matters:
+          # the per-visitor limits on codes/logins/registrations key off it.
+          location /preview/$SLUG/api/sd/ {
+              proxy_pass http://127.0.0.1:$PORT/api/sd/;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+          }
+          location /preview/$SLUG/ {
+              alias /opt/preview/$SLOT/frontend/dist/;
+              try_files \$uri \$uri/ /preview/$SLUG/index.html;
           }
           EOF
 
@@ -146,6 +132,20 @@ jobs:
           fi
 
           sudo restorecon -v "/etc/nginx/conf.d/previews/preview-$SLOT.conf"
+
+          # previews/*.conf is included INSIDE the main server block (axi-chat.conf), so a file there may only
+          # hold `location` blocks. A leftover file from another slot that has a top-level `server { ... }`
+          # (e.g. from an old experiment) makes `nginx -t` fail for EVERY deploy, whatever branch it is for.
+          # Remove such files (they can never work there) instead of letting one bad slot block everyone.
+          for f in /etc/nginx/conf.d/previews/*.conf; do
+            [ -e "$f" ] || continue
+            [ "$f" = "/etc/nginx/conf.d/previews/preview-$SLOT.conf" ] && continue
+            if grep -qE '^[[:space:]]*server[[:space:]]*\{' "$f"; then
+              echo "removing invalid stale preview config (contains a 'server' block): $f"
+              sudo rm -f "$f"
+            fi
+          done
+
           sudo nginx -t
           sudo systemctl reload nginx
 
@@ -160,15 +160,13 @@ jobs:
         run: |
           sleep 3
           SLUG="${{ steps.slot.outputs.slug }}"
-          # -k because the self-signed cert isn't in the runner's trust store;
-          # we only care that nginx is serving the frontend (HTTP 200), not the cert chain.
-          code=$(curl -sk -o /dev/null -w "%{http_code}" "https://127.0.0.1/preview/$SLUG/")
+          code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/preview/$SLUG/")
           echo "Preview responded with HTTP $code"
           test "$code" = "200"
           # Informational only (never fails the deploy): is the Sandesh REST
           # route wired? 200 = yes. Anything else on a branch that predates
           # the Sandesh backend is expected, so this must not gate previews.
-          sd=$(curl -sk -o /dev/null -w "%{http_code}" "https://127.0.0.1/preview/$SLUG/api/sd/public" || true)
+          sd=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/preview/$SLUG/api/sd/public" || true)
           echo "Sandesh REST route /api/sd/public responded with HTTP $sd (200 expected once the branch has the Sandesh backend)"
 
       - name: Comment on the PR with the preview URL
@@ -176,9 +174,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SLUG="${{ steps.slot.outputs.slug }}"
-          URL="https://10.0.2.146/preview/$SLUG/"
+          URL="http://10.0.2.146/preview/$SLUG/"
           curl -s -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-            -d "{\"body\": \"Preview deployed: $URL (office network/VPN required; install axi.crt as a trusted root on your device first — see nginx/setup-tls.sh for instructions).\"}"
+            -d "{\"body\": \"Preview deployed: $URL (office network/VPN required to reach it).\"}"
