@@ -585,3 +585,15 @@ approvers[], data, createdTs, resolvedTs, resolvedBy}` where `status` is
   instead).
 - Cards for department-host messages (`/hostmsg`) — those hosts don't exist yet.
 - Existing plain-chat users are not Sandesh users; nothing migrates them.
+
+## Live change events
+
+Besides replies, the server pushes small `{"type":"sd_event","event":...,"data":{...}}` messages over the WebSocket when something changes. They carry only what changed; clients re-read the affected list.
+
+| Event | Sent to | `data` |
+|---|---|---|
+| `tstructs_changed` | everyone connected | `scope` (`user`/`admin`), `name`, `action`, `by` |
+| `options_changed` | everyone connected | `id`, `action`, `by` |
+| `submissions_changed` | the submitter, the form's host, and admins | `id`, `tstruct`, `action` (`created`/`updated`/`deleted`), `by` |
+
+Events sent while a client is offline are lost, so after reconnecting a client should re-read everything it shows (the web app does this on its `resync`).

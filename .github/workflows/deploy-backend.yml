@@ -48,6 +48,8 @@ jobs:
           # response (no page-serving by design); anything else (502,
           # connection refused) means the restart didn't actually bring a
           # healthy backend up.
+          # Note: TLS termination is at nginx (see nginx/setup-tls.sh);
+          # the backend itself always listens on plain HTTP/WS on 8080.
           code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/)
           echo "backend responded with HTTP $code"
           test "$code" = "404"

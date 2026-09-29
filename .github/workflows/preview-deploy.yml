@@ -132,6 +132,20 @@ jobs:
           fi
 
           sudo restorecon -v "/etc/nginx/conf.d/previews/preview-$SLOT.conf"
+
+          # previews/*.conf is included INSIDE the main server block (axi-chat.conf), so a file there may only
+          # hold `location` blocks. A leftover file from another slot that has a top-level `server { ... }`
+          # (e.g. from an old experiment) makes `nginx -t` fail for EVERY deploy, whatever branch it is for.
+          # Remove such files (they can never work there) instead of letting one bad slot block everyone.
+          for f in /etc/nginx/conf.d/previews/*.conf; do
+            [ -e "$f" ] || continue
+            [ "$f" = "/etc/nginx/conf.d/previews/preview-$SLOT.conf" ] && continue
+            if grep -qE '^[[:space:]]*server[[:space:]]*\{' "$f"; then
+              echo "removing invalid stale preview config (contains a 'server' block): $f"
+              sudo rm -f "$f"
+            fi
+          done
+
           sudo nginx -t
           sudo systemctl reload nginx
 

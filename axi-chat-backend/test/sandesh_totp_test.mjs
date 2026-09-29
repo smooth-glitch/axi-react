@@ -8,7 +8,9 @@
 // is shortened to 6s so the "code required again" path is testable without
 // waiting 14 days -- same trick sandesh_session_test.mjs uses for sessions:
 //   REDIS_DB=14 SANDESH_MODE=strict SANDESH_DEV_OTP=1 SANDESH_OTP_COOLDOWN_SEC=0 \
-//   CHAT_RATE_LIMIT_MAX=1000 SANDESH_SCHEDULER_TICK_MS=500 SANDESH_TOTP_FRESH_SEC=6 \
+//   CHAT_RATE_LIMIT_MAX=1000 SANDESH_SCHEDULER_TICK_MS=500 SANDESH_TOTP_FRESH_SEC=6 SANDESH_DEVICE_TRUST_SEC=6 \
+//   (SANDESH_DEVICE_TRUST_SEC is what makes a device ask for a code again -- per-device trust replaced account-level freshness)
+//   Easiest: node test/run_all.mjs sandesh_totp   (starts everything with the right settings) \
 //   erl -noshell -pa _build/default/lib/axi_chat_backend/ebin -pa _build/default/lib/eredis/ebin \
 //       -s chat_app start 5559 8090
 // then:
