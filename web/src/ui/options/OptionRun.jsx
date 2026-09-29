@@ -6,7 +6,7 @@ import { Alert, Badge, Button, Card, EmptyState, IconTile, Skeleton, Text } from
 import { StructForm } from '../StructForm';
 import { iconFor } from '../icons';
 import { Ensure } from '../Provider';
-import { downloadFile, getOption, listStructs, uploadFile } from '../../core/api';
+import { downloadFile, getOption, getStruct, listStructs, uploadFile } from '../../core/api';
 import { optionType } from '../../core/options';
 import { formatBytes } from '../../core/format';
 
@@ -62,6 +62,11 @@ function RunDataInput({ option, onOpenStruct, onEdit }) {
       .then((structs) => {
         const n = name.trim().toLowerCase();
         const found = structs.find((s) => s.name.trim().toLowerCase() === n) || structs.find((s) => s.key && s.key.toLowerCase() === n);
+        if (found) return found;
+        // not one of the user-made structs: it may be an administrator-defined form this user was offered
+        return getStruct(name.trim()).catch(() => null);
+      })
+      .then((found) => {
         if (!found) return setState({ status: 'notfound' });
         if (openRef.current) {
           setState({ status: 'opened', struct: found });

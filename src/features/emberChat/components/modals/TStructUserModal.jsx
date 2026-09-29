@@ -11,6 +11,7 @@ import { EditRecord, NewRecord, Records } from "@tstruct/studio/pages/RecordPage
 import { OptionBuilderPage, OptionRunPage, OptionsPage } from "@tstruct/studio/pages/OptionPages";
 import { configure } from "@tstruct/core/api";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
+import { sandeshApi } from "../../../../services/sandeshApi.js";
 
 // Renders the full tstruct studio inside the Sandesh chat app.
 // Uses MemoryRouter so navigation stays in-memory and doesn't affect the browser URL.
@@ -21,7 +22,8 @@ export default function TStructUserModal({ onClose, currentUser }) {
   // useMemo runs synchronously during render — before any child useEffect fires —
   // so listStructs() in StructsProvider already has the socket available on first call.
   useMemo(() => {
-    configure({ user: currentUser, socket: sandeshSocket });
+    // apiBase/getToken: file upload/download go over authenticated HTTP, the rest over the shared socket
+    configure({ user: currentUser, socket: sandeshSocket, apiBase: sandeshApi.getBaseUrl(), getToken: () => currentUser?.token });
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

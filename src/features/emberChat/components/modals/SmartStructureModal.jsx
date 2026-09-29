@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
+import OptionActionPanel from "./OptionActionPanel.jsx";
 import {
   buildSubmission,
   displayValue,
@@ -10,9 +11,6 @@ import {
 // A form from the admin-defined lite-tstruct catalogue (docs/LITE_TSTRUCT.md).
 // `option` is one of the user's options.list entries (type data_input -> target = form name).
 // Without an option it shows the user's available forms to pick from.
-
-const NOT_RUNNABLE =
-  "This option type isn't available yet: the server stores it but can't run it until its external system contract is fixed.";
 
 function SelectionField({ field, value, onChange }) {
   const [items, setItems] = useState(null); // null = loading, [] = none/failed
@@ -28,8 +26,8 @@ function SelectionField({ field, value, onChange }) {
         const arr = Array.isArray(json) ? json : json.items || json.data || json.results || [];
         const list = arr.map((it) =>
           typeof it === "object" && it !== null
-            ? { value: String(it.id ?? it.value ?? it.name ?? it.label), label: String(it.label ?? it.name ?? it.id ?? it.value) }
-            : { value: String(it), label: String(it) }
+            ? { value: String(it.id ?? it.value ?? it.name ?? it.label), label: String(it.label ?? it.name ?? it.id ?? it.value), raw: it }
+            : { value: String(it), label: String(it), raw: it }
         );
         if (alive) setItems(list);
       })
@@ -44,7 +42,11 @@ function SelectionField({ field, value, onChange }) {
     return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder="Enter a value" />;
   }
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value)} disabled={items === null}>
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value, (items || []).find((it) => it.value === e.target.value)?.raw)}
+      disabled={items === null}
+    >
       <option value="">{items === null ? "Loading…" : "Select…"}</option>
       {(items || []).map((it) => (
         <option key={it.value} value={it.value}>{it.label}</option>
@@ -53,7 +55,7 @@ function SelectionField({ field, value, onChange }) {
   );
 }
 
-function FieldInput({ field, value, onChange }) {
+function FieldInput({ field, value, onChange, readOnly }) {
   const id = `sd-f-${field.name}`;
   switch (field.type) {
     case "text":
@@ -137,8 +139,11 @@ function FieldInput({ field, value, onChange }) {
       );
     case "selection":
       return <SelectionField field={field} value={value} onChange={onChange} />;
-    default: // fill and anything else: a plain value the user can adjust
-      return <input id={id} type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} />;
+    case "fill":
+      // Auto Fill: read-only, copied from the chosen item of the selection field it names (fillFrom + sourceProp)
+      return <input id={id} type="text" value={value || ""} readOnly placeholder="Filled in automatically" />;
+    default:
+      return <input id={id} type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} readOnly={readOnly} />;
   }
 }
 
@@ -146,7 +151,8 @@ function initialValues(tstruct, currentUser) {
   const values = {};
   for (const f of tstruct.fields || []) {
     // "fill" fields pre-populate from the signed-in user's profile when they name one of its keys.
-    if (f.type === "fill" && f.fillFrom && currentUser && currentUser[f.fillFrom] != null) {
+    const isFieldRef = (tstruct.fields || []).some((x) => x.name === f.fillFrom);
+    if (f.type === "fill" && f.fillFrom && !isFieldRef && currentUser && currentUser[f.fillFrom] != null) {
       values[f.name] = String(currentUser[f.fillFrom]);
     }
   }
@@ -162,6 +168,8 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
   const [submitError, setSubmitError] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // options made by users open user-made structures; admin options open admin-defined forms
+  const userScope = current?.targetScope === "user";
 
   // Load the form definition for the chosen option.
   useEffect(() => {
@@ -170,20 +178,19 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
     setLoadError("");
     setFieldErrors({});
     setSubmitError("");
-    if (current.type !== "data_input") {
-      setLoadError(NOT_RUNNABLE);
-      return undefined;
-    }
+    if (current.type !== "data_input") return undefined; // handled by OptionActionPanel
     let alive = true;
     setLoading(true);
-    sandeshSocket.sd("tstruct.get", { name: current.target }).then((res) => {
+    sandeshSocket.sd(userScope ? "tstruct.user.get" : "tstruct.get", { name: current.target }).then((res) => {
       if (!alive) return;
       setLoading(false);
       if (!res.ok) {
         setLoadError(
-          res.error?.code === "forbidden" || res.error?.code === "not_found"
-            ? "This form isn't available to you."
-            : res.error?.message || "Couldn't load the form."
+          res.error?.code === "not_found"
+            ? "This form no longer exists. Its creator may have deleted it."
+            : res.error?.code === "forbidden"
+              ? "This form isn't available to you."
+              : res.error?.message || "Couldn't load the form."
         );
         return;
       }
@@ -195,8 +202,18 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
     };
   }, [current, currentUser, editing]);
 
-  const setValue = (name, v) => {
-    setValues((prev) => ({ ...prev, [name]: v }));
+  const setValue = (name, v, raw) => {
+    setValues((prev) => {
+      const next = { ...prev, [name]: v };
+      // Auto Fill fields copy a property of the chosen item of the selection field they name
+      for (const f of tstruct?.fields || []) {
+        if (f.type === "fill" && f.fillFrom === name) {
+          const picked = raw?.[f.sourceProp || "value"] ?? raw?.[f.sourceProp || "name"];
+          next[f.name] = picked === undefined || picked === null ? "" : String(picked);
+        }
+      }
+      return next;
+    });
     setFieldErrors((prev) => (prev[name] ? { ...prev, [name]: undefined } : prev));
   };
 
@@ -212,7 +229,7 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
     const payload = buildSubmission(tstruct, values);
     const res = editing
       ? await sandeshSocket.sd("submissions.update", { id: editing.id, values: payload })
-      : await sandeshSocket.sd("tstruct.submit", { name: tstruct.name, values: payload });
+      : await sandeshSocket.sd(userScope ? "tstruct.user.submit" : "tstruct.submit", { name: tstruct.name, values: payload });
     setSubmitting(false);
     if (!res.ok) {
       if (res.error?.code === "invalid_values" && res.error.details?.fields) {
@@ -236,7 +253,7 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
     });
   };
 
-  const forms = options.filter((o) => o.type === "data_input");
+  const forms = options;
 
   return (
     <div className="sandesh-modal-card-3d">
@@ -269,6 +286,10 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
         </div>
       )}
 
+      {current && current.type !== "data_input" && (
+        <OptionActionPanel option={current} currentUser={currentUser} onClose={onClose} />
+      )}
+
       {current && loading && <div className="sandesh-modal-body"><p className="section-note">Loading form…</p></div>}
 
       {current && loadError && (
@@ -292,7 +313,7 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
                     {f.required && <span style={{ color: "#e53935" }}> *</span>}
                   </label>
                   <div className="sandesh-input-box-3d">
-                    <FieldInput field={f} value={values[f.name]} onChange={(v) => setValue(f.name, v)} />
+                    <FieldInput field={f} value={values[f.name]} onChange={(v, raw) => setValue(f.name, v, raw)} />
                   </div>
                   {fieldErrors[f.name] && (
                     <div style={{ color: "#e53935", fontSize: "0.78rem", marginTop: 3 }}>{fieldErrors[f.name]}</div>

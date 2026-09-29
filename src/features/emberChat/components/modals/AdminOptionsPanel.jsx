@@ -32,13 +32,14 @@ const blankOption = () => ({
 export default function AdminOptionsPanel({ pushToast }) {
   const [options, setOptions] = useState(null);
   const [forms, setForms] = useState([]);
+  const [userForms, setUserForms] = useState([]);
   const [choices, setChoices] = useState({});
   const [editor, setEditor] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const [opts, tstructs, cats, affs, deps, brs, des] = await Promise.all([
+    const [opts, tstructs, cats, affs, deps, brs, des, ustructs] = await Promise.all([
       sandeshSocket.sd("admin.option.list"),
       sandeshSocket.sd("admin.tstruct.list"),
       sandeshSocket.sd("admin.cfg.list", { kind: "categories" }),
@@ -46,8 +47,9 @@ export default function AdminOptionsPanel({ pushToast }) {
       sandeshSocket.sd("admin.cfg.list", { kind: "departments" }),
       sandeshSocket.sd("admin.cfg.list", { kind: "branches" }),
       sandeshSocket.sd("admin.cfg.list", { kind: "designations" }),
+      sandeshSocket.sd("tstruct.user.list"),
     ]);
-    const bad = [opts, tstructs, cats, affs, deps, brs, des].find((r) => !r.ok);
+    const bad = [opts, tstructs, cats, affs, deps, brs, des, ustructs].find((r) => !r.ok);
     if (bad) {
       setError(bad.error?.message || "Couldn't load options.");
       setOptions([]);
@@ -56,6 +58,7 @@ export default function AdminOptionsPanel({ pushToast }) {
     setError("");
     setOptions(opts.data?.options || []);
     setForms(tstructs.data?.tstructs || []);
+    setUserForms(ustructs.data?.tstructs || []);
     const names = (r) => (r.data?.items || []).map((i) => i.name);
     setChoices({
       categories: ["Employee", "Affiliate", ...names(cats)],
@@ -148,10 +151,21 @@ export default function AdminOptionsPanel({ pushToast }) {
             <div className="sandesh-input-box-3d select-box">
               {editor.type === "data_input" ? (
                 <select value={editor.target} required onChange={(e) => set({ target: e.target.value })}>
-                  <option value="">{forms.length ? "Select a form…" : "Create a form first"}</option>
-                  {forms.map((f) => (
-                    <option key={f.name} value={f.name}>{f.caption || f.name}</option>
-                  ))}
+                  <option value="">{forms.length + userForms.length ? "Select a form…" : "Create a form first"}</option>
+                  {forms.length > 0 && (
+                    <optgroup label="Admin-managed forms">
+                      {forms.map((f) => (
+                        <option key={f.name} value={f.name}>{f.caption || f.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {userForms.length > 0 && (
+                    <optgroup label="User-made structures">
+                      {userForms.map((f) => (
+                        <option key={`u-${f.name}`} value={f.name}>{f.caption || f.name}{f.owner ? ` (by @${f.owner})` : ""}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               ) : (
                 <input type="text" value={editor.target} onChange={(e) => set({ target: e.target.value })} />
@@ -229,7 +243,7 @@ export default function AdminOptionsPanel({ pushToast }) {
           <div key={o.id} className="table-row" style={{ gridTemplateColumns: "1.3fr 1fr 1.6fr 0.6fr 1fr" }}>
             <div className="cell-user">
               <span className="cell-name">{o.caption}</span>
-              <span className="cell-sub">{o.id}{o.target ? ` → ${o.target}` : ""}</span>
+              <span className="cell-sub">{o.id}{o.target ? ` → ${o.target}` : ""}{o.owner ? ` • by @${o.owner}` : ""}</span>
             </div>
             <span>{o.type}</span>
             <span className="cell-sub">{summarize(o.applicable)}</span>

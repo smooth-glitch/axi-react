@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useTheme } from 'styled-components';
-import { Plus, Search, Shapes, Table2, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Search, Shapes, Table2, Trash2 } from 'lucide-react';
 import Page from '../Page';
 import { Alert, Avatar, Badge, Button, EmptyState, HoverCard, Input, Skeleton, Text } from '../../ui/kit';
 import ConfirmSheet from '../../ui/ConfirmSheet';
@@ -12,7 +12,7 @@ import { timeAgo } from '../../core/format';
 
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-// Definitions: every struct definition in one place. Click one to see its records. A definition can't be changed after it is created; its creator can delete it.
+// Definitions: every struct definition in one place. Click one to see its records. Only a definition's creator can edit or delete it.
 export default function Definitions() {
   const t = useTheme();
   const navigate = useNavigate();
@@ -31,7 +31,7 @@ export default function Definitions() {
           ))}
         </div>
       ) : structs.length === 0 ? (
-        <EmptyState icon={Shapes} title="No structs yet — create one" message="Definitions you create show up here. Their fields can't be changed once created; you can delete your own and create a new one." actionLabel="New struct" actionIcon={Plus} onAction={() => navigate('/structs/new')} />
+        <EmptyState icon={Shapes} title="No structs yet — create one" message="Definitions you create show up here. Only their creator can edit or delete them." actionLabel="New struct" actionIcon={Plus} onAction={() => navigate('/structs/new')} />
       ) : (
         <>
           <div style={{ marginBottom: t.spacing.lg, maxWidth: 360 }}>
@@ -57,12 +57,15 @@ export default function Definitions() {
                       {s.sectionCount ? <Badge>{plural(s.sectionCount, 'section')}</Badge> : null}
                       <Badge tone={s.recordCount ? 'primary' : 'neutral'}>{plural(s.recordCount ?? 0, 'record')}</Badge>
                       <Text $variant="caption" $color="textFaint" $inline>
-                        {s.modifiedAt ? `edited ${timeAgo(s.modifiedAt)}` : `created ${timeAgo(s.createdAt)}`}
+                        {s.modifiedAt ? `edited ${timeAgo(s.modifiedAt)}` : s.createdAt ? `created ${timeAgo(s.createdAt)}` : ''}
                       </Text>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: t.spacing.sm }} onClick={(e) => e.stopPropagation()}>
                     <Button title="Records" size="sm" variant="ghost" icon={Table2} onPress={() => navigate(`/structs/${s.id}/records`)} />
+                    {isMine(s.createdBy) ? (
+                      <Button title="Edit" size="sm" variant="secondary" icon={Pencil} onPress={() => navigate(`/structs/${s.id}/edit`)} testID={`edit-${s.name}`} />
+                    ) : null}
                     {isMine(s.createdBy) ? (
                       <Button title="Delete" size="sm" variant="secondary" icon={Trash2} onPress={() => setConfirm(s)} testID={`delete-${s.name}`} />
                     ) : null}

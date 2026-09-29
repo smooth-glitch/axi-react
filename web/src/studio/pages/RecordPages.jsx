@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from 'styled-components';
-import { Inbox, Plus, Trash2 } from 'lucide-react';
+import { Inbox, Pencil, Plus, Trash2 } from 'lucide-react';
 import Page from '../Page';
 import RecordsBrowser from '../../ui/RecordsBrowser';
 import { StructForm } from '../../ui/StructForm';
@@ -43,6 +43,7 @@ export function Records() {
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const add = () => navigate(`/structs/${id}/form`);
+  const edit = () => navigate(`/structs/${id}/edit`);
   const total = records?.length ?? 0;
 
   return (
@@ -51,6 +52,13 @@ export function Records() {
       subtitle={records ? `${total} record${total === 1 ? '' : 's'}` : 'Loading…'}
       actions={
         <div style={{ display: 'flex', gap: t.spacing.sm }}>
+          {struct && isMine(struct.createdBy) ? (
+            narrow ? (
+              <IconButton icon={Pencil} label="Edit definition" size={40} onPress={edit} testID="edit-definition" />
+            ) : (
+              <Button title="Edit definition" icon={Pencil} variant="secondary" onPress={edit} testID="edit-definition" />
+            )
+          ) : null}
           {struct && isMine(struct.createdBy) ? (
             narrow ? (
               <IconButton icon={Trash2} label="Delete definition" size={40} onPress={() => setConfirmStruct(true)} testID="delete-definition" />

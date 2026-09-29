@@ -5,7 +5,7 @@ import { Save } from 'lucide-react';
 import Page from '../Page';
 import StructBuilder from '../../ui/builder/StructBuilder';
 import { Alert, Button, Skeleton, useToast } from '../../ui/kit';
-import { createStruct, getStruct, updateStruct } from '../../core/api';
+import { createStruct, getStruct, isMine, updateStruct } from '../../core/api';
 import { buildStructPayload, structToDrafts } from '../../core/builderModel';
 import { useStructs } from '../StructsContext';
 
@@ -67,6 +67,7 @@ export function EditStruct() {
   const [error, setError] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [notOwner, setNotOwner] = useState(false); // only the creator may edit (the server enforces it too)
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -77,6 +78,7 @@ export function EditStruct() {
         setStructKey(d.key);
         setFields(d.fields);
         setSections(d.sections);
+        setNotOwner(!isMine(s.createdBy));
         setLoaded(true);
       })
       .catch((e) => setLoadError(e.message));
@@ -114,7 +116,7 @@ export function EditStruct() {
         loaded ? (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: t.spacing.md }}>
             <Button title="Discard" variant="secondary" onPress={back} />
-            <Button title="Save changes" icon={Save} onPress={save} loading={saving} testID="save-struct" />
+            <Button title="Save changes" icon={Save} onPress={save} loading={saving} disabled={notOwner} testID="save-struct" />
           </div>
         ) : null
       }
@@ -128,10 +130,11 @@ export function EditStruct() {
       ) : null}
       {loaded ? (
         <>
+          {notOwner ? <Alert tone="warning">Only the person who created this struct can edit it. You can look, but saving will be refused.</Alert> : null}
           {recordCount > 0 ? (
             <Alert tone="warning">{`This struct already has ${recordCount} record${recordCount === 1 ? '' : 's'}. Renaming fields is safe. Removing a field hides its saved values, and changing a field's type may make old values invalid.`}</Alert>
           ) : null}
-          <StructBuilder name={name} setName={setName} structKey={structKey} setStructKey={setStructKey} fields={fields} setFields={setFields} sections={sections} setSections={setSections} error={error} nameError={error && !name.trim()} />
+          <StructBuilder lockKey name={name} setName={setName} structKey={structKey} setStructKey={setStructKey} fields={fields} setFields={setFields} sections={sections} setSections={setSections} error={error} nameError={error && !name.trim()} />
         </>
       ) : null}
     </Page>
