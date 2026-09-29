@@ -13,7 +13,13 @@
 //   node test/hash_commands_strict_test.mjs [http://localhost:8083]
 //
 // Companion to hash_commands_full_test.mjs (chat commands, open mode).
-// Node 22+, no dependencies.
+// Login here follows the mandatory-2FA rules in sd_auth/sd_totp: a password
+// is checked only for the admin account (see enrollAndLogin below, used for
+// every non-admin); everyone still needs a TOTP code the first time (and
+// again from an untrusted device -- not exercised here, see sandesh_mfa_test.mjs
+// for that). Node 22+, no dependencies beyond node:crypto.
+
+import crypto from "node:crypto";
 
 const BASE = process.argv[2] || "http://localhost:8083";
 const WS_URL = BASE.replace(/^http/, "ws");
@@ -40,9 +46,36 @@ async function http(method, path, body, token) {
 const post = (p, b, t) => http("POST", p, b ?? {}, t);
 const data = (r) => r.json?.data;
 
-async function otpLogin(identifier) {
-    const s = await post("/api/sd/otp/send", { identifier });
-    const r = await post("/api/sd/login", { identifier, otp: data(s)?.devOtp });
+// ---- Pure-JS RFC 6238 TOTP, same as sandesh_totp_test.mjs -----------------
+function b32decode(str) {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const clean = str.replace(/=+$/, "").toUpperCase();
+    let bits = "";
+    for (const c of clean) bits += alphabet.indexOf(c).toString(2).padStart(5, "0");
+    const bytes = [];
+    for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+    return Buffer.from(bytes);
+}
+function hotp(secretBuf, counter) {
+    const msg = Buffer.alloc(8);
+    msg.writeBigUInt64BE(BigInt(counter));
+    const hmac = crypto.createHmac("sha1", secretBuf).update(msg).digest();
+    const offset = hmac[hmac.length - 1] & 0x0f;
+    const code = ((hmac[offset] & 0x7f) << 24) | (hmac[offset + 1] << 16) | (hmac[offset + 2] << 8) | hmac[offset + 3];
+    return String(code % 1000000).padStart(6, "0");
+}
+function totpNow(secretB32) { return hotp(b32decode(secretB32), Math.floor(Date.now() / 1000 / 30)); }
+
+// A password is checked only for the admin account (see sd_auth), so this
+// covers every non-admin login in this file: no password is ever sent.
+// Handles both first-ever enrollment (server hands back a `secret`) and a
+// login from an already-trusted device (server hands back a `token`
+// straight away, e.g. signing back in later in the same test run).
+async function enrollAndLogin(identifier) {
+    let r = await post("/api/sd/login", { identifier });
+    if (data(r)?.token) return data(r).token;
+    const secret = data(r)?.secret;
+    r = await post("/api/sd/login", { identifier, totp: totpNow(secret) });
     return data(r)?.token;
 }
 
@@ -105,6 +138,12 @@ async function main() {
     const adminName = `hroot${sfx}`, pw = "Str0ngPass99";
     r = await post("/api/sd/setup/start", { org: "Hash Co", name: "Root Admin", username: adminName, email: `${adminName}@hash.co`, mobile: "+919886012345" });
     r = await post("/api/sd/setup/verify", { otp: data(r).devOtp });
+    // setup/verify hands back enrollment step 1 (secret + defaultPassword),
+    // not a session yet -- finish TOTP enrollment to get the admin's first
+    // real token, same as any other unenrolled account's first login.
+    const adminSecret = data(r).secret;
+    const defaultPw = data(r).defaultPassword;
+    r = await post("/api/sd/login", { identifier: adminName, password: defaultPw, totp: totpNow(adminSecret) });
     const setupToken = data(r).token;
 
     console.log("=== A forced password change blocks Sandesh #commands (until it is done) ===");
@@ -134,13 +173,13 @@ async function main() {
     m = await A.sd("users.invite", { ...emp(priya, "Priya S"), isHost: true, hostScope: { employees: { any: true } } });
     ok("host invited", m.ok, m);
     ok("sam invited", (await A.sd("users.invite", emp(sam, "Sam W"))).ok);
-    let P = await new Client(priya).connect(await otpLogin(priya));
+    let P = await new Client(priya).connect(await enrollAndLogin(priya));
     m = await P.sd("users.invite", emp(ravi, "Ravi K"));
     ok("host invites ravi (his host is priya)", m.ok && m.data.user.host === priya, m);
     m = await P.sd("users.invite", emp(erin, "Erin E"));
     ok("host invites erin", m.ok, m);
-    let S = await new Client(sam).connect(await otpLogin(sam));
-    const R = await new Client(ravi).connect(await otpLogin(ravi));
+    let S = await new Client(sam).connect(await enrollAndLogin(sam));
+    const R = await new Client(ravi).connect(await enrollAndLogin(ravi));
 
     m = await A.sd("admin.tstruct.save", { name: "leave_request", caption: "Leave request", fields: [
         { name: "from_date", type: "date", caption: "From", required: true },
@@ -380,7 +419,7 @@ async function main() {
     m = await A.hash("admin-activate", priya);
     ok("#admin-activate the host again", m.ok, m);
     P.close();   // her old connection was ended by the deactivation; sign in again
-    P = await new Client(priya).connect(await otpLogin(priya));
+    P = await new Client(priya).connect(await enrollAndLogin(priya));
     ok("...and she can sign back in", true);
 
     console.log("=== Permissions: the same commands as non-admins ===");
@@ -422,7 +461,7 @@ async function main() {
     m = await A2.hash("admin-activate", sam);
     ok("unlocked: #admin-activate works", m.ok, m);
     S.close();   // the deactivation ended sam's connection; sign in again
-    S = await new Client(sam).connect(await otpLogin(sam));
+    S = await new Client(sam).connect(await enrollAndLogin(sam));
 
     console.log("=== Chat rules under #commands (strict) ===");
     const bc = await P.ask("##hello everyone", x => x.type === "error" || x.type === "own_message_id");

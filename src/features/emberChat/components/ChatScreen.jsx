@@ -35,6 +35,8 @@ export default function ChatScreen({
   initialComposerText = "",
   mediaPanelConfig = null,
   onCloseMediaPanel,
+  onOpenApprovals,
+  pendingApprovalsCount = 0,
 }) {
   const [activeView, setActiveView] = useState("messages"); // "messages" | "episodes"
   const [replyingTo, setReplyingTo] = useState(null);
@@ -96,6 +98,8 @@ export default function ChatScreen({
         onDeleteChat={onDeleteChat}
         isAdmin={isAdmin}
         onlineUsers={onlineUsers}
+        onOpenApprovals={onOpenApprovals}
+        pendingApprovalsCount={pendingApprovalsCount}
       />
 
       {activeView === "episodes" ? (
@@ -111,6 +115,26 @@ export default function ChatScreen({
         />
       ) : (
         <div className="sandesh-chat-body">
+          {isAdmin && pendingApprovalsCount > 0 && (
+            <div className="sandesh-pending-approval-banner">
+              <div className="approval-banner-left">
+                <span className="material-icons banner-icon">how_to_reg</span>
+                <div className="banner-text-wrap">
+                  <strong>{pendingApprovalsCount} User{pendingApprovalsCount > 1 ? "s" : ""} Waiting for Entry Approval</strong>
+                  <span>Verify applicant details and authorize access to enter Sandesh Chat.</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="sandesh-btn-banner-approve"
+                onClick={onOpenApprovals}
+              >
+                <span>Review &amp; Allow Entry</span>
+                <span className="material-icons">arrow_forward</span>
+              </button>
+            </div>
+          )}
+
           {disabled && (
             <div
               className="sandesh-disconnected-banner"

@@ -10,21 +10,42 @@
 %%%    sent to validate them, and that first user becomes the administrator.
 %%%    (Optional guard: set SANDESH_SETUP_TOKEN so only someone who knows it
 %%%    can claim the first-run slot on a reachable server.)
-%%%  - Login by email, mobile number or username; OTP verification on first
-%%%    login and again once every 14 days.
+%%%  - Login by email, mobile number or username.
+%%%  - A PASSWORD is required only for admin accounts -- everyone else signs
+%%%    in with just their identifier plus (when due) a second-factor code.
+%%%  - Two-factor is mandatory for every account (admin included), but is
+%%%    only demanded again from a DEVICE this account hasn't verified from
+%%%    in the last 14 days (see "Device trust" below) -- not on every login,
+%%%    and not just once globally either: a brand-new device always asks,
+%%%    even if this account verified minutes ago somewhere else.
+%%%  - Second factor is either an authenticator-app TOTP code or an emailed
+%%%    OTP code, chosen once at enrollment (see sd_totp).
 %%%  - Admin default password is "Sandesh" + username, must be changed on
 %%%    first login, and must be changed again every 30 days.
-%%%  - The admin console needs password AND an OTP (admin_unlock/3).
+%%%  - The admin console needs password AND a delivered OTP (admin_unlock/3).
+%%%
+%%% Device trust: every login (successful password check, if one applies,
+%%% plus a fresh-enough second factor) trusts the calling DEVICE for
+%%% ?DEVICE_TRUST_TTL, sliding forward on each subsequent login from that
+%%% same device. A device is identified by the login body's `deviceId` (a
+%%% client-generated, per-install opaque string -- the intended long-term
+%%% mechanism) when present, else by a coarse fallback fingerprint derived
+%%% from the User-Agent header, so a client that hasn't been updated to send
+%%% `deviceId` yet still gets *a* notion of "device" rather than none. A
+%%% request with neither is never treated as a returning device (it always
+%%% demands a fresh code) -- that fails closed, not open.
 %%%
 %%% Abuse controls: OTP resend cooldown, max wrong OTP attempts, per-account
 %%% lockout after repeated failed logins, per-IP request limits.
 -module(sd_auth).
 -export([setup_start/2, setup_verify/2,
-         otp_send/2, login/2,
-         session/1, session_user/1, session_alive/1, session_expires/1, session_ttl/0, logout/1,
-         change_password/3, set_initial_password/2, password_state/1,
+         login/3,
+         session/1, session_user/1, session_alive/1, session_expires/1, session_ttl/0,
+         totp_due_for_token/1, logout/1,
+         change_password/3, set_initial_password/2, password_state/1, check_password_policy/2,
          admin_unlock_start/1, admin_unlock/3, admin_unlocked/1,
-         otp_fresh/1]).
+         totp_fresh/1, password_ok/2, issue_default_password/1,
+         send_otp/3, check_otp/3]).
 -include_lib("kernel/include/logger.hrl").
 
 -define(OTP_TTL, 300).
@@ -33,7 +54,15 @@
 %% Default session lifetime: two weeks, HARD (not sliding) -- the spec's
 %% "ask the user to login again every two weeks". Overridable for tests/ops.
 -define(SESSION_TTL_DEFAULT, 14 * 24 * 3600).
--define(OTP_FRESH_MS, 14 * 24 * 3600 * 1000).
+%% Once a login proves a fresh TOTP code, password-only logins are accepted
+%% again for this long before a code is demanded once more. Kept as an
+%% account-wide informational signal (see totp_fresh/1); the actual login
+%% gate is the per-DEVICE trust store below.
+-define(TOTP_FRESH_MS, 14 * 24 * 3600 * 1000).
+%% How long a single device stays trusted (no code demanded) after it last
+%% proved a fresh second factor. Overridable for tests via
+%% SANDESH_DEVICE_TRUST_SEC, same pattern as SANDESH_TOTP_FRESH_SEC.
+-define(DEVICE_TRUST_TTL, 14 * 24 * 3600).
 -define(ADMIN_PW_MAX_AGE_MS, 30 * 24 * 3600 * 1000).
 -define(UNLOCK_TTL, 1800).
 -define(LOGIN_FAIL_MAX, 5).
@@ -98,9 +127,14 @@ finish_setup(Pending) ->
                 {ok, User} ->
                     sd_db:del("sd:setup:pending"),
                     store_password(Username, default_password(Username), true),
-                    sd_users:mark_otp(Username),
-                    Session = start_session(sd_users:get(Username)),
-                    {ok, Session#{<<"org">> => Org, <<"user">> => User}};
+                    %% No session yet -- TOTP enrollment (mandatory for every
+                    %% account, including this one) is what finishing login
+                    %% produces. POST /api/sd/login with this default
+                    %% password (+ a code, once scanned) completes it.
+                    {ok, Setup} = sd_totp:login_setup(Username, User, <<"totp">>),
+                    {ok, Setup#{<<"org">> => Org, <<"user">> => User,
+                                <<"totpSetupRequired">> => true,
+                                <<"defaultPassword">> => default_password(Username)}};
                 {error, _, _} = Err ->
                     %% Roll the claim back so setup can be retried.
                     sd_db:hdel("sd:org", "setup_done"),
@@ -122,28 +156,14 @@ setup_token_ok(Body) ->
 default_password(Username) -> <<"Sandesh", Username/binary>>.
 
 %% =============================================================================
-%% OTP
+%% OTP -- delivered (email/SMS) codes. Used directly by bootstrap setup and
+%% the admin-console unlock gate; also reused (exported) by sd_totp and by
+%% this module's own email-2FA steps, keyed by Purpose so all these callers
+%% share one cooldown/attempt-limit implementation without stepping on each
+%% other's codes: `setup`, `unlock`, `mfa_setup` (email 2FA enrollment),
+%% `mfa_login` (email 2FA at login from an untrusted device), `mfa_manage`
+%% (email 2FA disable/regenerate-recovery, Bearer).
 %% =============================================================================
-
-%% Public endpoint. Never reveals whether an identifier exists: unknown
-%% identifiers get the same "ok" as real ones.
-otp_send(Body, Ip) ->
-    Id = trim(sd_util:get(<<"identifier">>, Body)),
-    case {Id, sd_db:rate(["otp:ip:", Ip], 20, 900)} of
-        {<<>>, _} -> {error, invalid, <<"identifier is required.">>};
-        {_, limited} -> {error, rate_limited, <<"Too many requests; try again later.">>};
-        _ ->
-            case sd_users:find(Id) of
-                undefined -> {ok, #{<<"sent">> => true}};
-                User ->
-                    case status_gate(User) of
-                        ok ->
-                            R = send_otp(login, maps:get(<<"username">>, User), User),
-                            {ok, R};
-                        {error, _, _} = Err -> Err
-                    end
-            end
-    end.
 
 status_gate(#{<<"status">> := <<"active">>}) -> ok;
 status_gate(#{<<"status">> := <<"pending">>}) ->
@@ -230,11 +250,26 @@ otp_hash(Salt, Code) ->
 %% Login
 %% =============================================================================
 
-%% Body: identifier + (password and/or otp).
-login(Body, Ip) ->
+%% Body: identifier, plus password (admin accounts only -- see authenticate/8),
+%% plus (when due) one of: totp (authenticator app code), emailOtp (a
+%% delivered code) or recoveryCode (a backup code for whichever method this
+%% account enrolled in); optionally deviceId and, only at first-time
+%% enrollment, mfaMethod ("totp", the default, or "email"). Headers is the
+%% raw request headers map (for the device-trust fallback fingerprint; see
+%% device_key/2) -- sd_http passes it straight through.
+%%
+%% A code is only demanded when the account either hasn't finished 2FA
+%% enrollment yet, or the calling DEVICE isn't currently trusted (new device,
+%% or this device's trust has expired); a call from an already-trusted
+%% device succeeds outright once any password requirement is met.
+login(Body, Ip, Headers) ->
     Id = trim(sd_util:get(<<"identifier">>, Body)),
     Password = sd_util:get(<<"password">>, Body),
-    Otp = sd_util:get(<<"otp">>, Body),
+    Totp = sd_util:get(<<"totp">>, Body),
+    RecoveryCode = sd_util:get(<<"recoveryCode">>, Body),
+    EmailOtp = sd_util:get(<<"emailOtp">>, Body),
+    Method = mfa_method_choice(sd_util:get(<<"mfaMethod">>, Body)),
+    DeviceKey = device_key(Body, Headers),
     case {Id, sd_db:rate(["login:ip:", Ip], 60, 900)} of
         {<<>>, _} -> {error, invalid, <<"identifier is required.">>};
         {_, limited} -> {error, rate_limited, <<"Too many attempts; try again later.">>};
@@ -243,62 +278,130 @@ login(Body, Ip) ->
                 undefined ->
                     burn_time(),
                     {error, invalid_credentials, <<"Wrong details.">>};
-                User -> login_user(User, Password, Otp)
+                User -> login_user(User, Password, Totp, RecoveryCode, EmailOtp, Method, DeviceKey)
             end
     end.
 
-login_user(User, Password, Otp) ->
+mfa_method_choice(<<"email">>) -> <<"email">>;
+mfa_method_choice(_) -> <<"totp">>.
+
+login_user(User, Password, Totp, RecoveryCode, EmailOtp, Method, DeviceKey) ->
     Username = maps:get(<<"username">>, User),
     case locked(Username) of
         true -> {error, locked, <<"Too many failed attempts; try again in a few minutes.">>};
         false ->
             case status_gate(User) of
                 {error, _, _} = Err -> Err;
-                ok -> authenticate(User, Username, Password, Otp)
+                ok -> authenticate(User, Username, Password, Totp, RecoveryCode, EmailOtp, Method, DeviceKey)
             end
     end.
 
-authenticate(User, Username, Password, Otp) ->
-    HasPw = is_binary(Password) andalso Password =/= <<>>,
-    HasOtp = is_binary(Otp) andalso Otp =/= <<>>,
-    case {HasPw, HasOtp} of
-        {false, false} ->
-            {error, invalid, <<"Send a password and/or an otp.">>};
-        {true, false} ->
-            case password_ok(Username, Password) of
+%% "Password is needed only for admin users" -- every other account skips
+%% straight to the second-factor gate, whether or not it happens to have a
+%% password on file (invites/self-registration still set one; it's just
+%% never checked here any more).
+authenticate(User, Username, Password, Totp, RecoveryCode, EmailOtp, Method, DeviceKey) ->
+    case sd_users:is_admin(User) of
+        true ->
+            HasPw = has(Password),
+            case HasPw andalso password_ok(Username, Password) of
                 false -> failed(Username);
-                true ->
-                    case otp_fresh(User) of
-                        true -> success(User, false);
-                        false ->
-                            %% Password fine but the 14-day OTP check is due.
-                            _ = send_otp(login, Username, User),
-                            {error, otp_required, <<"Enter the one-time code we just sent you.">>}
-                    end
+                true -> after_password(User, Username, Totp, RecoveryCode, EmailOtp, Method, DeviceKey)
             end;
-        {false, true} ->
-            case check_otp(login, Username, Otp) of
-                ok -> success(User, true);
+        false ->
+            after_password(User, Username, Totp, RecoveryCode, EmailOtp, Method, DeviceKey)
+    end.
+
+after_password(User, Username, Totp, RecoveryCode, EmailOtp, Method, DeviceKey) ->
+    case sd_totp:enabled(Username) of
+        false -> enroll_step(User, Username, Totp, EmailOtp, Method, DeviceKey);
+        true ->
+            case device_trusted(Username, DeviceKey) of
+                true -> success(User, false, DeviceKey);
+                false -> mfa_step(User, Username, Totp, RecoveryCode, EmailOtp, DeviceKey)
+            end
+    end.
+
+has(V) -> is_binary(V) andalso V =/= <<>>.
+
+%% First-ever login for this account (or a previous enrollment attempt that
+%% never finished): no code yet -> kick off enrollment (a QR/secret for
+%% totp, or send the first email code for email). A code present -> treat it
+%% as the answer to that enrollment step, and on a match, turn 2FA on AND
+%% log them in (trusting this device), in the same call. A wrong code here
+%% still counts against the account's failed-attempt lockout, same as a
+%% wrong code post-enrollment, so this can't be brute-forced either.
+enroll_step(User, Username, Totp, EmailOtp, Method, DeviceKey) ->
+    case pick_code(Totp, EmailOtp) of
+        none ->
+            case sd_totp:login_setup(Username, User, Method) of
+                {ok, Setup} -> {ok, Setup#{<<"totpSetupRequired">> => true}};
+                {error, _, _} = Err -> Err
+            end;
+        Code ->
+            case sd_totp:login_verify_setup(Username, Code) of
+                {ok, RecoveryCodes} ->
+                    {ok, Session} = success(User, true, DeviceKey),
+                    {ok, Session#{<<"recoveryCodes">> => RecoveryCodes, <<"totpJustEnabled">> => true}};
+                {error, _, _} = Err -> count_failure(Username), Err
+            end
+    end.
+
+pick_code(Totp, _) when is_binary(Totp), Totp =/= <<>> -> Totp;
+pick_code(_, EmailOtp) when is_binary(EmailOtp), EmailOtp =/= <<>> -> EmailOtp;
+pick_code(_, _) -> none.
+
+%% Reached only for an already-enrolled account logging in from a device
+%% that isn't currently trusted. recoveryCode works regardless of which
+%% second-factor method this account uses; otherwise dispatch on it.
+mfa_step(User, Username, Totp, RecoveryCode, EmailOtp, DeviceKey) ->
+    case has(RecoveryCode) of
+        true ->
+            case sd_totp:consume_recovery(Username, RecoveryCode) of
+                ok -> success(User, true, DeviceKey);
                 {error, _, _} = Err -> count_failure(Username), Err
             end;
-        {true, true} ->
-            case password_ok(Username, Password) of
-                false -> failed(Username);
-                true ->
-                    case check_otp(login, Username, Otp) of
-                        ok -> success(User, true);
-                        {error, _, _} = Err -> count_failure(Username), Err
-                    end
+        false ->
+            case sd_totp:method(Username) of
+                <<"email">> -> email_mfa_step(User, Username, EmailOtp, DeviceKey);
+                _ -> totp_mfa_step(User, Username, Totp, DeviceKey)
             end
     end.
 
-success(User, OtpUsed) ->
+totp_mfa_step(User, Username, Totp, DeviceKey) ->
+    case has(Totp) of
+        false -> {error, totp_required, <<"Enter your authenticator app code.">>};
+        true ->
+            case sd_totp:verify_login(Username, Totp) of
+                ok -> success(User, true, DeviceKey);
+                {error, _, _} = Err -> count_failure(Username), Err
+            end
+    end.
+
+%% Unlike an app code, an email code doesn't already exist client-side, so a
+%% call with none yet triggers sending one (not an error -- 200/ok, same
+%% cooldown-aware shape send_otp/3 always returns) rather than just telling
+%% the caller to go produce one.
+email_mfa_step(User, Username, EmailOtp, DeviceKey) ->
+    case has(EmailOtp) of
+        false ->
+            Sent = send_otp(mfa_login, Username, User),
+            {ok, Sent#{<<"emailOtpRequired">> => true, <<"mfaMethod">> => <<"email">>}};
+        true ->
+            case check_otp(mfa_login, Username, EmailOtp) of
+                ok -> success(User, true, DeviceKey);
+                {error, _, _} = Err -> count_failure(Username), Err
+            end
+    end.
+
+success(User, CodeUsed, DeviceKey) ->
     Username = maps:get(<<"username">>, User),
     sd_db:del(["sd:lf:", sd_util:s(Username)]),
-    OtpUsed andalso sd_users:mark_otp(Username),
+    CodeUsed andalso sd_users:mark_totp(Username),
+    trust_device(Username, DeviceKey),
     sd_users:mark_login(Username),
     Fresh = sd_users:get(Username),
-    {ok, start_session(Fresh)}.
+    {ok, start_session(Fresh, DeviceKey)}.
 
 failed(Username) ->
     count_failure(Username),
@@ -321,11 +424,71 @@ burn_time() ->
     _ = crypto:pbkdf2_hmac(sha256, <<"x">>, <<"y">>, ?PW_ITER, 32),
     ok.
 
-otp_fresh(User) ->
-    case sd_util:get(<<"lastOtpTs">>, User) of
-        T when is_integer(T) -> sd_util:now_ms() - T < ?OTP_FRESH_MS;
+%% SANDESH_TOTP_FRESH_SEC overrides the 14-day default (used by tests, or
+%% to tighten it), same pattern as session_ttl/0.
+totp_fresh_ms() ->
+    case os:getenv("SANDESH_TOTP_FRESH_SEC") of
+        false -> ?TOTP_FRESH_MS;
+        S -> case string:to_integer(S) of {N, []} when N > 0 -> N * 1000; _ -> ?TOTP_FRESH_MS end
+    end.
+
+totp_fresh(User) ->
+    case sd_util:get(<<"lastTotpTs">>, User) of
+        T when is_integer(T) -> sd_util:now_ms() - T < totp_fresh_ms();
         _ -> false
     end.
+
+%% =============================================================================
+%% Device trust -- see the module doc for the overall rule. A device is a
+%% Redis key with a sliding TTL; there is no list of a user's devices to
+%% manage/revoke individually (out of scope here), just "was THIS one seen
+%% recently".
+%% =============================================================================
+
+device_trust_ttl_sec() ->
+    case os:getenv("SANDESH_DEVICE_TRUST_SEC") of
+        false -> ?DEVICE_TRUST_TTL;
+        S -> case string:to_integer(S) of {N, []} when N > 0 -> N; _ -> ?DEVICE_TRUST_TTL end
+    end.
+
+device_trusted(Username, DeviceKey) ->
+    sd_db:get(device_trust_redis_key(Username, DeviceKey)) =/= undefined.
+
+trust_device(Username, DeviceKey) ->
+    sd_db:setex(device_trust_redis_key(Username, DeviceKey), device_trust_ttl_sec(), <<"1">>).
+
+device_trust_redis_key(Username, DeviceKey) ->
+    ["sd:devtrust:", sd_util:s(sd_util:norm_user(Username)), ":", sd_util:s(DeviceKey)].
+
+%% Body's `deviceId` (opaque, client-generated, stable across this device's
+%% logins) wins when present. Otherwise fall back to a fingerprint derived
+%% from the User-Agent header -- coarse (shared by every install of the same
+%% browser/OS combination) but still means a genuinely different browser or
+%% platform is treated as a different device, without requiring any client
+%% change. Neither present -> a fresh, never-repeating key, so trust can
+%% never be granted by accident (fails closed).
+device_key(Body, Headers) ->
+    Raw = case norm_bin(sd_util:get(<<"deviceId">>, Body)) of
+        <<>> -> device_fallback_raw(Headers);
+        D -> <<"id:", D/binary>>
+    end,
+    base64:encode(crypto:hash(sha256, Raw)).
+
+device_fallback_raw(Headers) ->
+    case header_bin(Headers, "user-agent") of
+        <<>> -> <<"anon:", (sd_util:rand_token())/binary>>;
+        Ua -> <<"ua:", Ua/binary>>
+    end.
+
+header_bin(Headers, Key) when is_map(Headers) ->
+    case maps:find(Key, Headers) of
+        {ok, V} -> sd_util:b(string:trim(V));
+        error -> <<>>
+    end;
+header_bin(_, _) -> <<>>.
+
+norm_bin(V) when is_binary(V) -> string:trim(V);
+norm_bin(_) -> <<>>.
 
 %% =============================================================================
 %% Sessions
@@ -339,20 +502,21 @@ session_ttl() ->
         S -> case string:to_integer(S) of {N, []} when N > 0 -> N; _ -> ?SESSION_TTL_DEFAULT end
     end.
 
-start_session(User) ->
+start_session(User, DeviceKey) ->
     Username = maps:get(<<"username">> , User),
     Token = sd_util:rand_token(),
     Now = sd_util:now_ms(),
     Ttl = session_ttl(),
     Expires = Now + Ttl * 1000,
     sd_db:setex_json(["sd:sess:", Token], Ttl,
-                     #{<<"username">> => Username, <<"createdTs">> => Now, <<"expiresTs">> => Expires}),
+                     #{<<"username">> => Username, <<"createdTs">> => Now, <<"expiresTs">> => Expires,
+                       <<"deviceKey">> => DeviceKey}),
     State = password_state(Username),
     #{<<"token">> => Token,
       <<"expiresTs">> => Expires,
       <<"user">> => sd_users:full(User),
       <<"mustChangePassword">> => maps:get(<<"mustChange">>, State),
-      <<"otpDue">> => not otp_fresh(User)}.
+      <<"totpDue">> => not device_trusted(Username, DeviceKey)}.
 
 %% Session info without side effects: {ok, User, #{mustChange}} | error.
 session(Token) when is_binary(Token), Token =/= <<>> ->
@@ -366,6 +530,20 @@ session(Token) when is_binary(Token), Token =/= <<>> ->
         _ -> error
     end;
 session(_) -> error.
+
+%% "Is a code due again yet?" for an already-live session, keyed off the
+%% DEVICE that session was created on -- not the account-wide totp_fresh/1
+%% (a session predating this field falls back to that, since it has no
+%% deviceKey to check).
+totp_due_for_token(Token) when is_binary(Token), Token =/= <<>> ->
+    case sd_db:get_json(["sd:sess:", Token]) of
+        #{<<"username">> := Username, <<"deviceKey">> := DeviceKey} ->
+            not device_trusted(Username, DeviceKey);
+        #{<<"username">> := Username} ->
+            not totp_fresh(sd_users:get(Username));
+        _ -> true
+    end;
+totp_due_for_token(_) -> true.
 
 session_user(Token) ->
     case session(Token) of
@@ -451,10 +629,19 @@ change_password(Token, Old, New) ->
             end
     end.
 
-%% Used at account creation paths that already proved identity (none today
-%% besides setup); kept small and explicit.
+%% Used at account creation paths that already proved identity (a
+%% self-registering user choosing their own password); kept small and
+%% explicit.
 set_initial_password(Username, Password) ->
     store_password(Username, Password, false).
+
+%% Every account needs a password now (mandatory TOTP enrollment happens at
+%% first login, right after the password check). Used for accounts someone
+%% ELSE creates -- invites -- where the new user hasn't chosen a password
+%% yet: same default-password-then-forced-change convention as the admin
+%% bootstrap in finish_setup/1.
+issue_default_password(Username) ->
+    store_password(Username, default_password(Username), true).
 
 check_password_policy(Username, Pw) when is_binary(Pw) ->
     Chars = unicode:characters_to_list(Pw),

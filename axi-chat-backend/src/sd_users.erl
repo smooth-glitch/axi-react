@@ -12,7 +12,7 @@
 %%%   isHost, hostScope, canManageUsers,
 %%%   host (username of this user's host, or null),
 %%%   status ("active" | "inactive" | "pending" | "rejected"),
-%%%   createdBy, createdTs, updatedTs, lastLoginTs, lastOtpTs
+%%%   createdBy, createdTs, updatedTs, lastLoginTs, lastTotpTs
 %%%
 %%% Associations (`sd:assoc:<user>`, a hash peer -> relation) record who may
 %%% message whom under the spec's rule "users can message only their host"
@@ -20,7 +20,7 @@
 %%% "user" (that peer is a user I host), "peer" (accepted invitation).
 -module(sd_users).
 -export([get/1, find/1, list/0, exists/1, create/2, create_dry/1, update/3, set_status/2,
-         set_host/2, mark_login/1, mark_otp/1, replace/1,
+         set_host/2, mark_login/1, mark_totp/1, replace/1,
          public/1, full/1, is_admin/1, is_host/1, is_active/1, effective_category/1,
          admins/0, users_of_host/1, hosts_covering/1, host_covers/2, count_using/2,
          search/2, unique_username/1, valid_host_scope/1,
@@ -151,7 +151,7 @@ create_checked(Attrs, Opts, Profile, Email, Mobile) ->
                         <<"createdTs">> => Now,
                         <<"updatedTs">> => Now,
                         <<"lastLoginTs">> => null,
-                        <<"lastOtpTs">> => null},
+                        <<"lastTotpTs">> => null},
                     store_new(User),
                     case Host of
                         undefined -> ok;
@@ -236,7 +236,7 @@ set_host(Username, HostOrNull) ->
     end.
 
 mark_login(Username) -> touch(Username, <<"lastLoginTs">>).
-mark_otp(Username) -> touch(Username, <<"lastOtpTs">>).
+mark_totp(Username) -> touch(Username, <<"lastTotpTs">>).
 
 touch(Username, Field) ->
     case get(Username) of

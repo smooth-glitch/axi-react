@@ -3,7 +3,7 @@ import Avatar from "../Avatar.jsx";
 
 export default function HostedUsersModal({
   hostedUsers = [],
-  availableHosts = ["sabarish", "nageshwari", "hr", "finance"],
+  availableHosts = [],
   onTransferUser,
   onClose,
 }) {
@@ -97,18 +97,30 @@ export default function HostedUsersModal({
             </p>
             <div className="new-group-input-box" style={{ marginTop: "8px" }}>
               <span className="material-icons field-icon">domain</span>
-              <select
-                className="new-group-input"
-                style={{ background: "transparent", border: "none", outline: "none", width: "100%" }}
-                value={targetHost}
-                onChange={(e) => setTargetHost(e.target.value)}
-              >
-                {availableHosts.map((h) => (
-                  <option key={h} value={h}>
-                    Host: @{h}
-                  </option>
-                ))}
-              </select>
+              {availableHosts.length > 0 ? (
+                <select
+                  className="new-group-input"
+                  style={{ background: "transparent", border: "none", outline: "none", width: "100%" }}
+                  value={targetHost}
+                  onChange={(e) => setTargetHost(e.target.value)}
+                >
+                  <option value="">Select target host...</option>
+                  {availableHosts.map((h) => (
+                    <option key={h} value={h}>
+                      Host: @{h}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="new-group-input"
+                  style={{ background: "transparent", border: "none", outline: "none", width: "100%" }}
+                  placeholder="Enter target host username..."
+                  value={targetHost}
+                  onChange={(e) => setTargetHost(e.target.value)}
+                />
+              )}
             </div>
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "12px" }}>
               <button

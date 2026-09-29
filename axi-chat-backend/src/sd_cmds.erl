@@ -211,9 +211,14 @@ require_level(Level, User, Ctx) ->
             end
     end.
 
-%% Enforced only in strict mode; in open mode the flag is informational.
+%% Enforced only in strict mode, and only for admin accounts -- a password
+%% is checked only for admins now (see sd_auth), so a non-admin's
+%% `mustChange` flag (still set by the same default-password-at-invite
+%% convention) would otherwise block them forever: nothing in their login
+%% ever looks at their password, so they'd never be prompted to clear it.
+%% In open mode the flag is purely informational either way.
 must_change(User) ->
-    sd_util:strict() andalso
+    sd_util:strict() andalso sd_users:is_admin(User) andalso
         maps:get(<<"mustChange">>, sd_auth:password_state(maps:get(<<"username">>, User))).
 
 %% ---- actions ------------------------------------------------------------------------------------------
@@ -232,7 +237,7 @@ do(<<"me">>, _Args, #{user := User, token := Token}) ->
                                   <<"canManageUsers">> => maps:get(<<"canManageUsers">>, User, false) =:= true},
            <<"pendingRequests">> => sd_reqs:pending_count(Name),
            <<"password">> => sd_auth:password_state(Name),
-           <<"otpDue">> => not sd_auth:otp_fresh(User),
+           <<"totpDue">> => sd_auth:totp_due_for_token(Token),
            <<"adminUnlocked">> => sd_auth:admin_unlocked(Token)}};
 
 %% ---- associations -----------------------------------------------------------------------------------------
@@ -639,12 +644,20 @@ invite_user(Args, Actor) ->
                            end,
                     case sd_users:create(Args, Opts) of
                         {ok, User} ->
+                            Username = maps:get(<<"username">>, User),
+                            %% Every account needs a password now (mandatory TOTP
+                            %% enrollment happens at first login) -- same
+                            %% default-password-then-forced-change convention as
+                            %% the admin bootstrap.
+                            sd_auth:issue_default_password(Username),
                             sd_notify:deliver(invite,
                                 sd_util:take([<<"name">>, <<"email">>, <<"mobile">>], User),
                                 #{<<"text">> => <<"You've been invited to Sandesh by ",
                                                   (maps:get(<<"name">>, Actor))/binary,
-                                                  ". Sign in with your email or mobile number; "
-                                                  "we'll send you a one-time code.">>}),
+                                                  ". Sign in with your email or mobile number and the "
+                                                  "password \"Sandesh", Username/binary, "\" -- "
+                                                  "you'll be asked to change it and set up an "
+                                                  "authenticator app on first login.">>}),
                             {ok, #{<<"user">> => User}};
                         Err -> Err
                     end

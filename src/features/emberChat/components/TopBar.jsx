@@ -13,6 +13,8 @@ export default function TopBar({
   onDeleteChat,
   isAdmin,
   onlineUsers = [],
+  onOpenApprovals,
+  pendingApprovalsCount = 0,
 }) {
   const isOnline = !chat.isGroup && (chat.isOnline || (onlineUsers || []).some((u) => {
     const target = (
@@ -167,6 +169,24 @@ export default function TopBar({
         >
           <span className="material-icons">delete_sweep</span>
         </button>
+
+        {/* User Approvals trigger */}
+        {isAdmin && (
+          <button
+            type="button"
+            className="sandesh-action-pill-btn approvals-topbar-pill"
+            onClick={onOpenApprovals}
+            title={`User Access Approvals ${pendingApprovalsCount > 0 ? `(${pendingApprovalsCount} waiting)` : ''}`}
+          >
+            <span className="material-icons" style={{ color: pendingApprovalsCount > 0 ? 'var(--sandesh-coral-accent)' : 'inherit' }}>
+              how_to_reg
+            </span>
+            <span>Approvals</span>
+            {pendingApprovalsCount > 0 && (
+              <span className="topbar-approval-badge">{pendingApprovalsCount}</span>
+            )}
+          </button>
+        )}
 
         {/* Admin Console trigger */}
         {isAdmin && (
