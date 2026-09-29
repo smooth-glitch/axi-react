@@ -6,33 +6,45 @@
 %%% has to scale (verification is a couple of HMAC-SHA1 computations and one
 %%% Redis round trip).
 %%%
-%%% TOTP is mandatory for every account (sd_auth's login/2 requires it) --
-%%% there is no email/SMS OTP fallback any more. Enrollment happens inline,
-%%% the first time an account with no confirmed secret yet passes its
-%%% password check at login:
-%%%   login_setup/2    issues a fresh secret (unconfirmed) -- or hands back
-%%%                     the one already pending, so re-trying login before
-%%%                     finishing enrollment doesn't invalidate a QR code
-%%%                     the user already scanned.
-%%%   login_verify_setup/2   requires one correct code before turning 2FA on,
-%%%                     so a user can never lock themselves out with a
-%%%                     secret their app never actually scanned right, then
-%%%                     issues one-time recovery codes for a lost device.
+%%% Two-factor is mandatory for every account (sd_auth's login/2 requires
+%%% it), but there are now two interchangeable second factors a user can
+%%% enroll in -- one per account, chosen at enrollment time:
+%%%   "totp"   an authenticator-app code, as before: free, no delivery
+%%%            channel, the free/scalable default.
+%%%   "email"  a delivered code (piggybacking sd_auth's generic OTP
+%%%            send_otp/3 + check_otp/3), for citizen users who don't want
+%%%            to install an authenticator app. Costs a delivery per code,
+%%%            same channel as setup/admin-unlock OTPs.
+%%% Both live in the same sd:totp hash / doc shape, distinguished by the
+%%% doc's <<"method">> field (missing/absent means "totp", so every secret
+%%% enrolled before this field existed keeps working unchanged).
+%%%
+%%% Enrollment happens inline, the first time an account with no confirmed
+%%% second factor yet reaches this point at login (see sd_auth:enroll_step/6):
+%%%   login_setup/3         issues a fresh secret (method totp) or sends the
+%%%                         first email code (method email) -- or, on retry
+%%%                         before finishing, hands back / re-sends the
+%%%                         still-pending one rather than starting over.
+%%%   login_verify_setup/2  requires one correct code before turning 2FA on,
+%%%                         so a user can never lock themselves out with a
+%%%                         secret/code they never actually got right, then
+%%%                         issues one-time recovery codes for a lost device.
 %%% Both are called from sd_auth, keyed by username -- there's no session
 %%% yet at that point (that's the whole point: finishing enrollment IS what
 %%% produces the first session).
 %%%
-%%% Once enrolled, login stays password-only for ?FRESH_MS (see sd_auth's
-%%% totp_fresh/1) and demands a fresh code again after that -- status/1,
-%%% disable/3 and regenerate_recovery/3 (Bearer, for an already-signed-in
-%%% user managing their own 2FA) are unaffected by that window.
+%%% Once enrolled, a *recognised device* (sd_auth's device-trust store) skips
+%%% the code entirely for ?DEVICE_TRUST_TTL (see sd_auth); a new/unrecognised
+%%% device always demands one, regardless of when this account last verified
+%%% anywhere else. status/1, disable/3 and regenerate_recovery/3 (Bearer, for
+%%% an already-signed-in user managing their own 2FA) are unaffected by that.
 %%%
 %%% Secrets are stored encrypted at rest (AES-256-GCM) under sd:totp, a
 %%% separate hash from both sd:cred and sd:users, mirroring how sd_auth
 %%% keeps passwords out of the profile record.
 -module(sd_totp).
--export([login_setup/2, login_verify_setup/2, disable/3, status/1, enabled/1,
-         verify_login/2, consume_recovery/2, regenerate_recovery/3]).
+-export([login_setup/3, login_verify_setup/2, disable/3, status/1, enabled/1, method/1,
+         verify_login/2, consume_recovery/2, regenerate_recovery/3, request_manage_code/1]).
 -include_lib("kernel/include/logger.hrl").
 
 -define(TOTP, "sd:totp").
@@ -49,32 +61,59 @@
 %% Enrollment
 %% =============================================================================
 
-%% Called from sd_auth:login/2 once the password has already checked out
-%% for an account with no confirmed TOTP secret yet. Reuses a still-pending
-%% (unconfirmed) secret if one already exists, rather than minting a new one
-%% on every retry -- otherwise a user who scanned the QR but hasn't typed
-%% the code yet would see it change out from under them on a second attempt.
-login_setup(Username, User) ->
+%% Called from sd_auth:enroll_step/6 once the account has passed whatever
+%% gate applies to it (password for an admin, nothing for anyone else) and
+%% has no confirmed second factor yet. Method is <<"totp">> (default) or
+%% <<"email">>, taken from the login body's optional `mfaMethod`. Reuses a
+%% still-pending (unconfirmed) enrollment of the SAME method if one already
+%% exists, rather than minting a new one on every retry -- otherwise a user
+%% who scanned the QR (or received a code) but hasn't typed it in yet would
+%% see it change out from under them on a second attempt. Asking for the
+%% other method while one is pending abandons the pending one -- enrollment
+%% only ever tracks one in-progress attempt.
+login_setup(Username, User, Method) ->
     case sd_db:rate(["totp:setup:", sd_util:s(Username)], ?SETUP_RATE_MAX, ?SETUP_RATE_WINDOW) of
         limited -> {error, rate_limited, <<"Too many setup attempts; try again later.">>};
-        ok ->
-            {Secret, Doc} = case sd_db:hget_json(?TOTP, key(Username)) of
-                #{<<"enabled">> := false, <<"encSecret">> := EncB64} = Existing ->
-                    case decrypt_secret(EncB64) of
-                        error -> fresh_pending_doc();
-                        S -> {S, Existing}
-                    end;
-                _ -> fresh_pending_doc()
-            end,
-            sd_db:hset_json(?TOTP, key(Username), Doc),
-            B32 = b32_encode(Secret),
-            {ok, #{<<"secret">> => B32,
-                   <<"otpauthUri">> => otpauth_uri(account_name(User, Username), B32),
-                   <<"issuer">> => issuer(),
-                   <<"digits">> => 6,
-                   <<"periodSec">> => ?PERIOD,
-                   <<"recommendedApps">> => recommended_apps()}}
+        ok -> login_setup_method(Username, User, normalize_method(Method))
     end.
+
+normalize_method(<<"email">>) -> <<"email">>;
+normalize_method(_) -> <<"totp">>.
+
+login_setup_method(Username, User, <<"email">> = Method) ->
+    Doc = case sd_db:hget_json(?TOTP, key(Username)) of
+        #{<<"enabled">> := false, <<"method">> := <<"email">>} = Existing -> Existing;
+        _ -> #{<<"method">> => Method, <<"enabled">> => false,
+               <<"createdTs">> => sd_util:now_ms(), <<"recovery">> => []}
+    end,
+    sd_db:hset_json(?TOTP, key(Username), Doc),
+    Sent = sd_auth:send_otp(mfa_setup, Username, User),
+    {ok, Sent#{<<"mfaMethod">> => Method}};
+login_setup_method(Username, User, Method) ->
+    {Secret, Doc0} = case sd_db:hget_json(?TOTP, key(Username)) of
+        #{<<"enabled">> := false, <<"method">> := <<"totp">>, <<"encSecret">> := EncB64} = Existing ->
+            case decrypt_secret(EncB64) of
+                error -> fresh_pending_doc();
+                S -> {S, Existing}
+            end;
+        #{<<"enabled">> := false, <<"encSecret">> := EncB64} = Existing when not is_map_key(<<"method">>, Existing) ->
+            %% Pre-existing pending enrollment from before `method` existed.
+            case decrypt_secret(EncB64) of
+                error -> fresh_pending_doc();
+                S -> {S, Existing}
+            end;
+        _ -> fresh_pending_doc()
+    end,
+    Doc = Doc0#{<<"method">> => Method},
+    sd_db:hset_json(?TOTP, key(Username), Doc),
+    B32 = b32_encode(Secret),
+    {ok, #{<<"secret">> => B32,
+           <<"otpauthUri">> => otpauth_uri(account_name(User, Username), B32),
+           <<"issuer">> => issuer(),
+           <<"digits">> => 6,
+           <<"periodSec">> => ?PERIOD,
+           <<"recommendedApps">> => recommended_apps(),
+           <<"mfaMethod">> => Method}}.
 
 %% Any RFC 6238 app works (the otpauthUri above is the actual integration
 %% point -- this is purely "which app to point a user at" for onboarding).
@@ -100,21 +139,34 @@ fresh_pending_doc() ->
                <<"lastCounter">> => 0,
                <<"recovery">> => []}}.
 
-%% Confirms the app actually produces valid codes before turning 2FA on, and
-%% hands back the one-time recovery codes (shown to the user exactly once).
-%% Called from sd_auth:login/2 as the second half of first-time enrollment.
+%% Confirms the app/email code actually checks out before turning 2FA on,
+%% and hands back the one-time recovery codes (shown to the user exactly
+%% once). Called from sd_auth:enroll_step/6 as the second half of
+%% first-time enrollment.
 login_verify_setup(Username, Code) ->
     case sd_db:rate(["totp:setupv:", sd_util:s(Username)], ?VERIFY_RATE_MAX, ?VERIFY_RATE_WINDOW) of
         limited -> {error, rate_limited, <<"Too many attempts; try again later.">>};
         ok ->
             case sd_db:hget_json(?TOTP, key(Username)) of
-                undefined -> {error, not_found, <<"No enrollment in progress -- call login without totp first.">>};
+                undefined -> {error, not_found, <<"No enrollment in progress -- call login without a code first.">>};
                 #{<<"enabled">> := true} -> {error, already_enabled, <<"Two-factor is already on for this account.">>};
+                #{<<"method">> := <<"email">>} = Doc ->
+                    case sd_auth:check_otp(mfa_setup, Username, Code) of
+                        ok ->
+                            {Plain, Hashed} = gen_recovery_codes(),
+                            NewDoc = Doc#{<<"enabled">> => true,
+                                          <<"confirmedTs">> => sd_util:now_ms(),
+                                          <<"recovery">> => Hashed},
+                            sd_db:hset_json(?TOTP, key(Username), NewDoc),
+                            {ok, Plain};
+                        {error, _, _} = Err -> Err
+                    end;
                 Doc ->
                     case verify_code_against(Doc, Code) of
                         {ok, Counter} ->
                             {Plain, Hashed} = gen_recovery_codes(),
                             NewDoc = Doc#{<<"enabled">> => true,
+                                          <<"method">> => <<"totp">>,
                                           <<"confirmedTs">> => sd_util:now_ms(),
                                           <<"lastCounter">> => Counter,
                                           <<"recovery">> => Hashed},
@@ -178,13 +230,40 @@ regenerate_recovery(Token, Password, Code) ->
     end).
 
 status(Token) ->
-    with_session(Token, fun(_User, Username) -> {ok, #{<<"enabled">> => enabled(Username)}} end).
+    with_session(Token, fun(_User, Username) ->
+        {ok, #{<<"enabled">> => enabled(Username), <<"method">> => method(Username)}}
+    end).
 
 enabled(Username) ->
     case sd_db:hget_json(?TOTP, key(Username)) of
         #{<<"enabled">> := true} -> true;
         _ -> false
     end.
+
+%% <<"totp">> or <<"email">> -- <<"totp">> for both an account genuinely
+%% enrolled that way and one with no enrollment at all (method is only
+%% meaningful once enabled, and totp is the long-standing default).
+method(Username) ->
+    case sd_db:hget_json(?TOTP, key(Username)) of
+        #{<<"method">> := <<"email">>} -> <<"email">>;
+        _ -> <<"totp">>
+    end.
+
+%% A signed-in email-method user needs a fresh delivered code before
+%% disable/3 or regenerate_recovery/3 will accept it -- there's nothing to
+%% compute locally the way an authenticator app does. Rate-limited the same
+%% way login's own email step is (sd_auth:send_otp's cooldown).
+request_manage_code(Token) ->
+    with_session(Token, fun(User, Username) ->
+        case method(Username) of
+            <<"email">> ->
+                case enabled(Username) of
+                    true -> {ok, sd_auth:send_otp(mfa_manage, Username, User)};
+                    false -> {error, not_found, <<"Two-factor is not enabled for this account.">>}
+                end;
+            _ -> {error, invalid, <<"This account's two-factor method doesn't use emailed codes.">>}
+        end
+    end).
 
 %% =============================================================================
 %% Login-time verification (no session yet -- called from sd_auth:login/2)
@@ -227,10 +306,16 @@ consume_recovery(_, _) -> {error, otp_invalid, <<"recoveryCode is required.">>}.
 
 %% Used only by disable/3 and regenerate_recovery/3, which already hold a
 %% session -- no separate rate bucket needed on top of the password check.
+%% For an email-method account, Code is a code fetched moments earlier via
+%% request_manage_code/1 (there's nothing to compute locally to check).
 code_or_recovery_ok(Doc, Username, Code) when is_binary(Code), Code =/= <<>> ->
-    case verify_code_against(Doc, Code) of
-        {ok, _} -> true;
-        no_match ->
+    PrimaryOk = case maps:get(<<"method">>, Doc, <<"totp">>) of
+        <<"email">> -> sd_auth:check_otp(mfa_manage, Username, Code) =:= ok;
+        _ -> case verify_code_against(Doc, Code) of {ok, _} -> true; no_match -> false end
+    end,
+    case PrimaryOk of
+        true -> true;
+        false ->
             H = hash_recovery(Code),
             case find_unused(H, maps:get(<<"recovery">>, Doc, [])) of
                 {ok, _} -> consume_recovery(Username, Code) =:= ok;

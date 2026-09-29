@@ -283,14 +283,28 @@ async function main() {
     ok("password-only login is now accepted (fresh TOTP window)", (await post("/api/sd/login", { identifier: priya, password: "NewPass99" })).status === 200);
     const S = await enrollAndLogin(sam);
     ok("second invited user enrolls + logs in", !!S.token, S.login);
-    // lockout uses a throwaway user -- wrong PASSWORD attempts exercise the
-    // same failed-attempt counter as a wrong TOTP/recovery code would.
-    m = await A.sd("users.invite", { name: "Locky", username: `locky${sfx}`, email: `locky${sfx}@acme.com`, isEmployee: true, branch: "Bangalore HQ", department: "HR", designation: "Engineer" });
+    // A password is checked only for admin accounts now (see sd_auth's
+    // authenticate/8) -- a non-admin's password, right or wrong, is never
+    // looked at, so brute-force lockout there has to come from wrong
+    // second-factor codes instead (covered in sandesh_mfa_test.mjs). Here,
+    // wrong ADMIN passwords exercise the same failed-attempt counter. Uses
+    // the already-signed-in admin account; nothing after this point logs
+    // the admin in again over HTTP, so locking its login is harmless.
+    // A successful login first resets the failed-attempt counter (an
+    // earlier assertion above already put one wrong attempt on it), so the
+    // 5 wrong attempts below start from a clean count of 0, same as the
+    // original throwaway-user version of this test.
+    r = await post("/api/sd/login", { identifier: adminName, password: "Str0ngPass99" });
+    ok("(reset) admin's device is still trusted -- password-only login still works", r.status === 200 && !!data(r).token, r);
     let last;
-    for (let i = 0; i < 5; i++) last = await post("/api/sd/login", { identifier: `locky${sfx}`, password: "totally-wrong-1" });
-    ok("wrong passwords are rejected", last.status === 401 && code(last) === "invalid_credentials", last);
-    r = await post("/api/sd/login", { identifier: `locky${sfx}`, password: "totally-wrong-1" });
+    for (let i = 0; i < 5; i++) last = await post("/api/sd/login", { identifier: adminName, password: "totally-wrong-1" });
+    ok("wrong passwords are rejected (admin accounts only)", last.status === 401 && code(last) === "invalid_credentials", last);
+    r = await post("/api/sd/login", { identifier: adminName, password: "totally-wrong-1" });
     ok("after 5 failures the account is temporarily locked (429)", r.status === 429 && code(r) === "locked", r);
+    // A non-admin's login never checks the password at all any more.
+    m = await A.sd("users.invite", { name: "Locky", username: `locky${sfx}`, email: `locky${sfx}@acme.com`, isEmployee: true, branch: "Bangalore HQ", department: "HR", designation: "Engineer" });
+    r = await post("/api/sd/login", { identifier: `locky${sfx}`, password: "totally-wrong-1" });
+    ok("a non-admin's login ignores the password -- goes straight to 2FA enrollment", r.status === 200 && data(r).totpSetupRequired === true, r);
 
     console.log("=== Hosts, scope and self-registration approval ===");
     const PR = await connectAs(priya, P.token);
