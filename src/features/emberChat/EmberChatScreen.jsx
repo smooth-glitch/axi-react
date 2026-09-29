@@ -38,6 +38,40 @@ const formatTs = (ts) => {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
+// Server request objects (see sd_reqs:view/1) -> the shape ApprovalsModal renders.
+function mapServerRequests(requests, profiles = {}) {
+  return (requests || []).map((r) => {
+    const profile = profiles[r.subject] || {};
+    const isOnboarding = r.type === "onboarding";
+    return {
+      id: r.id,
+      type: r.type,
+      status: r.status,
+      title: isOnboarding ? `New user registration: ${r.subjectName}` : r.type,
+      name: r.subjectName || r.subject,
+      username: r.subject,
+      fromUser: r.from,
+      fromName: r.fromName,
+      email: profile.email,
+      mobile: profile.mobile,
+      category: profile.category || profile.userType,
+      department: profile.department,
+      designation: profile.designation,
+      time: r.createdTs ? new Date(r.createdTs).toLocaleString() : undefined,
+      details:
+        r.type === "onboarding"
+          ? "Self-registered and waiting for approval to enter Sandesh."
+          : r.type === "associate"
+            ? `${r.fromName || r.from} wants to connect with you.`
+            : r.type === "host_transfer"
+              ? `${r.fromName || r.from} wants to transfer ${r.subjectName || r.subject} to you as their host.`
+              : r.type === "group_invite"
+                ? `${r.fromName || r.from} wants to add ${r.subjectName || r.subject} to group ${r.data?.group || ""}.`
+                : undefined,
+    };
+  });
+}
+
 export function EmberChatScreen({ onOpenAiChat }) {
   // Authorized session user. Check localStorage for active Sandesh session
   const [currentUser, setCurrentUser] = useState(() => {
@@ -102,30 +136,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   const [associates, setAssociates] = useState([]);
 
-  const [approvals, setApprovals] = useState(() => {
-    try {
-      const stored = localStorage.getItem("sandesh_pending_registrations");
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  });
-
-  // Keep approvals synchronized across browser tabs / windows
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === "sandesh_pending_registrations") {
-        try {
-          setApprovals(JSON.parse(e.newValue || "[]"));
-        } catch {}
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+  // Requests (onboarding approvals, associate invites, ...) live on the server;
+  // this is just a cache of `req.list`, refreshed on connect, on live push
+  // events, and after every accept/reject/ignore.
+  const [approvals, setApprovals] = useState([]);
 
   const pendingApprovalsCount = approvals.filter((r) => r.status === "pending").length;
 
@@ -186,6 +200,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
       if (event.type === "status_change") {
         setSocketStatus(event.status);
         if (event.status === "connected") {
+          refreshApprovals();
           // Re-fetch history for currently active chat on reconnect
           const currentId = activeChatIdRef.current;
           if (currentId.startsWith("user-")) {
@@ -769,6 +784,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
             setActiveChatId("room-general");
           }
         }
+      } else if (
+        event.type === "sd_event" &&
+        (event.event === "request_created" || event.event === "request_resolved")
+      ) {
+        refreshApprovals();
       } else if (event.type === "cmd_catalog" && Array.isArray(event.commands)) {
         setCatalog(event.commands);
       } else if (event.type === "cmd_help" && event.command) {
@@ -777,7 +797,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
         if (event.reqId === "#cards" && event.ok && event.data?.cards) {
           setCards(event.data.cards);
         } else if (event.reqId === "#requests" && event.ok && event.data?.requests) {
-          setApprovals(event.data.requests);
+          setApprovals(mapServerRequests(event.data.requests));
+        } else if (
+          ["#accept", "#reject", "#ignore"].includes(event.reqId) && event.ok
+        ) {
+          refreshApprovals();
         } else if (event.reqId === "#associates" && event.ok && event.data?.associates) {
           setAssociates(event.data.associates);
         } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
@@ -1337,31 +1361,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
       const statusFilter = parts[0] || "all";
       setModalParam(statusFilter);
       setModal("approvals");
+      refreshApprovals();
       return;
     }
 
-    if (cmd === "accept") {
-      const reqId = Number(parts[0]) || parts[0];
-      setApprovals((prev) =>
-        prev.map((r) => (r.id === reqId || String(r.id) === String(reqId) ? { ...r, status: "accepted" } : r))
-      );
-      pushToast(`Request #${reqId} accepted`);
-      return;
-    }
-
-    if (cmd === "reject") {
-      const reqId = Number(parts[0]) || parts[0];
-      setApprovals((prev) =>
-        prev.map((r) => (r.id === reqId || String(r.id) === String(reqId) ? { ...r, status: "rejected" } : r))
-      );
-      pushToast(`Request #${reqId} rejected`);
-      return;
-    }
-
-    if (cmd === "ignore") {
-      const reqId = Number(parts[0]) || parts[0];
-      setApprovals((prev) => prev.filter((r) => r.id !== reqId && String(r.id) !== String(reqId)));
-      pushToast(`Request #${reqId} ignored`);
+    if (cmd === "accept" || cmd === "reject" || cmd === "ignore") {
+      // The line was already sent to the server above; the list refreshes
+      // from its reply (see the "sd" event handler).
       return;
     }
 
@@ -1852,99 +1858,41 @@ export function EmberChatScreen({ onOpenAiChat }) {
     };
   }, [currentUser?.token]);
 
-  const handleAcceptApproval = (reqId, reqItem) => {
-    sandeshSocket.send(`#accept ${reqId}`);
-    setApprovals((prev) => {
-      const updated = prev.map((r) =>
-        r.id === reqId ? { ...r, status: "accepted", approvedAt: "Just now" } : r
-      );
-      try {
-        localStorage.setItem("sandesh_pending_registrations", JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-
-    const target = reqItem || approvals.find((r) => r.id === reqId);
-    if (target) {
-      const uName = target.username || target.fromUser || target.name;
-      if (!associates.some((a) => (a.username || "").toLowerCase() === String(uName).toLowerCase())) {
-        const newAssoc = {
-          id: target.id || `user-${uName}`,
-          username: uName,
-          name: target.name || uName,
-          email: target.email,
-          mobile: target.mobile,
-          category: target.category || "Employee",
-          department: target.department || "Engineering",
-          designation: target.designation || "Enterprise Associate",
-          initials: String(target.name || uName).slice(0, 2).toUpperCase(),
-          color: "#34c759",
-          status: "Authorized on Sandesh",
-        };
-        setAssociates((prev) => [...prev, newAssoc]);
+  const refreshApprovals = useCallback(async () => {
+    const res = await sandeshSocket.sd("req.list", { status: "all" });
+    if (!res.ok) return;
+    const requests = res.data?.requests || [];
+    // Onboarding requests only carry the applicant's username; admins can look
+    // up the rest of their profile so the approver sees who they're approving.
+    let profiles = {};
+    if (requests.some((r) => r.type === "onboarding")) {
+      const list = await sandeshSocket.sd("admin.users.list", { status: "all", pageSize: 200 });
+      if (list.ok) {
+        profiles = Object.fromEntries((list.data?.users || []).map((u) => [u.username, u]));
       }
-      pushToast(`✓ Approved entry for @${uName}! Access granted to chat interface.`);
-    } else {
-      pushToast(`Request #${reqId} accepted`);
     }
-  };
+    setApprovals(mapServerRequests(requests, profiles));
+  }, []);
 
-  const handleRejectApproval = (reqId, reqItem) => {
-    sandeshSocket.send(`#reject ${reqId}`);
-    setApprovals((prev) => {
-      const updated = prev.map((r) =>
-        r.id === reqId ? { ...r, status: "rejected", rejectedAt: "Just now" } : r
-      );
-      try {
-        localStorage.setItem("sandesh_pending_registrations", JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
+  const respondToApproval = async (reqId, action, reqItem) => {
+    const res = await sandeshSocket.sd("req.respond", { id: Number(reqId), action });
+    if (!res.ok) {
+      pushToast({ ok: false, error: res.error });
+      await refreshApprovals();
+      return;
+    }
     const target = reqItem || approvals.find((r) => r.id === reqId);
-    const uName = target?.username || target?.fromUser || `ID #${reqId}`;
-    pushToast(`✕ Entry access denied for @${uName}.`);
+    const who = target?.username ? `@${target.username}` : `request #${reqId}`;
+    if (action === "accept") pushToast(`✓ Approved ${who}.`);
+    else if (action === "reject") pushToast(`✕ Rejected ${who}.`);
+    else pushToast(`Request #${reqId} dismissed`);
+    await refreshApprovals();
+    if (action === "accept") sandeshSocket.send("#associates");
   };
 
-  const handleIgnoreApproval = (reqId) => {
-    sandeshSocket.send(`#ignore ${reqId}`);
-    setApprovals((prev) => {
-      const updated = prev.filter((r) => r.id !== reqId);
-      try {
-        localStorage.setItem("sandesh_pending_registrations", JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-    pushToast(`Request #${reqId} dismissed from queue`);
-  };
-
-  const handleAddDemoApplicant = () => {
-    const demoId = Date.now();
-    const demoReq = {
-      id: demoId,
-      type: "registration",
-      status: "pending",
-      title: "New User Registration: Anish K.",
-      name: "Anish K.",
-      username: "anish",
-      email: "anish@agilelabs.com",
-      mobile: "+91 9886000000",
-      category: "Employee",
-      department: "Engineering & Architecture",
-      designation: "Platform Engineer",
-      time: "Just now",
-      details: "Self-registered and waiting for admin clearance to enter the chat interface.",
-      fromUser: "anish",
-      registeredAt: new Date().toISOString(),
-    };
-    setApprovals((prev) => {
-      const updated = [demoReq, ...prev.filter((r) => r.username !== "anish")];
-      try {
-        localStorage.setItem("sandesh_pending_registrations", JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-    pushToast("Simulated registration request created for Anish (@anish)!");
-  };
+  const handleAcceptApproval = (reqId, reqItem) => respondToApproval(reqId, "accept", reqItem);
+  const handleRejectApproval = (reqId, reqItem) => respondToApproval(reqId, "reject", reqItem);
+  const handleIgnoreApproval = (reqId) => respondToApproval(reqId, "ignore");
 
   const handleStartChatWithUser = (userReq) => {
     const uName = userReq.username || userReq.fromUser || userReq.name;
@@ -2050,7 +1998,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           socketStatus={socketStatus}
           onReconnectSocket={() => sandeshSocket.connect(currentUser)}
           onDeleteChat={handleDeleteChat}
-          onOpenApprovals={() => setModal("approvals")}
+          onOpenApprovals={() => {
+            setModal("approvals");
+            refreshApprovals();
+          }}
           pendingApprovalsCount={pendingApprovalsCount}
         />
 
@@ -2062,7 +2013,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           isAdmin={currentUser.isAdmin}
           onMenuClick={() => setSidebarOpen(true)}
           onMembersClick={() => setModal("members")}
-          onOpenApprovals={() => setModal("approvals")}
+          onOpenApprovals={() => {
+            setModal("approvals");
+            refreshApprovals();
+          }}
           pendingApprovalsCount={pendingApprovalsCount}
           onSend={handleSend}
           onAttachFile={handleAttachFile}
@@ -2229,7 +2183,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 onAccept={handleAcceptApproval}
                 onReject={handleRejectApproval}
                 onIgnore={handleIgnoreApproval}
-                onAddDemoApplicant={handleAddDemoApplicant}
                 onStartChatWithUser={handleStartChatWithUser}
                 onClose={() => {
                   setModal(null);

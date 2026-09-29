@@ -21,6 +21,28 @@ class SandeshSocketService {
     this.reconnectTimer = null;
     this.isManualDisconnect = false;
     this.connEpoch = 0;
+    this.sdSeq = 0;
+    this.pendingSd = new Map(); // reqId -> { resolve, timer }
+  }
+
+  /**
+   * Call a Sandesh backend action (`/sd <action> {json}`) and wait for its reply.
+   * Resolves to { ok, data } or { ok:false, error:{ code, message } } -- never rejects.
+   */
+  sd(action, args = {}, timeoutMs = 10000) {
+    return new Promise((resolve) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        resolve({ ok: false, error: { code: 'not_connected', message: 'Not connected to the Sandesh server.' } });
+        return;
+      }
+      const reqId = `ui-${++this.sdSeq}`;
+      const timer = setTimeout(() => {
+        this.pendingSd.delete(reqId);
+        resolve({ ok: false, error: { code: 'timeout', message: 'The server took too long to respond.' } });
+      }, timeoutMs);
+      this.pendingSd.set(reqId, { resolve, timer });
+      this.ws.send(`/sd ${action} ${JSON.stringify({ ...args, reqId })}`);
+    });
   }
 
   subscribe(listener) {
@@ -113,6 +135,15 @@ class SandeshSocketService {
           payload = JSON.parse(event.data);
         } catch {
           payload = { type: '__raw__', text: event.data };
+        }
+
+        // Replies to sd() calls go to their caller only, not to every listener.
+        if (payload.type === 'sd' && this.pendingSd.has(payload.reqId)) {
+          const { resolve, timer } = this.pendingSd.get(payload.reqId);
+          clearTimeout(timer);
+          this.pendingSd.delete(payload.reqId);
+          resolve(payload);
+          return;
         }
 
         if (payload.type === 'welcome') {
