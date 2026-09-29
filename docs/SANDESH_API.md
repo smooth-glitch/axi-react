@@ -437,6 +437,37 @@ Form field `type`: `text` (`multiline`, `rich`), `date` (`min`,`max`
 for one is dropped). The same rules run on the server, so the client can
 render from the definition and rely on `invalid_values` for the final say.
 
+#### User-made structures, options and files
+
+Any signed-in user can also make their own structures and options (level `user`):
+
+| Action | Args → Returns |
+|---|---|
+| `tstruct.user.list` / `.get` | `{}` / `{name}` → `{tstructs}` / `{tstruct}` — every user-made structure is visible to everyone |
+| `tstruct.user.save` | `{name, caption?, description?, fields[], sections[]}` → `{tstruct}` (`owner`, `createdTs` set); `duplicate` if the name is taken |
+| `tstruct.user.update` | same body → `{tstruct}` — **creator only** (`forbidden` otherwise, not even an administrator). Name and owner never change; records already saved are re-checked against the new definition when next edited |
+| `tstruct.user.delete` | `{name}` — creator only. Options pointing at it are left (they then answer `not_found`); records are kept but can no longer be edited |
+| `tstruct.user.submit` | `{name, values}` → `{submission}` (same validation as `tstruct.submit`) |
+| `option.user.list` | → `{options, types}` — the options you made (an administrator gets all) |
+| `option.user.save` | `{id?, caption, type, target?, display?, applicable?, active?, order?}` → `{option}`; a new option gets a server id (`o<n>`); only its creator (or an administrator) can change an existing one |
+| `option.user.delete` | `{id}` — creator or administrator |
+
+Options now carry `owner` (null = made by an administrator), `targetScope` (`"admin"` / `"user"`, which kind of form a `data_input` option opens), `createdTs` and `modifiedTs`; `options.list` returns `targetScope` and `owner`. Rules the server enforces:
+
+* A **user-made** option may only point at a **user-made** structure. Only an administrator can point an option at an admin-managed form, and only admin-made options grant access to one (`tstruct.get` / `tstruct.submit`) — a user can't widen who reaches a restricted form.
+* A `download` option's `target` is a file id; a user can only attach a file **they uploaded**.
+* `applicable` ("Applicable to") is enforced by `options.list` for user-made options exactly as for admin ones.
+
+**Files** (for `upload` / `download` options) are plain HTTP, all with `Authorization: Bearer <token>`:
+
+| Request | Result |
+|---|---|
+| `POST /api/sd/files?name=<file name>` — raw bytes as the body, `Content-Type` = the file's type | `{file:{id,name,mime,size,by,ts}}`. `413 too_large` above the limit (`SANDESH_MAX_FILE_MB`, default **10**, keep it ≤ nginx's `client_max_body_size`); 60 uploads/hour per user; `Content-Length` required |
+| `GET /api/sd/files` | `{files}` — what you uploaded |
+| `GET /api/sd/files/<id>` | the bytes as `application/octet-stream`, `attachment`, `nosniff`; name in `X-File-Name` (percent-encoded UTF-8, exposed to browsers) |
+
+A file can be read by its uploader, an administrator, or anyone an **active `download` option pointing at it applies to**. Bytes are stored under a server-generated id in `SANDESH_FILES_DIR` (default `<app dir>/uploads/sd-files` — set it to a persistent path on servers that rebuild the app directory).
+
 ### Admin console (`admin.*`)
 
 `admin` level = administrator (strict mode: after `admin.unlock`). Use the

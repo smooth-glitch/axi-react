@@ -157,7 +157,8 @@ user_actions() ->
      <<"options.list">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
-     <<"tstruct.user.delete">>, <<"tstruct.user.submit">>].
+     <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
+     <<"option.user.list">>, <<"option.user.save">>, <<"option.user.delete">>].
 
 run(Action, Args, Ctx) ->
     Level = access(Action),
@@ -443,6 +444,17 @@ do(<<"tstruct.user.get">>, Args, #{user := _User}) ->
     end);
 do(<<"tstruct.user.save">>, Args, #{user := User}) ->
     case sd_config:save_user_tstruct(User, Args) of {ok, D} -> {ok, #{<<"tstruct">> => D}}; Err -> Err end;
+do(<<"tstruct.user.update">>, Args, #{user := User}) ->
+    case sd_config:update_user_tstruct(User, Args) of {ok, D} -> {ok, #{<<"tstruct">> => D}}; Err -> Err end;
+%% ---- options the caller made (any user), see sd_config:save_user_option/2 -------------------------------------------
+do(<<"option.user.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"options">> => sd_config:list_user_options(User), <<"types">> => sd_config:option_types()}};
+do(<<"option.user.save">>, Args, #{user := User}) ->
+    case sd_config:save_user_option(User, Args) of {ok, O} -> {ok, #{<<"option">> => O}}; Err -> Err end;
+do(<<"option.user.delete">>, Args, #{user := User}) ->
+    with_bin(<<"id">>, Args, fun(Id) ->
+        case sd_config:delete_user_option(User, Id) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+    end);
 do(<<"tstruct.user.delete">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(N) ->
         case sd_config:delete_user_tstruct(User, N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
