@@ -94,6 +94,12 @@ async function connect(username, token) {
     }
     if (m.type === "sd_event") events.push(m);
   };
+  ws.onclose = (e) => {
+    // a reply that never comes would hang the whole run: fail loudly instead
+    console.log(`  (socket for ${username} closed: ${e.code} ${e.reason || ""})`);
+    for (const [id, resolve] of waiters) resolve({ type: "sd", reqId: id, ok: false, error: { code: "socket_closed", message: "socket closed" } });
+    waiters.clear();
+  };
   await new Promise((res) => {
     ws.onopen = res;
   });
@@ -1303,11 +1309,13 @@ async function main() {
   });
   ok("admin creates a managed struct", m.ok, m);
   // ann needs an option to access it
+  // no `applicable` would mean EVERYONE (a citizen included), so restrict it to employees to test the gate
   m = await AD.sd("admin.option.save", {
     id: "managed1-opt",
     caption: "Managed",
     type: "data_input",
     target: "managed1",
+    applicable: { categories: ["Employee"] },
   });
   m = await ann.sd("tstruct.user.open", { name: "managed1" });
   ok(
@@ -1457,8 +1465,8 @@ async function main() {
   await AD.sd("admin.tstruct.delete", { name: "managed1" });
   await AD.sd("admin.option.delete", { id: "managed1-opt" });
   await ann.sd("tstruct.user.delete", { name: "poll2" });
-  [ann, bob, cit, AD].forEach((u) => u.close && u.close());
 
+  // (sockets stay open: the sections below still use them)
   console.log("\n=== Adversarial ===");
   // hostile file names must not break out of the header or the directory
   res = await http(

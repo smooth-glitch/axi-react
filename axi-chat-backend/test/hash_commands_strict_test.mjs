@@ -380,6 +380,41 @@ async function main() {
     m = await A.hash("submissions");
     ok("...and #submissions for the admin also sees it (admins see everyone's)", m.ok, m);
 
+    console.log("=== Lite T-Struct hash commands: #lookups / #tstruct / #tstruct-add / #tstruct-edit / #tstruct-delete ===");
+    m = await R.hash("lookups");
+    ok("#lookups returns the org lists the option builder's dropdowns use",
+        m.ok && ["branches", "departments", "designations", "categories", "affiliates"].every(k => Array.isArray(m.data[k])) && m.data.categories.length > 0, m);
+    m = await R.hash("cfg-lookups", "", "lookups");
+    ok("#cfg-lookups alias gives the same lists", m.ok && Array.isArray(m.data.branches), m);
+    m = await R.sd("tstruct.user.save", { name: "hashpoll", caption: "Hash poll", fields: [{ name: "q", type: "text", caption: "Question", required: true }] });
+    ok("(setup) ravi creates a user-made structure", m.ok, m);
+    m = await R.hash("tstruct", "hashpoll");
+    ok("#tstruct returns the definition, its scope and (none yet) your records",
+        m.ok && m.data.tstruct.name === "hashpoll" && m.data.scope === "user" && Array.isArray(m.data.submissions) && m.data.submissions.length === 0, m);
+    m = await R.hash("tstruct-add", "hashpoll", "tstruct-add");
+    ok("#tstruct-add opens the definition to add a record", m.ok && m.data.tstruct.name === "hashpoll", m);
+    m = await R.hash("tstruct", "no_such_struct");
+    ok("#tstruct for an unknown structure -> not_found", !m.ok && m.error.code === "not_found", m);
+    m = await R.sd("tstruct.user.submit", { name: "hashpoll", values: { q: "lunch?" } });
+    const pollId = m.data?.submission?.id;
+    ok("(setup) ravi submits a record", m.ok && Number.isInteger(pollId), m);
+    m = await R.hash("tstruct", "hashpoll");
+    ok("#tstruct now lists ravi's own record", m.ok && m.data.submissions.some(x => x.id === pollId), m);
+    m = await A.hash("tstruct", "hashpoll");
+    ok("...but only YOUR records: the admin sees the definition, not ravi's record", m.ok && m.data.tstruct.name === "hashpoll" && !m.data.submissions.some(x => x.id === pollId), m);
+    m = await R.hash("tstruct-edit", `hashpoll ${pollId}`, "tstruct-edit");
+    ok("#tstruct-edit passes the record id through for the editor", m.ok && m.data.editRecordId === pollId && m.data.tstruct.name === "hashpoll", m);
+    m = await R.hash("tstruct-delete", `hashpoll ${pollId}`, "tstruct-delete");
+    ok("#tstruct-delete by the author deletes the record", m.ok && m.data.deleted === true, m);
+    m = await R.hash("tstruct", "hashpoll");
+    ok("...and it is gone from #tstruct", m.ok && m.data.submissions.length === 0, m);
+    m = await R.sd("tstruct.user.submit", { name: "hashpoll", values: { q: "again" } });
+    const pollId2 = m.data?.submission?.id;
+    m = await A.hash("tstruct-delete", `hashpoll ${pollId2}`, "tstruct-delete");
+    ok("#tstruct-delete of someone else's record is refused (author only)", !m.ok && m.error.code === "forbidden", m);
+    m = await R.sd("tstruct.user.delete", { name: "hashpoll" });
+    ok("(cleanup) ravi deletes the structure", m.ok, m);
+
     console.log("=== Admin: read commands ===");
     m = await A.hash("admin-org");
     ok("#admin-org", m.ok && m.data.org.name === "Hash Co" && m.data.counts.users >= 5, m);
