@@ -57,6 +57,10 @@ const Area = styled.textarea`
   &::placeholder { color: ${(p) => p.theme.textFaint}; }
 `;
 
+// Fields here aren't logins - stop password managers (LastPass/1Password/Dashlane/Bitwarden) from injecting
+// their own icon overlay into ones they mis-detect as a credential field (autoComplete="off" alone doesn't do it).
+const NO_AUTOFILL = { autoComplete: 'off', 'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other' };
+
 // icon: lucide component. onChangeText(value) is a convenience over onChange(event). type: text | number | date | time ...
 export const Input = forwardRef(function Input({ icon: IconCmp, invalid, multiline, style, className, testID, onChangeText, onChange, right, editable = true, ...rest }, ref) {
   const Tag = multiline ? Area : Field;
@@ -71,6 +75,7 @@ export const Input = forwardRef(function Input({ icon: IconCmp, invalid, multili
           onChangeText?.(e.target.value);
           onChange?.(e);
         }}
+        {...NO_AUTOFILL}
         {...rest}
       />
       {right}
@@ -241,7 +246,8 @@ export function Select({ value, onChange, options, placeholder = 'Select...', in
                       }}
                       onKeyDown={onKey}
                       placeholder="Search..."
-                      style={{ flex: 1, border: 0, outline: 'none', background: 'transparent', padding: 0, color: t.text, fontSize: t.type.body.size }}
+                      {...NO_AUTOFILL}
+                      style={{ flex: 1, border: 0, outline: 'none', boxShadow: 'none', background: 'transparent', padding: 0, color: t.text, fontSize: t.type.body.size }}
                     />
                   </div>
                 ) : null}

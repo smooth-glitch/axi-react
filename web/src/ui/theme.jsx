@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import styled, { createGlobalStyle, ThemeProvider as StyledProvider } from 'styled-components';
 import { buildTheme } from '../core/tokens';
-import { useSystemDark } from './hooks';
+import { useAutoDark } from './hooks';
 
 const STORAGE_KEY = 'tstruct.theme';
 const ModeContext = createContext({ mode: 'light', preference: 'system', setPreference: () => {} });
@@ -48,12 +48,12 @@ export const TstructRoot = styled.div`
  *  - persist: store the light/dark/system preference in localStorage (standalone app only)
  */
 export default function AppThemeProvider({ children, mode: forced, overrides, persist = true }) {
-  const systemDark = useSystemDark();
+  const autoDark = useAutoDark();
   const [preference, setPref] = useState('light');
   useEffect(() => {
     if (persist) setPref(readPref());
   }, [persist]);
-  const mode = forced || (preference === 'system' ? (systemDark ? 'dark' : 'light') : preference);
+  const mode = forced || (preference === 'system' ? (autoDark ? 'dark' : 'light') : preference);
 
   const setPreference = useCallback(
     (p) => {
