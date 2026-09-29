@@ -1647,7 +1647,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           kind: "text",
           dir: "in",
           from: "Workspace Assistant",
-          text: `Action logged in **My Workspace**: "${text}"\n\n💡 Tip: Type \`#\` to run fast enterprise workflow commands like \`#leave_req\`, \`#pay_slip\`, \`#punch_in\`, \`#expense_claim\`, \`#remind\`, or open the right-hand Priority Notifications Slider.`,
+          text: ` ${text} \n\n💡 Tip: Type \`#\` to run fast enterprise workflow commands.`,
           time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           ts: Date.now(),
           status: "sent",
