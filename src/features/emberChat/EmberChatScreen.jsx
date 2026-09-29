@@ -6,6 +6,7 @@ import NewGroupModal from "./components/modals/NewGroupModal.jsx";
 import MembersModal from "./components/modals/MembersModal.jsx";
 import ProfileModal from "./components/modals/ProfileModal.jsx";
 import SmartStructureModal from "./components/modals/SmartStructureModal.jsx";
+import SubmissionsModal from "./components/modals/SubmissionsModal.jsx";
 import TStructUserModal from "./components/modals/TStructUserModal.jsx";
 import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
 import ForwardModal from "./components/modals/ForwardModal.jsx";
@@ -129,6 +130,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const [modalParam, setModalParam] = useState(null);
   const [forwardTargetMsg, setForwardTargetMsg] = useState(null);
   const [selectedPrompt, setSelectedPrompt] = useState(null);
+  const [editingSubmission, setEditingSubmission] = useState(null);
   const [composerPrefill, setComposerPrefill] = useState("");
   const [mediaPanelConfig, setMediaPanelConfig] = useState(null);
   const [toasts, setToasts] = useState([]);
@@ -141,6 +143,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
   // this is just a cache of `req.list`, refreshed on connect, on live push
   // events, and after every accept/reject/ignore.
   const [approvals, setApprovals] = useState([]);
+
+  // The "Options section": only the options this user is allowed to see
+  // ("Applicable to" is applied by the server).
+  const [options, setOptions] = useState([]);
+  const refreshOptions = useCallback(async () => {
+    const res = await sandeshSocket.sd("options.list");
+    if (res.ok) setOptions(res.data?.options || []);
+  }, []);
 
   const pendingApprovalsCount = approvals.filter((r) => r.status === "pending").length;
 
@@ -202,6 +212,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         setSocketStatus(event.status);
         if (event.status === "connected") {
           refreshApprovals();
+          refreshOptions();
           // Re-fetch history for currently active chat on reconnect
           const currentId = activeChatIdRef.current;
           if (currentId.startsWith("user-")) {
@@ -1806,7 +1817,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
     ]);
     setModal(null);
     setSelectedPrompt(null);
-    pushToast("Smart Structure submitted to Host");
+    setEditingSubmission(null);
+    pushToast(editingSubmission ? "Submission updated" : "Submitted");
   };
 
   const handleLoginSuccess = (user) => {
@@ -2026,8 +2038,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onDeleteMessage={handleDeleteMessage}
           onDeleteChat={handleDeleteChat}
           onActionCardClick={handleActionCardClick}
+          options={options}
+          onOpenSubmissions={() => setModal("submissions")}
           onOpenSmartPrompts={(p) => {
-            setSelectedPrompt(p || { id: "general", label: "Smart Prompt" });
+            setEditingSubmission(null);
+            setSelectedPrompt(p || null);
             setModal("smart_structure");
           }}
           onOpenTStructUser={() => setModal("tstruct_user")}
@@ -2347,12 +2362,27 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 }}
               />
             )}
-            {modal === "smart_structure" && selectedPrompt && (
+            {modal === "submissions" && (
+              <SubmissionsModal
+                currentUser={currentUser}
+                onClose={() => setModal(null)}
+                onEdit={(sub) => {
+                  setEditingSubmission(sub);
+                  setSelectedPrompt({ id: `edit-${sub.id}`, type: "data_input", target: sub.tstruct, caption: `Edit ${sub.tstruct} #${sub.id}` });
+                  setModal("smart_structure");
+                }}
+              />
+            )}
+            {modal === "smart_structure" && (
               <SmartStructureModal
                 prompt={selectedPrompt}
+                options={options}
+                editing={editingSubmission}
+                currentUser={currentUser}
                 onClose={() => {
                   setModal(null);
                   setSelectedPrompt(null);
+                  setEditingSubmission(null);
                 }}
                 onSubmit={handleSmartStructureSubmit}
               />
@@ -2371,6 +2401,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 onClose={() => {
                   setModal(null);
                   setModalParam(null);
+                  refreshOptions();
                 }}
                 pushToast={pushToast}
               />

@@ -192,7 +192,16 @@ class SandeshClient {
   sd(action, args = {}) {
     log.info(`[sd] -> ${action}`, args);
     // Delegate to the host app's shared socket when available — avoids a second connection.
-    if (this._shared) return this._shared.sd(action, args);
+    // The host's sd() resolves with the raw {ok, data, error} envelope and never
+    // rejects; this client's callers expect plain data or a rejection.
+    if (this._shared) {
+      return this._shared.sd(action, args).then((res) => {
+        if (res && res.ok) return res.data ?? {};
+        const err = (res && res.error) || { code: 'error', message: 'Request failed' };
+        log.warn(`[sd] xx ${action}`, err);
+        throw err;
+      });
+    }
     return this.connect().then(
       () =>
         new Promise((resolve, reject) => {

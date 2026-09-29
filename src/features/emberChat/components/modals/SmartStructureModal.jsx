@@ -1,134 +1,253 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
+import {
+  buildSubmission,
+  displayValue,
+  groupBySection,
+  requiredErrors,
+} from "../../utils/formEngine.js";
 
-export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
-  const [formData, setFormData] = useState(() => {
-    switch (prompt?.id) {
-      case "leave_req":
-        return { type: "Casual Leave", start: "2026-10-02", end: "2026-10-04", reason: "Enterprise Conference" };
-      case "record_vitals":
-        return { bp: "120/80", pulse: "74", temp: "98.4", spo2: "99%", remarks: "Normal vitals" };
-      case "raise_ticket":
-        return { category: "IT Infrastructure", priority: "High", subject: "VPN Access for Remote Team", details: "Need port 8080 whitelisted for Erlang node testing" };
-      case "expense_claim":
-        return { category: "Travel & Lodging", amount: "350.00", date: "2026-09-20", description: "Client site architecture workshop" };
-      case "book_appt":
-        return { doctor: "Dr. Ananya Roy (Chief Physician)", date: "2026-09-26", slot: "10:30 AM", reason: "Routine wellness consultation" };
-      default:
-        return { title: prompt?.label || "General Query", comments: "" };
+// A form from the admin-defined lite-tstruct catalogue (docs/LITE_TSTRUCT.md).
+// `option` is one of the user's options.list entries (type data_input -> target = form name).
+// Without an option it shows the user's available forms to pick from.
+
+const NOT_RUNNABLE =
+  "This option type isn't available yet: the server stores it but can't run it until its external system contract is fixed.";
+
+function SelectionField({ field, value, onChange }) {
+  const [items, setItems] = useState(null); // null = loading, [] = none/failed
+  useEffect(() => {
+    let alive = true;
+    if (!field.api) {
+      setItems([]);
+      return undefined;
     }
-  });
+    fetch(field.api)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((json) => {
+        const arr = Array.isArray(json) ? json : json.items || json.data || json.results || [];
+        const list = arr.map((it) =>
+          typeof it === "object" && it !== null
+            ? { value: String(it.id ?? it.value ?? it.name ?? it.label), label: String(it.label ?? it.name ?? it.id ?? it.value) }
+            : { value: String(it), label: String(it) }
+        );
+        if (alive) setItems(list);
+      })
+      .catch(() => alive && setItems([]));
+    return () => {
+      alive = false;
+    };
+  }, [field.api]);
 
-  const [submitting, setSubmitting] = useState(false);
+  // If the data source can't be reached the user can still type the value.
+  if (items && items.length === 0) {
+    return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder="Enter a value" />;
+  }
+  return (
+    <select value={value || ""} onChange={(e) => onChange(e.target.value)} disabled={items === null}>
+      <option value="">{items === null ? "Loading…" : "Select…"}</option>
+      {(items || []).map((it) => (
+        <option key={it.value} value={it.value}>{it.label}</option>
+      ))}
+    </select>
+  );
+}
+
+function FieldInput({ field, value, onChange }) {
+  const id = `sd-f-${field.name}`;
+  switch (field.type) {
+    case "text":
+      return field.multiline || field.rich ? (
+        <textarea id={id} rows={3} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <input id={id} type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} />
+      );
+    case "date":
+    case "time":
+      return <input id={id} type={field.type} min={field.min} max={field.max} value={value || ""} onChange={(e) => onChange(e.target.value)} />;
+    case "wholenumber":
+    case "number":
+      return (
+        <input
+          id={id}
+          type="number"
+          step={field.type === "wholenumber" ? 1 : "any"}
+          min={field.min}
+          max={field.max}
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      );
+    case "email":
+      return <input id={id} type="email" value={value || ""} onChange={(e) => onChange(e.target.value)} />;
+    case "url":
+      return <input id={id} type="url" placeholder="https://" value={value || ""} onChange={(e) => onChange(e.target.value)} />;
+    case "mobile":
+      return (
+        <input
+          id={id}
+          type="tel"
+          placeholder={field.withCountryCode ? "+91 98860 00000" : "Mobile number"}
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      );
+    case "location":
+      return (
+        <div style={{ display: "flex", gap: 8, width: "100%" }}>
+          <input id={id} type="text" placeholder="lat,lng (e.g. 12.97,77.59)" value={value || ""} onChange={(e) => onChange(e.target.value)} />
+          <button
+            type="button"
+            className="sandesh-btn-link"
+            onClick={() =>
+              navigator.geolocation?.getCurrentPosition((pos) =>
+                onChange(`${pos.coords.latitude.toFixed(5)},${pos.coords.longitude.toFixed(5)}`)
+              )
+            }
+          >
+            Use my location
+          </button>
+        </div>
+      );
+    case "list":
+      if (field.multi) {
+        const chosen = Array.isArray(value) ? value : [];
+        return (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {(field.options || []).map((o) => (
+              <label key={o} className="checkbox-label" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(o)}
+                  onChange={() => onChange(chosen.includes(o) ? chosen.filter((x) => x !== o) : [...chosen, o])}
+                />
+                <span>{o}</span>
+              </label>
+            ))}
+          </div>
+        );
+      }
+      return (
+        <select id={id} value={value || ""} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Select…</option>
+          {(field.options || []).map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      );
+    case "selection":
+      return <SelectionField field={field} value={value} onChange={onChange} />;
+    default: // fill and anything else: a plain value the user can adjust
+      return <input id={id} type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} />;
+  }
+}
+
+function initialValues(tstruct, currentUser) {
+  const values = {};
+  for (const f of tstruct.fields || []) {
+    // "fill" fields pre-populate from the signed-in user's profile when they name one of its keys.
+    if (f.type === "fill" && f.fillFrom && currentUser && currentUser[f.fillFrom] != null) {
+      values[f.name] = String(currentUser[f.fillFrom]);
+    }
+  }
+  return values;
+}
+
+export default function SmartStructureModal({ prompt: option, options = [], currentUser, editing, onClose, onSubmit }) {
+  const [current, setCurrent] = useState(option || null);
+  const [tstruct, setTstruct] = useState(null);
+  const [values, setValues] = useState({});
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [loadError, setLoadError] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  // Load the form definition for the chosen option.
+  useEffect(() => {
+    if (!current) return undefined;
+    setTstruct(null);
+    setLoadError("");
+    setFieldErrors({});
+    setSubmitError("");
+    if (current.type !== "data_input") {
+      setLoadError(NOT_RUNNABLE);
+      return undefined;
+    }
+    let alive = true;
+    setLoading(true);
+    sandeshSocket.sd("tstruct.get", { name: current.target }).then((res) => {
+      if (!alive) return;
+      setLoading(false);
+      if (!res.ok) {
+        setLoadError(
+          res.error?.code === "forbidden" || res.error?.code === "not_found"
+            ? "This form isn't available to you."
+            : res.error?.message || "Couldn't load the form."
+        );
+        return;
+      }
+      setTstruct(res.data.tstruct);
+      setValues(editing ? { ...initialValues(res.data.tstruct, currentUser), ...editing.values } : initialValues(res.data.tstruct, currentUser));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [current, currentUser, editing]);
+
+  const setValue = (name, v) => {
+    setValues((prev) => ({ ...prev, [name]: v }));
+    setFieldErrors((prev) => (prev[name] ? { ...prev, [name]: undefined } : prev));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError("");
+    const missing = requiredErrors(tstruct, values);
+    if (Object.keys(missing).length) {
+      setFieldErrors(missing);
+      return;
+    }
     setSubmitting(true);
-
-    let cardPayload;
-    if (prompt.id === "leave_req") {
-      cardPayload = {
-        kind: "card",
-        title: "Leave Application Filed",
-        actionStatus: "Pending Host Approval",
-        details: {
-          "Leave Type": formData.type,
-          "Duration": `${formData.start} to ${formData.end}`,
-          "Reason": formData.reason,
-          "Approver": "Assigned SPOC (HR Host)",
-        },
-        actions: ["Approve", "Reject"],
-      };
-    } else if (prompt.id === "record_vitals") {
-      cardPayload = {
-        kind: "card",
-        title: "Patient Vitals Recorded",
-        actionStatus: "Recorded",
-        details: {
-          "Blood Pressure": formData.bp,
-          "Pulse": `${formData.pulse} bpm`,
-          "Temperature": `${formData.temp} °F`,
-          "SpO2": formData.spo2,
-          "Notes": formData.remarks,
-        },
-      };
-    } else if (prompt.id === "raise_ticket") {
-      cardPayload = {
-        kind: "card",
-        title: `Support Ticket #${Math.floor(1000 + Math.random() * 9000)} Created`,
-        actionStatus: "In Progress",
-        details: {
-          "Subject": formData.subject,
-          "Category": formData.category,
-          "Priority": formData.priority,
-          "Assigned To": "IT Operations Host",
-        },
-        actions: ["View Smart View", "Close Ticket"],
-      };
-    } else if (prompt.id === "expense_claim") {
-      cardPayload = {
-        kind: "card",
-        title: "Reimbursement Claim Submitted",
-        actionStatus: "Pending Finance",
-        details: {
-          "Category": formData.category,
-          "Claim Amount": `$${formData.amount}`,
-          "Expense Date": formData.date,
-          "Description": formData.description,
-        },
-        actions: ["Approve Claim", "Audit Request"],
-      };
-    } else if (prompt.id === "book_appt") {
-      cardPayload = {
-        kind: "card",
-        title: "Consultation Appointment Fixed",
-        actionStatus: "Confirmed",
-        details: {
-          "Consultant": formData.doctor,
-          "Date & Time": `${formData.date} at ${formData.slot}`,
-          "Reason": formData.reason,
-        },
-        actions: ["Reschedule", "Add to Calendar"],
-      };
-    } else {
-      cardPayload = {
-        kind: "card",
-        title: prompt.label,
-        actionStatus: "Processed",
-        details: formData,
-      };
-    }
-
-    try {
-      await sandeshSocket.sd("tstruct.submit", { name: prompt.id, values: formData });
-      onSubmit(cardPayload);
-    } catch (err) {
-      const code = err?.code;
-      if (code === "forbidden" || code === "not_found") {
-        setSubmitError("This form type is not configured on the server yet. Your record was not saved.");
-        setSubmitting(false);
+    const payload = buildSubmission(tstruct, values);
+    const res = editing
+      ? await sandeshSocket.sd("submissions.update", { id: editing.id, values: payload })
+      : await sandeshSocket.sd("tstruct.submit", { name: tstruct.name, values: payload });
+    setSubmitting(false);
+    if (!res.ok) {
+      if (res.error?.code === "invalid_values" && res.error.details?.fields) {
+        setFieldErrors(res.error.details.fields);
+        setSubmitError("Please fix the highlighted fields.");
       } else {
-        const msg = err?.message || err?.code || "Submission failed";
-        setSubmitError(msg);
-        setSubmitting(false);
+        setSubmitError(res.error?.message || "Submission failed. Nothing was saved.");
       }
+      return;
     }
+    const sub = res.data?.submission;
+    const details = {};
+    for (const f of tstruct.fields) {
+      if (payload[f.name] !== undefined) details[f.caption || f.name] = displayValue(payload[f.name]);
+    }
+    onSubmit({
+      kind: "card",
+      title: `${tstruct.caption || tstruct.name} ${editing ? "updated" : "submitted"}`,
+      actionStatus: sub?.id ? `Submission #${sub.id}` : "Submitted",
+      details,
+    });
   };
+
+  const forms = options.filter((o) => o.type === "data_input");
 
   return (
     <div className="sandesh-modal-card-3d">
       <div className="sandesh-modal-header">
         <div className="modal-title-with-icon">
-          <span className="material-icons modal-header-icon">{prompt.icon || "widgets"}</span>
+          <span className="material-icons modal-header-icon">widgets</span>
           <div>
-            <h3>{prompt.label}</h3>
-            <span className="modal-subtitle">Sandesh Smart Structure • Single DC Lite Action</span>
+            <h3>{current?.caption || "Smart Prompts"}</h3>
+            <span className="modal-subtitle">
+              {tstruct?.description || "Forms set up for you by your organisation"}
+            </span>
           </div>
         </div>
         <button type="button" className="close-btn-3d" onClick={onClose} aria-label="Close modal">
@@ -136,216 +255,67 @@ export default function SmartStructureModal({ prompt, onClose, onSubmit }) {
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="sandesh-modal-body">
-        {prompt.id === "leave_req" && (
-          <>
-            <div className="sandesh-input-group">
-              <label>Leave Type</label>
-              <div className="sandesh-input-box-3d select-box">
-                <select value={formData.type} onChange={(e) => handleChange("type", e.target.value)}>
-                  <option value="Casual Leave">Casual Leave (CL)</option>
-                  <option value="Sick Leave">Sick / Medical Leave (SL)</option>
-                  <option value="Privilege Leave">Privilege / Earned Leave (PL)</option>
-                  <option value="Compensatory Off">Compensatory Off</option>
-                </select>
-              </div>
-            </div>
-            <div className="sandesh-form-row">
-              <div className="sandesh-input-group">
-                <label>Start Date</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="date" value={formData.start} onChange={(e) => handleChange("start", e.target.value)} required />
-                </div>
-              </div>
-              <div className="sandesh-input-group">
-                <label>End Date</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="date" value={formData.end} onChange={(e) => handleChange("end", e.target.value)} required />
-                </div>
-              </div>
-            </div>
-            <div className="sandesh-input-group">
-              <label>Reason / Handover Notes</label>
-              <div className="sandesh-input-box-3d">
-                <input type="text" value={formData.reason} onChange={(e) => handleChange("reason", e.target.value)} placeholder="State the reason" required />
-              </div>
-            </div>
-          </>
-        )}
-
-        {prompt.id === "record_vitals" && (
-          <>
-            <div className="sandesh-form-row">
-              <div className="sandesh-input-group">
-                <label>Blood Pressure (mmHg)</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="text" value={formData.bp} onChange={(e) => handleChange("bp", e.target.value)} placeholder="120/80" required />
-                </div>
-              </div>
-              <div className="sandesh-input-group">
-                <label>Pulse (bpm)</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="number" value={formData.pulse} onChange={(e) => handleChange("pulse", e.target.value)} placeholder="72" required />
-                </div>
-              </div>
-            </div>
-            <div className="sandesh-form-row">
-              <div className="sandesh-input-group">
-                <label>Temperature (°F)</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="text" value={formData.temp} onChange={(e) => handleChange("temp", e.target.value)} placeholder="98.6" required />
-                </div>
-              </div>
-              <div className="sandesh-input-group">
-                <label>Oxygen Saturation (SpO2)</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="text" value={formData.spo2} onChange={(e) => handleChange("spo2", e.target.value)} placeholder="99%" required />
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {prompt.id === "raise_ticket" && (
-          <>
-            <div className="sandesh-form-row">
-              <div className="sandesh-input-group">
-                <label>Department Category</label>
-                <div className="sandesh-input-box-3d select-box">
-                  <select value={formData.category} onChange={(e) => handleChange("category", e.target.value)}>
-                    <option value="IT Infrastructure">IT Infrastructure</option>
-                    <option value="Software Access">Software &amp; License Access</option>
-                    <option value="HR Support">HR &amp; People Operations</option>
-                    <option value="Finance & Accounts">Finance &amp; Accounts</option>
-                  </select>
-                </div>
-              </div>
-              <div className="sandesh-input-group">
-                <label>Priority</label>
-                <div className="sandesh-input-box-3d select-box">
-                  <select value={formData.priority} onChange={(e) => handleChange("priority", e.target.value)}>
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                    <option value="Urgent">Critical / Urgent</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div className="sandesh-input-group">
-              <label>Issue Subject</label>
-              <div className="sandesh-input-box-3d">
-                <input type="text" value={formData.subject} onChange={(e) => handleChange("subject", e.target.value)} placeholder="Brief summary" required />
-              </div>
-            </div>
-            <div className="sandesh-input-group">
-              <label>Detailed Description</label>
-              <div className="sandesh-input-box-3d">
-                <input type="text" value={formData.details} onChange={(e) => handleChange("details", e.target.value)} placeholder="Describe the problem" required />
-              </div>
-            </div>
-          </>
-        )}
-
-        {prompt.id === "expense_claim" && (
-          <>
-            <div className="sandesh-form-row">
-              <div className="sandesh-input-group">
-                <label>Expense Category</label>
-                <div className="sandesh-input-box-3d select-box">
-                  <select value={formData.category} onChange={(e) => handleChange("category", e.target.value)}>
-                    <option value="Travel & Lodging">Travel &amp; Lodging</option>
-                    <option value="Client Meals">Client Meals &amp; Entertainment</option>
-                    <option value="Training & Certifications">Training &amp; Certification</option>
-                    <option value="Office Supplies">Office Supplies &amp; Tech</option>
-                  </select>
-                </div>
-              </div>
-              <div className="sandesh-input-group">
-                <label>Claim Amount ($ USD)</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="number" step="0.01" value={formData.amount} onChange={(e) => handleChange("amount", e.target.value)} required />
-                </div>
-              </div>
-            </div>
-            <div className="sandesh-input-group">
-              <label>Expense Date</label>
-              <div className="sandesh-input-box-3d">
-                <input type="date" value={formData.date} onChange={(e) => handleChange("date", e.target.value)} required />
-              </div>
-            </div>
-            <div className="sandesh-input-group">
-              <label>Description / Business Justification</label>
-              <div className="sandesh-input-box-3d">
-                <input type="text" value={formData.description} onChange={(e) => handleChange("description", e.target.value)} required />
-              </div>
-            </div>
-          </>
-        )}
-
-        {prompt.id === "book_appt" && (
-          <>
-            <div className="sandesh-input-group">
-              <label>Consulting Doctor</label>
-              <div className="sandesh-input-box-3d select-box">
-                <select value={formData.doctor} onChange={(e) => handleChange("doctor", e.target.value)}>
-                  <option value="Dr. Ananya Roy (Chief Physician)">Dr. Ananya Roy (Chief Physician)</option>
-                  <option value="Dr. Vikram Patel (Cardiology)">Dr. Vikram Patel (Cardiology)</option>
-                  <option value="Dr. Meera Sen (Orthopedics)">Dr. Meera Sen (Orthopedics)</option>
-                </select>
-              </div>
-            </div>
-            <div className="sandesh-form-row">
-              <div className="sandesh-input-group">
-                <label>Preferred Date</label>
-                <div className="sandesh-input-box-3d">
-                  <input type="date" value={formData.date} onChange={(e) => handleChange("date", e.target.value)} required />
-                </div>
-              </div>
-              <div className="sandesh-input-group">
-                <label>Time Slot</label>
-                <div className="sandesh-input-box-3d select-box">
-                  <select value={formData.slot} onChange={(e) => handleChange("slot", e.target.value)}>
-                    <option value="09:30 AM">09:30 AM</option>
-                    <option value="10:30 AM">10:30 AM</option>
-                    <option value="02:00 PM">02:00 PM</option>
-                    <option value="04:30 PM">04:30 PM</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {!["leave_req", "record_vitals", "raise_ticket", "expense_claim", "book_appt"].includes(prompt.id) && (
-          <div className="sandesh-input-group">
-            <label>Notes / Context for Prompt</label>
-            <div className="sandesh-input-box-3d">
-              <input
-                type="text"
-                placeholder="Enter details..."
-                value={formData.comments || ""}
-                onChange={(e) => handleChange("comments", e.target.value)}
-              />
-            </div>
-          </div>
-        )}
-
-        {submitError && (
-          <div style={{ color: "#e53935", fontSize: "0.82rem", padding: "6px 0 2px", lineHeight: 1.4 }}>
-            {submitError}
-          </div>
-        )}
-
-        <div className="sandesh-modal-actions">
-          <button type="button" className="sandesh-btn-secondary-3d" onClick={onClose} disabled={submitting}>
-            Cancel
-          </button>
-          <button type="submit" className="sandesh-btn-primary-3d" disabled={submitting}>
-            {submitting ? "Submitting…" : "Post to Host & Queue"}
-          </button>
+      {!current && (
+        <div className="sandesh-modal-body">
+          {forms.length === 0 ? (
+            <p className="section-note">No forms have been set up for you yet. An administrator can add them under Admin Console → Options.</p>
+          ) : (
+            forms.map((o) => (
+              <button key={o.id} type="button" className="sandesh-btn-secondary-3d" style={{ display: "block", width: "100%", marginBottom: 8 }} onClick={() => setCurrent(o)}>
+                {o.caption}
+              </button>
+            ))
+          )}
         </div>
-      </form>
+      )}
+
+      {current && loading && <div className="sandesh-modal-body"><p className="section-note">Loading form…</p></div>}
+
+      {current && loadError && (
+        <div className="sandesh-modal-body">
+          <div className="sandesh-alert sandesh-alert-danger">{loadError}</div>
+          <div className="sandesh-modal-actions">
+            <button type="button" className="sandesh-btn-secondary-3d" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {current && tstruct && (
+        <form onSubmit={handleSubmit} className="sandesh-modal-body" noValidate>
+          {groupBySection(tstruct, values).map((group) => (
+            <div key={group.name || "_"}>
+              {group.caption && <h4 style={{ margin: "12px 0 6px" }}>{group.caption}</h4>}
+              {group.fields.map((f) => (
+                <div className="sandesh-input-group" key={f.name}>
+                  <label htmlFor={`sd-f-${f.name}`}>
+                    {f.caption || f.name}
+                    {f.required && <span style={{ color: "#e53935" }}> *</span>}
+                  </label>
+                  <div className="sandesh-input-box-3d">
+                    <FieldInput field={f} value={values[f.name]} onChange={(v) => setValue(f.name, v)} />
+                  </div>
+                  {fieldErrors[f.name] && (
+                    <div style={{ color: "#e53935", fontSize: "0.78rem", marginTop: 3 }}>{fieldErrors[f.name]}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {submitError && (
+            <div style={{ color: "#e53935", fontSize: "0.82rem", padding: "6px 0 2px", lineHeight: 1.4 }}>{submitError}</div>
+          )}
+
+          <div className="sandesh-modal-actions">
+            <button type="button" className="sandesh-btn-secondary-3d" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" className="sandesh-btn-primary-3d" disabled={submitting}>
+              {submitting ? "Saving…" : editing ? "Save changes" : "Submit"}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

@@ -21,6 +21,8 @@ export default function ChatScreen({
   onDeleteChat,
   onActionCardClick,
   onOpenSmartPrompts,
+  options,
+  onOpenSubmissions,
   onOpenTStructUser,
   onOpenAdminConsole,
   onOpenAiChat,
@@ -190,6 +192,8 @@ export default function ChatScreen({
             onSend={handleSend}
             onAttachFile={onAttachFile}
             onOpenSmartPromptModal={onOpenSmartPrompts}
+            options={options}
+            onOpenSubmissions={onOpenSubmissions}
             onTyping={onTyping}
             disabled={disabled}
             pushToast={pushToast}
