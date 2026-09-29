@@ -88,6 +88,11 @@ export default function Sidebar({
   }, [chats, onlineUsers]);
 
   const filteredChats = allConversations.filter((c) => {
+    // Exclude General Broadcast from conversation list
+    if (c.id === "room-general" || c.name === "General Broadcast") {
+      return false;
+    }
+
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.preview && c.preview.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!matchesSearch) return false;
@@ -308,9 +313,7 @@ export default function Sidebar({
                   title="Delete conversation"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (window.confirm(`Delete conversation "${chat.name}"?`)) {
-                      onDeleteChat?.(chat.id);
-                    }
+                    onDeleteChat?.(chat.id, chat.name);
                   }}
                 >
                   <span className="material-icons">delete_outline</span>

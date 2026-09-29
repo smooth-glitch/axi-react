@@ -16,10 +16,10 @@ export default function WorkspaceChatsSlider({
   onlineUsers = [],
   activeChatId,
   onSelectChat,
-  onOpenFullChat,
   onNewGroup,
   socketStatus,
   onReconnectSocket,
+  onSignOut,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all"); // "all" | "hosts" | "direct"
@@ -85,6 +85,11 @@ export default function WorkspaceChatsSlider({
   }, [chats, onlineUsers]);
 
   const filteredChats = allConversations.filter((c) => {
+    // Exclude General Broadcast from this section per user specification
+    if (c.id === "room-general" || c.name === "General Broadcast") {
+      return false;
+    }
+
     const matchesSearch =
       c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.preview && c.preview.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -137,6 +142,15 @@ export default function WorkspaceChatsSlider({
         <div className="wcs-live-sync-dot" title={socketStatus === "connected" ? "Live Sync Connected" : "Connecting..."}>
           <span className={`sync-dot ${socketStatus === "connected" ? "online" : "offline"}`} />
         </div>
+        <button
+          type="button"
+          className="wcs-user-logout-btn"
+          onClick={onSignOut}
+          title="Log Out"
+          aria-label="Log Out"
+        >
+          <span className="material-icons">logout</span>
+        </button>
       </div>
 
       {/* Action Bar: New Group & Search */}
@@ -257,17 +271,6 @@ export default function WorkspaceChatsSlider({
         )}
       </div>
 
-      {/* Footer Info */}
-      <div className="wcs-footer">
-        <button
-          type="button"
-          className="wcs-open-full-chat-btn"
-          onClick={() => onOpenFullChat?.(activeChatId)}
-        >
-          <span className="material-icons">open_in_full</span>
-          <span>Open Full Chat Screen</span>
-        </button>
-      </div>
     </aside>
   );
 }

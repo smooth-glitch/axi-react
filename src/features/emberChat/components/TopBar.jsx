@@ -17,6 +17,7 @@ export default function TopBar({
   onToggleNotifications,
   notificationsOpen = false,
   priorityCounts = null,
+  onSignOut,
 }) {
   const isOnline = !chat.isGroup && (chat.isOnline || (onlineUsers || []).some((u) => {
     const target = (
@@ -144,11 +145,7 @@ export default function TopBar({
         <button
           type="button"
           className="sandesh-icon-btn-3d danger-btn"
-          onClick={() => {
-            if (window.confirm(`Are you sure you want to delete / clear the conversation "${chat.name}"?`)) {
-              onDeleteChat?.(chat.id);
-            }
-          }}
+          onClick={() => onDeleteChat?.(chat.id, chat.name)}
           title="Delete or clear this conversation"
           aria-label="Delete conversation"
         >
@@ -193,6 +190,17 @@ export default function TopBar({
           title="Switch to AXI AI Workspace"
         >
           <span className="material-icons">auto_awesome</span>
+        </button>
+
+        {/* Logout Button */}
+        <button
+          type="button"
+          className="sandesh-icon-btn-3d logout-shortcut-btn"
+          onClick={onSignOut}
+          title="Sign Out / Log Out"
+          aria-label="Log Out"
+        >
+          <span className="material-icons">logout</span>
         </button>
       </div>
     </header>

@@ -230,6 +230,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
     buildInitialRoleNotifications(currentUser, [], [])
   );
 
+  // Delete Conversation Confirmation Center Popup
+  const [chatToDelete, setChatToDelete] = useState(null); // { id, name }
+
   useEffect(() => {
     if (!currentUser) return;
     setPriorityNotifications((prev) => {
@@ -1864,6 +1867,19 @@ export function EmberChatScreen({ onOpenAiChat }) {
     setForwardTargetMsg(null);
   };
 
+  const handleRequestDeleteChat = (chatId, chatName) => {
+    const target = chats.find((c) => c.id === chatId) || (activeChatId === chatId ? activeChat : null);
+    const name = chatName || target?.name || "this conversation";
+    setChatToDelete({ id: chatId, name });
+  };
+
+  const handleConfirmDeleteChat = () => {
+    if (!chatToDelete?.id) return;
+    const id = chatToDelete.id;
+    setChatToDelete(null);
+    handleDeleteChat(id);
+  };
+
   const handleDeleteChat = (chatId) => {
     setMessagesByChat((prev) => {
       const next = { ...prev };
@@ -2148,7 +2164,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             onSignOut={handleSignOut}
             socketStatus={socketStatus}
             onReconnectSocket={() => sandeshSocket.connect(currentUser)}
-            onDeleteChat={handleDeleteChat}
+            onDeleteChat={handleRequestDeleteChat}
             onOpenApprovals={() => {
               setModal("approvals");
               refreshApprovals();
@@ -2181,7 +2197,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onToggleReaction={handleToggleReaction}
           onForward={handleOpenForward}
           onDeleteMessage={handleDeleteMessage}
-          onDeleteChat={handleDeleteChat}
+          onDeleteChat={handleRequestDeleteChat}
           onActionCardClick={handleActionCardClick}
           onOpenSmartPrompts={(p) => {
             setSelectedPrompt(p || { id: "general", label: "Smart Prompt" });
@@ -2219,6 +2235,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onNewGroup={() => setModal("new-group")}
           socketStatus={socketStatus}
           onReconnectSocket={() => sandeshSocket.connect(currentUser)}
+          onSignOut={handleSignOut}
         />
 
         {modal && (
@@ -2555,6 +2572,52 @@ export function EmberChatScreen({ onOpenAiChat }) {
               />
             )}
           </ModalLayer>
+        )}
+
+        {/* Center Popup UI: Delete Conversation Confirmation */}
+        {chatToDelete && (
+          <div
+            className="sandesh-delete-modal-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setChatToDelete(null);
+            }}
+          >
+            <div className="sandesh-delete-dialog-card" role="dialog" aria-modal="true">
+              <div className="sandesh-delete-dialog-icon-wrap">
+                <span className="material-icons delete-modal-icon">delete_forever</span>
+              </div>
+
+              <h3 className="sandesh-delete-dialog-title">Delete Conversation</h3>
+
+              <p className="sandesh-delete-dialog-msg">
+                Are you sure to delete this conversation{" "}
+                <strong>&ldquo;{chatToDelete.name}&rdquo;</strong>?
+              </p>
+
+              <p className="sandesh-delete-dialog-subtext">
+                This will clear all messages and conversation history from your device.
+              </p>
+
+              <div className="sandesh-delete-dialog-actions">
+                <button
+                  type="button"
+                  className="sandesh-delete-btn-cancel"
+                  onClick={() => setChatToDelete(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="sandesh-delete-btn-confirm"
+                  onClick={handleConfirmDeleteChat}
+                  autoFocus
+                >
+                  <span className="material-icons" style={{ fontSize: 18 }}>delete</span>
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />

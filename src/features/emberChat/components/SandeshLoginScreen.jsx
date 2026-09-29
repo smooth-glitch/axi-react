@@ -29,6 +29,7 @@ import {
   Check,
   RefreshCw,
   Trash2,
+  X,
 } from "lucide-react";
 
 // Computing the valid TOTP code in the browser and pre-filling it defeats the
@@ -100,6 +101,14 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [signInIdentifier, setSignInIdentifier] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  // Admin Sign In Popup Modal state
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminModalIdentifier, setAdminModalIdentifier] = useState("");
+  const [adminModalPassword, setAdminModalPassword] = useState("");
+  const [showAdminModalPassword, setShowAdminModalPassword] = useState(false);
+  const [adminModalError, setAdminModalError] = useState("");
+  const [adminModalLoading, setAdminModalLoading] = useState(false);
 
   // Tab 2: First-Time Setup inputs (Flow 1)
   const [adminOrg, setAdminOrg] = useState("");
@@ -218,10 +227,26 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   // ──────────────────────────────────────────────────────────────────────────
   // FLOW 3: LOGIN
   // ──────────────────────────────────────────────────────────────────────────
+  const handleOpenAdminModal = (prefillId) => {
+    setErrorMsg("");
+    setAdminModalIdentifier(typeof prefillId === "string" ? prefillId : signInIdentifier || "");
+    setAdminModalPassword("");
+    setShowAdminModalPassword(false);
+    setAdminModalError("");
+    setShowAdminModal(true);
+  };
+
   const handleSignIn = async (e) => {
     e?.preventDefault();
-    if (!signInIdentifier.trim()) {
+    const cleanId = signInIdentifier.trim();
+    if (!cleanId) {
       setErrorMsg("Please enter your username, email, or mobile number.");
+      return;
+    }
+
+    // Administrator accounts require password verification, prompt directly into Admin modal
+    if (cleanId.toLowerCase() === "admin" || cleanId.toLowerCase() === "administrator") {
+      handleOpenAdminModal(cleanId);
       return;
     }
 
@@ -231,8 +256,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
     try {
       const res = await sandeshApi.login({
-        identifier: signInIdentifier,
-        password: signInPassword || undefined,
+        identifier: cleanId,
         deviceId,
         mfaMethod: "totp",
       });
@@ -266,8 +290,8 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
             ...data,
             qrDataUrl,
             devCode,
-            identifier: signInIdentifier,
-            password: signInPassword,
+            identifier: cleanId,
+            password: "",
             code: devCode || "",
           });
           return;
@@ -277,8 +301,8 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
         if (data.totpSetupRequired && data.mfaMethod === "email") {
           setEmailEnrollment({
             ...data,
-            identifier: signInIdentifier,
-            password: signInPassword,
+            identifier: cleanId,
+            password: "",
             code: data.devOtp || "",
           });
           if (data.retryAfter || data.expiresInSec) {
@@ -291,8 +315,8 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
         if (data.emailOtpRequired && data.mfaMethod === "email") {
           setEmailChallenge({
             ...data,
-            identifier: signInIdentifier,
-            password: signInPassword,
+            identifier: cleanId,
+            password: "",
             code: data.devOtp || "",
             useRecovery: false,
           });
@@ -314,8 +338,8 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
         // Case D1: Enrolled TOTP account on untrusted device -> 401 totp_required
         if (error.code === "totp_required") {
           setTotpChallenge({
-            identifier: signInIdentifier,
-            password: signInPassword,
+            identifier: cleanId,
+            password: "",
             code: "",
             useRecovery: false,
           });
@@ -324,27 +348,40 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
         // Standard error codes
         if (error.code === "invalid_credentials") {
-          setErrorMsg(ERROR_MESSAGES.invalid_credentials);
+          setErrorMsg(
+            <span>
+              Wrong credentials or unknown identifier. If you are an administrator, please{" "}
+              <button
+                type="button"
+                className="sandesh-btn-link"
+                style={{ textDecoration: "underline", fontWeight: 700 }}
+                onClick={() => handleOpenAdminModal(cleanId)}
+              >
+                Sign In as Admin with Password
+              </button>
+              .
+            </span>
+          );
         } else if (error.code === "pending_approval") {
           setErrorMsg(ERROR_MESSAGES.pending_approval);
           try {
             const existing = JSON.parse(localStorage.getItem("sandesh_pending_registrations") || "[]");
-            const uClean = signInIdentifier.trim().toLowerCase();
+            const uClean = cleanId.toLowerCase();
             if (!existing.some((x) => (x.username || "").toLowerCase() === uClean)) {
               existing.unshift({
                 id: error.requestId || Date.now(),
                 type: "registration",
                 status: "pending",
-                title: `Pending User: @${signInIdentifier}`,
-                name: signInIdentifier,
-                username: signInIdentifier,
-                email: signInIdentifier.includes("@") ? signInIdentifier : `${signInIdentifier}@agilelabs.com`,
+                title: `Pending User: @${cleanId}`,
+                name: cleanId,
+                username: cleanId,
+                email: cleanId.includes("@") ? cleanId : `${cleanId}@agilelabs.com`,
                 category: "Self-Registered Applicant",
                 department: "General",
                 designation: "Associate",
                 time: "Recently",
                 details: "Account registered on Sandesh backend, waiting for admin clearance to enter chat.",
-                fromUser: signInIdentifier,
+                fromUser: cleanId,
               });
               localStorage.setItem("sandesh_pending_registrations", JSON.stringify(existing));
             }
@@ -365,6 +402,140 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
       setLoading(false);
       setErrorMsg("An unexpected connection error occurred. Please try again.");
       console.error(err);
+    }
+  };
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // FLOW 3B: ADMIN LOGIN POPUP HANDLER
+  // ──────────────────────────────────────────────────────────────────────────
+  const handleAdminSignIn = async (e) => {
+    e?.preventDefault();
+    const cleanId = adminModalIdentifier.trim();
+    if (!cleanId) {
+      setAdminModalError("Please enter your administrator username, corporate email, or mobile.");
+      return;
+    }
+    if (!adminModalPassword) {
+      setAdminModalError("Administrator password is required to authenticate.");
+      return;
+    }
+    if (adminModalPassword.length < 3) {
+      setAdminModalError("Password is too short. Please enter your valid administrator password.");
+      return;
+    }
+
+    setAdminModalError("");
+    setAdminModalLoading(true);
+
+    try {
+      const res = await sandeshApi.login({
+        identifier: cleanId,
+        password: adminModalPassword,
+        deviceId,
+        mfaMethod: "totp",
+      });
+
+      setAdminModalLoading(false);
+
+      if (res.ok) {
+        const data = res.data;
+        setShowAdminModal(false);
+
+        // Case A1: Unenrolled account -> TOTP setup required
+        if (data.totpSetupRequired && data.mfaMethod === "totp") {
+          let qrDataUrl = "";
+          try {
+            if (data.otpauthUri) {
+              qrDataUrl = await QRCode.toDataURL(data.otpauthUri, {
+                width: 220,
+                margin: 2,
+                color: { dark: "#1e293b", light: "#ffffff" },
+              });
+            }
+          } catch (qrErr) {
+            console.error("QR Code generation error:", qrErr);
+          }
+
+          let devCode = null;
+          if (data.secret) {
+            devCode = await generateTotpCode(data.secret);
+          }
+
+          setTotpEnrollment({
+            ...data,
+            qrDataUrl,
+            devCode,
+            identifier: cleanId,
+            password: adminModalPassword,
+            code: devCode || "",
+          });
+          return;
+        }
+
+        // Case A2: Unenrolled account -> Email setup
+        if (data.totpSetupRequired && data.mfaMethod === "email") {
+          setEmailEnrollment({
+            ...data,
+            identifier: cleanId,
+            password: adminModalPassword,
+            code: data.devOtp || "",
+          });
+          if (data.retryAfter || data.expiresInSec) {
+            setEmailCooldown(data.retryAfter || 30);
+          }
+          return;
+        }
+
+        // Case D2: Email-method account on untrusted device -> ok: true with emailOtpRequired
+        if (data.emailOtpRequired && data.mfaMethod === "email") {
+          setEmailChallenge({
+            ...data,
+            identifier: cleanId,
+            password: adminModalPassword,
+            code: data.devOtp || "",
+            useRecovery: false,
+          });
+          if (data.retryAfter || data.expiresInSec) {
+            setEmailCooldown(data.retryAfter || 30);
+          }
+          return;
+        }
+
+        // Case C: Known device within 14 days -> Instant success
+        if (data.token) {
+          handleSuccessfulLoginSession(data);
+          return;
+        }
+      } else {
+        const error = res.error || {};
+
+        // Case D1: Enrolled TOTP account on untrusted device -> 401 totp_required
+        if (error.code === "totp_required") {
+          setShowAdminModal(false);
+          setTotpChallenge({
+            identifier: cleanId,
+            password: adminModalPassword,
+            code: "",
+            useRecovery: false,
+          });
+          return;
+        }
+
+        if (error.code === "invalid_credentials") {
+          setAdminModalError("Invalid administrator username or password. Please verify your credentials.");
+        } else if (error.code === "locked") {
+          setAdminModalError(ERROR_MESSAGES.locked);
+        } else if (error.code === "rate_limited") {
+          setAdminModalError(ERROR_MESSAGES.rate_limited);
+        } else if (error.code === "account_inactive") {
+          setAdminModalError(ERROR_MESSAGES.account_inactive);
+        } else {
+          setAdminModalError(sandeshApi.getFriendlyErrorMessage(error));
+        }
+      }
+    } catch (err) {
+      setAdminModalLoading(false);
+      setAdminModalError("Failed to authenticate administrator. Please check your network connection.");
     }
   };
 
@@ -1809,30 +1980,6 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 </div>
               </div>
 
-              <div className="sandesh-input-group">
-                <div className="label-with-action">
-                  <label>Password (required for Admin accounts)</label>
-                </div>
-                <div className="sandesh-input-box-3d">
-                  <Lock size={18} className="sandesh-lucide-icon" />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter password (optional for non-admins)"
-                    autoComplete="current-password"
-                    value={signInPassword}
-                    onChange={(e) => setSignInPassword(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="sandesh-input-action-btn"
-                    onClick={() => setShowPassword(!showPassword)}
-                    title={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
               <button
                 type="submit"
                 className="sandesh-btn-primary-3d"
@@ -1841,6 +1988,18 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <span>{loading ? "Authenticating..." : "Sign In to Sandesh"}</span>
                 <ArrowRight size={18} className="sandesh-btn-arrow" />
               </button>
+
+              <div className="sandesh-admin-trigger-container">
+                <button
+                  type="button"
+                  className="sandesh-admin-trigger-btn"
+                  onClick={() => handleOpenAdminModal(signInIdentifier)}
+                  title="Enterprise administrators sign in with password"
+                >
+                  <ShieldCheck size={14} className="admin-btn-icon" />
+                  <span>Administrator Sign In (with password)</span>
+                </button>
+              </div>
             </form>
           )}
 
@@ -2411,6 +2570,122 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
           </div>
         </div>
       </div>
+
+      {/* Administrator Sign In Popup Modal */}
+      {showAdminModal && (
+        <div
+          className="sandesh-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAdminModal(false);
+              setAdminModalError("");
+            }
+          }}
+        >
+          <div className="sandesh-glass-card sandesh-admin-popup-card">
+            <div className="sandesh-admin-popup-header">
+              <div className="sandesh-admin-badge-icon">
+                <ShieldCheck size={20} />
+              </div>
+              <div className="sandesh-admin-popup-titles">
+                <h3 className="sandesh-admin-popup-title">Administrator Sign In</h3>
+                <span className="sandesh-admin-popup-sub">Enterprise privileged access with password verification</span>
+              </div>
+              <button
+                type="button"
+                className="sandesh-admin-popup-close"
+                onClick={() => {
+                  setShowAdminModal(false);
+                  setAdminModalError("");
+                }}
+                aria-label="Close Admin Login Popup"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {adminModalError && (
+              <div className="sandesh-alert sandesh-alert-danger" style={{ marginBottom: 12 }}>
+                {adminModalError}
+              </div>
+            )}
+
+            <form onSubmit={handleAdminSignIn} className="sandesh-auth-form">
+              <div className="sandesh-input-group">
+                <label>Administrator Username, Email, or Mobile</label>
+                <div className="sandesh-input-box-3d">
+                  <User size={16} className="sandesh-lucide-icon" />
+                  <input
+                    type="text"
+                    placeholder="e.g. admin or admin@company.com"
+                    autoComplete="username"
+                    value={adminModalIdentifier}
+                    onChange={(e) => {
+                      setAdminModalIdentifier(e.target.value);
+                      if (adminModalError) setAdminModalError("");
+                    }}
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="sandesh-input-group">
+                <div className="label-with-action">
+                  <label>Administrator Password</label>
+                  <span className="sandesh-required-label">*Required</span>
+                </div>
+                <div className="sandesh-input-box-3d">
+                  <Lock size={16} className="sandesh-lucide-icon" />
+                  <input
+                    type={showAdminModalPassword ? "text" : "password"}
+                    placeholder="Enter your administrator password"
+                    autoComplete="current-password"
+                    value={adminModalPassword}
+                    onChange={(e) => {
+                      setAdminModalPassword(e.target.value);
+                      if (adminModalError) setAdminModalError("");
+                    }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="sandesh-input-action-btn"
+                    onClick={() => setShowAdminModalPassword(!showAdminModalPassword)}
+                    title={showAdminModalPassword ? "Hide password" : "Show password"}
+                  >
+                    {showAdminModalPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="sandesh-admin-popup-actions">
+                <button
+                  type="button"
+                  className="sandesh-btn-secondary-3d"
+                  onClick={() => {
+                    setShowAdminModal(false);
+                    setAdminModalError("");
+                  }}
+                  disabled={adminModalLoading}
+                  style={{ minWidth: 90 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="sandesh-btn-primary-3d"
+                  disabled={adminModalLoading}
+                  style={{ flex: 1, marginTop: 0 }}
+                >
+                  <span>{adminModalLoading ? "Verifying Credentials..." : "Authenticate as Admin"}</span>
+                  <ArrowRight size={16} className="sandesh-btn-arrow" />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

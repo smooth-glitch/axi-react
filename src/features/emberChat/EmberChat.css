@@ -878,6 +878,137 @@
   }
 }
 
+/* Administrator Sign In Popup Modal */
+.sandesh-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: sandeshFadeIn 0.2s ease-out;
+}
+
+.sandesh-admin-popup-card {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.16), 0 8px 16px rgba(255, 122, 89, 0.12);
+  border-radius: 20px;
+  padding: 22px 24px;
+  position: relative;
+  animation: sandeshScaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sandeshScaleIn {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.sandesh-admin-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 122, 89, 0.15);
+}
+
+.sandesh-admin-badge-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(255, 122, 89, 0.15), rgba(255, 87, 87, 0.25));
+  color: var(--sandesh-coral-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sandesh-admin-popup-titles {
+  flex: 1;
+  text-align: left;
+}
+
+.sandesh-admin-popup-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--sandesh-text-main);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.sandesh-admin-popup-sub {
+  font-size: 11px;
+  color: var(--sandesh-text-muted);
+  display: block;
+  margin-top: 2px;
+}
+
+.sandesh-admin-popup-close {
+  background: transparent;
+  border: none;
+  color: var(--sandesh-text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.sandesh-admin-popup-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--sandesh-text-main);
+}
+
+.sandesh-required-label {
+  font-size: 10px;
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.sandesh-admin-popup-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* Trigger button on Sign In card */
+.sandesh-admin-trigger-container {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+.sandesh-admin-trigger-btn {
+  background: rgba(255, 122, 89, 0.08);
+  border: 1px dashed rgba(255, 122, 89, 0.45);
+  border-radius: var(--sandesh-radius-full);
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sandesh-coral-accent);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sandesh-admin-trigger-btn:hover {
+  background: rgba(255, 122, 89, 0.16);
+  border-color: var(--sandesh-coral-accent);
+  transform: translateY(-1px);
+}
+
 /* ==========================================================================
    SANDESH 3D GLASS CHAT WINDOW & SHELL
    ========================================================================== */
@@ -3426,18 +3557,18 @@
 }
 
 /* ==========================================================================
-   WHATSAPP-STYLE DARK FLOATING QUICK REACTION PILL
+   SANDESH FLOATING QUICK REACTION PILL (WHITE THEME)
    ========================================================================== */
 #ember-quick-react-popup,
 .sandesh-quick-react-pill {
   position: fixed;
   z-index: 9999;
-  background: rgba(30, 41, 59, 0.96);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #ffffff;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px solid rgba(255, 122, 89, 0.22);
   border-radius: 9999px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 3px 10px rgba(255, 122, 89, 0.12);
   padding: 4px 6px;
   display: flex;
   align-items: center;
@@ -3497,7 +3628,7 @@
 
 .react-emoji-btn:hover {
   transform: scale(1.38) translateY(-3px);
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 122, 89, 0.14);
 }
 
 .react-emoji-btn:active {
@@ -3505,9 +3636,9 @@
 }
 
 .react-more-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  color: #cbd5e1;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #64748b;
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -3520,8 +3651,9 @@
 }
 
 .react-more-btn:hover {
-  background: rgba(255, 255, 255, 0.22);
-  color: #ffffff;
+  background: rgba(255, 122, 89, 0.15);
+  color: var(--sandesh-coral-accent);
+  border-color: rgba(255, 122, 89, 0.3);
   transform: scale(1.1);
 }
 
@@ -6973,29 +7105,76 @@
   background: rgba(255, 255, 255, 0.85);
 }
 
-.wcs-open-full-chat-btn {
+.wcs-logout-btn {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: rgba(15, 23, 42, 0.85);
-  color: #fff;
-  border: none;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(220, 38, 38, 0.14));
+  border: 1.5px solid rgba(239, 68, 68, 0.3);
+  color: #dc2626;
   border-radius: var(--sandesh-radius-sm);
-  padding: 8px 14px;
-  font-size: 12px;
+  padding: 9px 14px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.08);
+}
+
+.wcs-logout-btn:hover {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  border-color: transparent;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+}
+
+.wcs-logout-btn:active {
+  transform: translateY(1px);
+}
+
+.wcs-logout-btn .material-icons {
+  font-size: 17px;
+}
+
+.wcs-user-logout-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(254, 226, 226, 0.6);
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
   transition: all 0.2s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
 }
 
-.wcs-open-full-chat-btn:hover {
-  background: #0f172a;
+.wcs-user-logout-btn:hover {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+  transform: scale(1.08);
 }
 
-.wcs-open-full-chat-btn .material-icons {
+.wcs-user-logout-btn .material-icons {
   font-size: 15px;
+}
+
+.sandesh-icon-btn-3d.logout-shortcut-btn {
+  color: #dc2626;
+}
+
+.sandesh-icon-btn-3d.logout-shortcut-btn:hover {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35);
 }
 
 /* ==========================================================================
@@ -7689,6 +7868,140 @@
 .view-tab-btn.workspace-tab-btn:hover {
   background: var(--sandesh-coral-accent);
   color: #fff;
+}
+
+/* ==========================================================================
+   CENTER POPUP UI: DELETE CONVERSATION CONFIRMATION
+   ========================================================================== */
+.sandesh-delete-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: sandeshFadeIn 0.2s ease-out;
+}
+
+.sandesh-delete-dialog-card {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1.5px solid rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.16), 0 8px 24px rgba(239, 68, 68, 0.12);
+  padding: 26px 24px 22px;
+  text-align: center;
+  position: relative;
+  animation: sandeshScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sandesh-delete-dialog-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(254, 226, 226, 0.85), rgba(254, 202, 202, 0.95));
+  border: 2px solid rgba(239, 68, 68, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  color: #dc2626;
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.18);
+}
+
+.sandesh-delete-dialog-icon-wrap .delete-modal-icon {
+  font-size: 28px;
+}
+
+.sandesh-delete-dialog-title {
+  font-size: 19px;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 8px;
+  letter-spacing: -0.3px;
+}
+
+.sandesh-delete-dialog-msg {
+  font-size: 14.5px;
+  color: #334155;
+  line-height: 1.5;
+  margin: 0 0 6px;
+}
+
+.sandesh-delete-dialog-msg strong {
+  color: var(--sandesh-coral-accent);
+}
+
+.sandesh-delete-dialog-subtext {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+  margin: 0 0 22px;
+}
+
+.sandesh-delete-dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.sandesh-delete-btn-cancel {
+  flex: 1;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(241, 245, 249, 0.9);
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  color: #475569;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sandesh-delete-btn-cancel:hover {
+  background: #ffffff;
+  color: #1e293b;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+}
+
+.sandesh-delete-btn-confirm {
+  flex: 1;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sandesh-delete-btn-confirm:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.45);
+}
+
+.sandesh-delete-btn-confirm:active {
+  transform: translateY(1px);
 }
 
 
