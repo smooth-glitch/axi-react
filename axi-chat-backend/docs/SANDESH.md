@@ -36,6 +36,7 @@ this file is for whoever runs, debugs or extends the backend.
 | `sd_policy`    | **the** place strict mode is decided: handshake, DM, broadcast, group create/add, admin gate; plus safe post-send hooks                                                      |
 | `sd_config`    | lite tstructs, options + "applicable to", app connections, form validation & submissions                                                                                     |
 | `sd_cards`     | message cards, sections, classification, **notifications** (priority / pending / personal / reminders: unread state, counts, read, live pushes, due-reminder firing)         |
+| `sd_feed`      | the My Workspace notification feed: real items from DMs, approvals, submissions, reminders and security events, with read/resolve/dismiss/clear, coalescing and live pushes (`feed.*`, `/api/sd/feed*`) -- see docs/SANDESH_API.md |
 | `sd_scheduler` | a small `gen_server` (supervised in `chat_app_sup`) that every `SANDESH_SCHEDULER_TICK_MS` (15 s) asks `sd_cards:fire_due/0` to notify due reminders                         |
 | `sd_notify`    | OTP/invite delivery channel (log / fixed / webhook) and live pushes to online users                                                                                          |
 | `sd_http`      | the REST endpoints                                                                                                                                                           |

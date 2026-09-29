@@ -194,7 +194,10 @@ disable(Token, Password, Code) ->
                         case sd_db:hget_json(?TOTP, key(Username)) of
                             #{<<"enabled">> := true} = Doc ->
                                 case code_or_recovery_ok(Doc, Username, Code) of
-                                    true -> sd_db:hdel(?TOTP, key(Username)), {ok, #{<<"disabled">> => true}};
+                                    true ->
+                                        sd_db:hdel(?TOTP, key(Username)),
+                                        catch sd_feed:security(Username, totp_disabled, #{}),
+                                        {ok, #{<<"disabled">> => true}};
                                     false -> {error, otp_invalid, <<"That code is not correct.">>}
                                 end;
                             _ -> {error, not_found, <<"Two-factor is not enabled for this account.">>}
@@ -220,6 +223,7 @@ regenerate_recovery(Token, Password, Code) ->
                                         {Plain, Hashed} = gen_recovery_codes(),
                                         Fresh = sd_db:hget_json(?TOTP, key(Username)),
                                         sd_db:hset_json(?TOTP, key(Username), Fresh#{<<"recovery">> => Hashed}),
+                                        catch sd_feed:security(Username, recovery_regenerated, #{}),
                                         {ok, #{<<"recoveryCodes">> => Plain}};
                                     false -> {error, otp_invalid, <<"That code is not correct.">>}
                                 end;

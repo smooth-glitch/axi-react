@@ -154,6 +154,7 @@ user_actions() ->
      <<"cards.list">>, <<"cards.dismiss">>, <<"sections.list">>, <<"sections.save">>,
      <<"sections.delete">>, <<"reminder.add">>,
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
+     <<"feed.list">>, <<"feed.summary">>, <<"feed.read">>, <<"feed.resolve">>, <<"feed.dismiss">>, <<"feed.clear">>,
      <<"options.list">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
@@ -235,6 +236,7 @@ do(<<"me">>, _Args, #{user := User, token := Token}) ->
            <<"org">> => maps:get(<<"name">>, sd_org:info()),
            <<"sessionExpiresTs">> => sd_auth:session_expires(Token),
            <<"notifications">> => sd_cards:summary(Name),
+           <<"feed">> => sd_feed:summary(Name),
            <<"permissions">> => #{<<"isAdmin">> => sd_users:is_admin(User),
                                   <<"isHost">> => sd_users:is_host(User),
                                   <<"canManageUsers">> => maps:get(<<"canManageUsers">>, User, false) =:= true},
@@ -395,6 +397,10 @@ do(<<"notifications.read">>, Args, #{user := User}) ->
             end;
         _ -> {error, invalid, <<"Send {\"ids\":[...]}, {\"category\":\"personal\"} or {\"all\":true}.">>}
     end;
+
+%% ---- My Workspace notification feed (sd_feed): list / summary / read / resolve / dismiss / clear ------------------
+do(<<"feed.", Sub/binary>>, Args, #{user := User}) ->
+    sd_feed:call(Sub, maps:get(<<"username">>, User), Args);
 
 %% ---- org config lookups (user-level, name-only) -----------------------------------------------
 %% Used by the Option Builder's "Applicable to" step to populate dropdowns for
@@ -730,6 +736,7 @@ announce_option(Action, Id, User) ->
 
 announce_submission(Action, Sub) ->
     safely_announce(fun() ->
+        Action =:= <<"created">> andalso sd_feed:submission_created(Sub),
         Admins = [maps:get(<<"username">>, A) || A <- sd_users:admins()],
         sd_notify:push_event_to([maps:get(<<"by">>, Sub, null), maps:get(<<"host">>, Sub, null) | Admins],
                                 <<"submissions_changed">>,
