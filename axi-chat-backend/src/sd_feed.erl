@@ -24,6 +24,10 @@
 %%%   sd_auth / sd_totp   -> new sign-in ended your other session, account locked, password
 %%%                          changed, 2FA disabled, recovery codes regenerated
 %%%
+%%% Everything is asynchronous: the code that causes an event (a message send, an approval answer, a
+%%% sign-in) only hands it to sd_feed_srv and carries on; the item is written and pushed to the user's
+%%% open app a moment later, with no polling and no refresh. See sd_feed_srv for why one writer.
+%%%
 %%% Storage per user: `sd:feed:<u>` (sorted set, score = last activity ms, member = id),
 %%% `sd:feedi:<u>` (hash id -> JSON), `sd:feedk:<u>` (hash coalescing key -> id). Newest ?MAX
 %%% kept. Offline users accumulate items and read them with feed.list when they connect; the
@@ -41,7 +45,15 @@
 %% ---- the API surface shared by the WebSocket (`/sd feed.*`) and REST (`/api/sd/feed*`) ---------
 
 %% Action: list | summary | read | resolve | dismiss | clear.   Returns {ok, Map} | {error, Code, Msg}.
-call(<<"list">>, User, Args) ->
+%% Reads go straight to Redis; every change is queued on sd_feed_srv so it can never interleave with an
+%% event being written at the same moment (see sd_feed_srv).
+call(Action, User, Args) when Action =:= <<"read">>; Action =:= <<"resolve">>;
+                              Action =:= <<"dismiss">>; Action =:= <<"clear">> ->
+    sd_feed_srv:sync(fun() -> do_call(Action, User, Args) end);
+call(Action, User, Args) ->
+    do_call(Action, User, Args).
+
+do_call(<<"list">>, User, Args) ->
     Priority = case sd_util:get(<<"priority">>, Args, <<"all">>) of P when is_binary(P) -> P; _ -> <<"all">> end,
     case lists:member(Priority, ?PRIORITIES) of
         false -> {error, invalid, <<"priority must be one of: all, high, medium, low, resolved.">>};
@@ -53,9 +65,9 @@ call(<<"list">>, User, Args) ->
                      limit => case sd_util:get(<<"limit">>, Args, 50) of L when is_integer(L) -> L; _ -> 50 end},
             {ok, list(User, Opts)}
     end;
-call(<<"summary">>, User, _Args) ->
+do_call(<<"summary">>, User, _Args) ->
     {ok, summary(User)};
-call(<<"read">>, User, Args) ->
+do_call(<<"read">>, User, Args) ->
     Read = sd_util:get(<<"read">>, Args, true) =/= false,   %% read:false = mark UNread (the panel's toggle)
     case {sd_util:get(<<"all">>, Args, false), sd_util:get(<<"ids">>, Args)} of
         {true, _} -> {ok, mark_read(User, all, Read)};
@@ -66,13 +78,13 @@ call(<<"read">>, User, Args) ->
             end;
         _ -> {error, invalid, <<"Send {\"ids\":[...]} or {\"all\":true} (optionally \"read\":false to mark unread).">>}
     end;
-call(<<"resolve">>, User, Args) ->
+do_call(<<"resolve">>, User, Args) ->
     with_id(Args, fun(Id) -> resolve(User, Id) end);
-call(<<"dismiss">>, User, Args) ->
+do_call(<<"dismiss">>, User, Args) ->
     with_id(Args, fun(Id) -> dismiss(User, Id) end);
-call(<<"clear">>, User, _Args) ->
+do_call(<<"clear">>, User, _Args) ->
     {ok, clear_resolved(User)};
-call(_, _, _) ->
+do_call(_, _, _) ->
     {error, not_found, <<"No such feed action.">>}.
 
 with_id(Args, Fun) ->
@@ -143,7 +155,7 @@ mark_read(User, Spec, Read) ->
                 case Spec of all -> true; {ids, Ids} -> lists:member(maps:get(<<"id">>, I), Ids) end
         end,
         fun(I) -> I#{<<"read">> => Read} end),
-    push_counts(U),
+    Changed =/= [] andalso push_changed(U, [maps:get(<<"id">>, I) || I <- Changed], Read),
     #{<<"updated">> => length(Changed), <<"counts">> => summary(U)}.
 
 %% The user marks an item done: it turns green ("resolved") and counts as read.
@@ -259,7 +271,7 @@ keys(U) -> "sd:feedk:" ++ sd_util:s(U).
 %% ---- live pushes ------------------------------------------------------------------------------------------------
 %%   feed_item     {notification, counts}   new or changed item -- upsert it by id
 %%   feed_removed  {ids, counts}            dismissed / cleared
-%%   feed_changed  {counts}                 bulk read/unread (also reaches the user's other tabs)
+%%   feed_changed  {ids, read, counts}      these items were marked read (read:true) or unread (read:false)
 
 push_item(U, Item) ->
     is_online(U) andalso
@@ -271,8 +283,9 @@ push_removed(U, Ids) ->
         sd_notify:push_event(U, <<"feed_removed">>, #{<<"ids">> => Ids, <<"counts">> => summary(U)}),
     ok.
 
-push_counts(U) ->
-    is_online(U) andalso sd_notify:push_event(U, <<"feed_changed">>, #{<<"counts">> => summary(U)}),
+push_changed(U, Ids, Read) ->
+    is_online(U) andalso
+        sd_notify:push_event(U, <<"feed_changed">>, #{<<"ids">> => Ids, <<"read">> => Read, <<"counts">> => summary(U)}),
     ok.
 
 is_online(U) -> chat_room:get_pid(sd_util:s(U)) =/= error.
@@ -282,9 +295,7 @@ is_online(U) -> chat_room:get_pid(sd_util:s(U)) =/= error.
 %% From every sd_cards card, as it is created (a due reminder: when it fires). Never lets a
 %% feed problem break the message/request that triggered it.
 from_card(User, Card) ->
-    try from_card_(sd_util:norm_user(User), Card)
-    catch C:R -> ?LOG_WARNING("sd_feed:from_card failed: ~p:~p", [C, R]), ok
-    end.
+    sd_feed_srv:async(fun() -> from_card_(sd_util:norm_user(User), Card) end).
 
 from_card_(U, #{<<"kind">> := <<"dm">>, <<"from">> := From} = Card) ->
     F = sd_util:norm_user(From),
@@ -341,6 +352,9 @@ request_title(_) -> <<"Approval needed">>.
 
 %% Opening a DM (`/read dm <user>`) reads that person's item.
 dm_read(User, Other) ->
+    sd_feed_srv:async(fun() -> do_dm_read(User, Other) end).
+
+do_dm_read(User, Other) ->
     U = sd_util:norm_user(User),
     Key = <<"dm:", (sd_util:norm_user(Other))/binary>>,
     case existing(U, Key) of
@@ -351,6 +365,9 @@ dm_read(User, Other) ->
 
 %% An answered approval is done for every approver: their item turns green.
 resolve_request(User, ReqId) ->
+    sd_feed_srv:async(fun() -> do_resolve_request(User, ReqId) end).
+
+do_resolve_request(User, ReqId) ->
     U = sd_util:norm_user(User),
     case existing(U, <<"req:", (integer_to_binary(ReqId))/binary>>) of
         undefined -> ok;
@@ -362,9 +379,12 @@ resolve_request(User, ReqId) ->
 
 %% Tells whoever raised a request how it went (onboarding excluded: that person has no session yet
 %% and is told by email/SMS already).
-request_outcome(_Req, _Status, undefined) -> ok;
-request_outcome(#{<<"type">> := <<"onboarding">>}, _, _) -> ok;
-request_outcome(#{<<"from">> := From, <<"id">> := Id, <<"type">> := Type}, Status, ByName)
+request_outcome(Req, Status, ByName) ->
+    sd_feed_srv:async(fun() -> do_request_outcome(Req, Status, ByName) end).
+
+do_request_outcome(_Req, _Status, undefined) -> ok;
+do_request_outcome(#{<<"type">> := <<"onboarding">>}, _, _) -> ok;
+do_request_outcome(#{<<"from">> := From, <<"id">> := Id, <<"type">> := Type}, Status, ByName)
         when Status =:= <<"accepted">>; Status =:= <<"rejected">> ->
     Approved = Status =:= <<"accepted">>,
     Verb = case Approved of true -> <<"approved">>; false -> <<"declined">> end,
@@ -382,10 +402,13 @@ request_outcome(#{<<"from">> := From, <<"id">> := Id, <<"type">> := Type}, Statu
                          <<"actionType">> => <<"approvals">>, <<"actionLabel">> => <<"View record">>,
                          <<"ref">> => #{<<"requestId">> => Id, <<"type">> => Type}}, []),
     ok;
-request_outcome(_, _, _) -> ok.
+do_request_outcome(_, _, _) -> ok.
 
 %% A form was submitted: tell its host and the admins (not the person who submitted it).
 submission_created(Sub) ->
+    sd_feed_srv:async(fun() -> do_submission_created(Sub) end).
+
+do_submission_created(Sub) ->
     try
         By = sd_util:norm_user(maps:get(<<"by">>, Sub, <<>>)),
         Host = case maps:get(<<"host">>, Sub, null) of H when is_binary(H) -> [sd_util:norm_user(H)]; _ -> [] end,
@@ -407,7 +430,10 @@ submission_created(Sub) ->
 
 %% Account security events, addressed to the account holder.
 %% Kind: session_replaced | account_locked | password_changed | totp_disabled | recovery_regenerated
-security(User, Kind, _Extra) ->
+security(User, Kind, Extra) ->
+    sd_feed_srv:async(fun() -> do_security(User, Kind, Extra) end).
+
+do_security(User, Kind, _Extra) ->
     try
         {Sev, Title, Msg, Icon} = security_text(Kind),
         notify(User, #{<<"severity">> => Sev, <<"category">> => <<"security">>, <<"title">> => Title,

@@ -78,7 +78,7 @@ that the person must sign in again. What the frontend sees:
 | REST, after it ends | `401 unauthenticated` | show the sign-in screen |
 | an **open** WebSocket, when it ends | `{"type":"sd_event","event":"feed_item","data":{"notification","counts"}}` | a workspace-panel item was created or changed (new message, count bumped, resolved, read) | upsert by `notification.id`; `counts` = `{high,medium,low,resolved,unread,total}` |
 | `{"type":"sd_event","event":"feed_removed","data":{"ids","counts"}}` | items dismissed / cleared (also your other tabs) | remove by id |
-| `{"type":"sd_event","event":"feed_changed","data":{"counts"}}` | bulk read/unread changed (also your other tabs) | refresh counts (re-`feed.list` if you show read state) |
+| `{"type":"sd_event","event":"feed_changed","data":{"ids","read","counts"}}` | those items were marked read (`read:true`) or unread (`read:false`) | set `read` on the listed ids; `counts` refreshes the badges |
 | `{"type":"sd_event","event":"session_expired","reason":"two_week_login"}`, then the server closes the socket | show the sign-in screen (don't auto-reconnect with the old token) |
 | `/sd …` in the short gap before that | `error.code:"session_expired"`; `/sd me` → `authenticated:false, sessionExpired:true` | same |
 
@@ -400,7 +400,7 @@ those four categories.
 | `notifications.summary` | user | → `{counts:{priority,pending,personal,reminders}, total, personalBySender:{username:n}}` — `personalBySender` is the per-conversation badge |
 | `notifications.list` | user | `{category?:"priority"\|"pending"\|"personal"\|"reminders"\|"all", unreadOnly?:true, limit?}` → `{notifications:[card], counts}`. With `unreadOnly:false` read ones are included, and upcoming reminders appear with `due:false` |
 | `notifications.read` | user | one of `{ids:[cardId]}`, `{category}`, `{all:true}` → the new summary |
-| `reminder.add` | user | `{text, dueTs?}` — no `dueTs` (or a past one) notifies immediately; a future one fires at that time (within ~15 s) |
+| `reminder.add` | user | `{text, dueTs?}` — no `dueTs` (or a past one) notifies immediately; a future one fires at that time (within ~2 s) |
 
 **What marks things read without the UI asking:** sending `/read dm <user>`
 (the chat UI already does this when a DM is opened) clears that sender's
@@ -479,9 +479,13 @@ itself** for every approver when anyone answers it, and a DM row is marked read 
 REST needs `Authorization: Bearer <token>` (401 otherwise) and answers in the usual `{ok,data}` envelope, so the
 panel can load **before** the socket is up. Offline users simply accumulate items -- call `feed.list` on connect.
 
-**Live** (see §6): `feed_item` (new *or changed* item -- upsert by `id`), `feed_removed` (`ids`), and
-`feed_changed` (bulk read state; also reaches your other tabs). Each carries `counts`, so the header
-updates without another call.
+**Live, with no refresh and no polling** (see §6). Every change is pushed to the affected user's open app
+the moment it happens: `feed_item` (new *or changed* item -- upsert by `id`), `feed_removed` (`ids`), and
+`feed_changed` (`ids` + `read`: those items were marked read/unread). Each carries `counts`, so the header
+updates without another call. Nothing that causes a notification ever waits on it: the feed is written by
+its own background worker, so sending a message or answering an approval is never slowed down by it.
+**Reload `feed.list` on every (re)connect of the socket** -- pushes only reach a connected app, so anything
+that happened while it was disconnected is picked up by that reload. Due reminders arrive within ~2 s of their time.
 
 **Wiring it into MyWorkspace (for the frontend dev)** -- replace the local list with server state:
 
@@ -493,7 +497,8 @@ setNotifications(notifications);
 // live: upsert / remove
 onSdEvent('feed_item',    ({ notification }) => setNotifications(p => [notification, ...p.filter(n => n.id !== notification.id)]));
 onSdEvent('feed_removed', ({ ids })          => setNotifications(p => p.filter(n => !ids.includes(n.id))));
-onSdEvent('feed_changed', () => reload());
+onSdEvent('feed_changed', ({ ids, read }) => setNotifications(p => p.map(n => ids.includes(n.id) ? { ...n, read } : n)));
+onSocketOpen(() => reload());   // every (re)connect: pushes only reach a connected app
 
 // the existing handlers become one call each
 handleResolve      = (id) => ws.sd('feed.resolve', { id });

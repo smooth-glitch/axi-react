@@ -176,7 +176,10 @@ async function main() {
 
     // ---- panel actions ---------------------------------------------------------------------------------------------
     console.log("=== Panel actions: read / unread / resolve / dismiss / clear ===");
+    A.clear();
     m = await A.sd("feed.read", { ids: [dm.id] });
+    ev = await A.event("feed_changed");
+    ok("...and pushes feed_changed naming exactly which items changed", ev.data.ids.includes(dm.id) && ev.data.read === true && typeof ev.data.counts.unread === "number", ev);
     ok("feed.read marks it read and returns the counts", m.ok && m.data.updated === 1 && m.data.counts.unread === list.counts.unread - 1, m);
     m = await A.sd("feed.read", { ids: [dm.id], read: false });
     ok("feed.read with read:false marks it unread again (the panel's toggle)", m.ok && m.data.updated === 1 && m.data.counts.unread === list.counts.unread, m);
@@ -189,7 +192,10 @@ async function main() {
     m = await A.sd("feed.read", {});
     ok("feed.read with no target is rejected", !m.ok && m.error.code === "invalid", m);
 
+    A.clear();
     m = await A.sd("feed.resolve", { id: dm.id });
+    ev = await A.event("feed_item");
+    ok("...and pushes the updated item live", ev.data.notification.id === dm.id && ev.data.notification.priority === "resolved", ev);
     ok("feed.resolve turns it green (resolved) and read", m.ok && m.data.notification.priority === "resolved" && m.data.notification.read === true && m.data.counts.resolved === 1, m);
     m = await A.sd("feed.resolve", { id: "no-such-id" });
     ok("resolving an unknown id -> not_found", !m.ok && m.error.code === "not_found", m);
@@ -198,6 +204,15 @@ async function main() {
     list = await feedOf(adminToken);
     dm = findItem(list, n => n.category === "messages");
     ok("new activity re-opens a resolved conversation (unread, not resolved, count 3)", dm.priority !== "resolved" && dm.read === false && dm.count === 3, dm);
+    const beforeBurst = dm.count;
+    A.clear();
+    for (let i = 0; i < 10; i++) SM.send(`/msg ${adminName} burst ${i}`);
+    await A.waitFor(x => x.type === "sd_event" && x.event === "feed_item" && x.data.notification.message === "burst 9", 5000, "last burst push");
+    await sleep(300);
+    list = await feedOf(adminToken);
+    dm = findItem(list, n => n.category === "messages");
+    ok("10 messages sent at once are counted exactly (no lost updates: one serialized writer)", dm.count === beforeBurst + 10, { before: beforeBurst, now: dm.count });
+    ok("...and the latest one is what the row shows, pushed live", dm.message === "burst 9");
     await A.sd("feed.resolve", { id: dm.id });
     A.clear();
     m = await A.sd("feed.clear");
@@ -229,9 +244,11 @@ async function main() {
 
     // ---- submissions ----------------------------------------------------------------------------------------------------------
     console.log("=== Form submissions ===");
+    A.clear();
     m = await SM.sd("tstruct.submit", { name: "leave_request", values: { from_date: "2026-10-01", to_date: "2026-10-03", kind: "Casual" } });
     ok("(setup) Sam submits the leave form", m.ok, m);
-    await sleep(500);
+    ev = await A.waitFor(x => x.type === "sd_event" && x.event === "feed_item" && x.data.notification.category === "submissions", 3000, "live submission push");
+    ok("the admin's open app receives the submission live (no refresh)", ev.data.notification.title === "New submission: leave_request", ev);
     list = await feedOf(adminToken);
     let sub = findItem(list, n => n.category === "submissions");
     ok("the host/admin is told about a new submission (medium, submissions action, form name, who)", !!sub && sub.priority === "medium" && sub.actionType === "submissions" && sub.ref.tstruct === "leave_request" && /Sam W/.test(sub.message), sub);
@@ -240,6 +257,7 @@ async function main() {
 
     // ---- reminders ---------------------------------------------------------------------------------------------------------------
     console.log("=== Reminders ===");
+    SM.clear();
     m = await SM.sd("reminder.add", { text: "call the vendor" });
     ok("(setup) reminder with no time", m.ok, m);
     m = await SM.sd("reminder.add", { text: "stand-up in a moment", dueTs: Date.now() + 1800 });
@@ -248,7 +266,8 @@ async function main() {
     list = await feedOf(S.token);
     ok("an immediate reminder shows up at once (medium, reminders)", list.notifications.some(n => n.category === "reminders" && n.message === "call the vendor" && n.priority === "medium"), list.notifications);
     ok("a future reminder is NOT in the feed yet", !list.notifications.some(n => n.message === "stand-up in a moment"));
-    await sleep(2200);
+    ev = await SM.waitFor(x => x.type === "sd_event" && x.event === "feed_item" && x.data.notification.message === "stand-up in a moment", 4000, "live reminder push");
+    ok("a reminder is pushed to the open app the moment it is due", ev.data.notification.category === "reminders", ev);
     list = await feedOf(S.token);
     ok("...it appears once it is due", list.notifications.some(n => n.message === "stand-up in a moment"), list.notifications.map(n => n.message));
 
