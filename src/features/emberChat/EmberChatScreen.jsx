@@ -1904,6 +1904,66 @@ export function EmberChatScreen({ onOpenAiChat }) {
     };
   }, [currentUser?.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const refreshApprovals = useCallback(async () => {
+    const res = await sandeshSocket.sd("req.list", { status: "all" });
+    if (!res.ok) return;
+    const requests = res.data?.requests || [];
+    // Onboarding requests only carry the applicant's username; admins can look
+    // up the rest of their profile so the approver sees who they're approving.
+    let profiles = {};
+    if (requests.some((r) => r.type === "onboarding")) {
+      const list = await sandeshSocket.sd("admin.users.list", { status: "all", pageSize: 200 });
+      if (list.ok) {
+        profiles = Object.fromEntries((list.data?.users || []).map((u) => [u.username, u]));
+      }
+    }
+    setApprovals(mapServerRequests(requests, profiles));
+  }, []);
+
+  const respondToApproval = async (reqId, action, reqItem) => {
+    const res = await sandeshSocket.sd("req.respond", { id: Number(reqId), action });
+    if (!res.ok) {
+      pushToast({ type: "sd", ok: false, error: res.error });
+      await refreshApprovals();
+      return;
+    }
+    const target = reqItem || approvals.find((r) => r.id === reqId);
+    const who = target?.username ? `@${target.username}` : `request #${reqId}`;
+    if (action === "accept") pushToast(`✓ Approved ${who}.`);
+    else if (action === "reject") pushToast(`✕ Rejected ${who}.`);
+    else pushToast(`Request #${reqId} dismissed`);
+    await refreshApprovals();
+    if (action === "accept") sandeshSocket.send("#associates");
+  };
+
+  const handleAcceptApproval = (reqId, reqItem) => respondToApproval(reqId, "accept", reqItem);
+  const handleRejectApproval = (reqId, reqItem) => respondToApproval(reqId, "reject", reqItem);
+  const handleIgnoreApproval = (reqId) => respondToApproval(reqId, "ignore");
+
+  const handleStartChatWithUser = (userReq) => {
+    const uName = userReq.username || userReq.fromUser || userReq.name;
+    const chatId = `user-${String(uName).toLowerCase()}`;
+    const existing = chats.find((c) => c.id === chatId);
+    if (!existing) {
+      const newChat = {
+        id: chatId,
+        name: userReq.name || uName,
+        username: uName,
+        isGroup: false,
+        category: "associate",
+        designation: userReq.designation || "Enterprise Associate",
+        preview: "Chat initiated",
+        time: "now",
+        unread: 0,
+        initials: String(userReq.name || uName).slice(0, 2).toUpperCase(),
+        color: "#34c759",
+      };
+      setChats((prev) => [newChat, ...prev]);
+    }
+    setActiveChatId(chatId);
+    setModal(null);
+  };
+
   if (!currentUser) {
     return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} notice={loginNotice} />;
   }
@@ -2341,7 +2401,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 onClose={() => setModal(null)}
                 onEdit={(sub) => {
                   setEditingSubmission(sub);
-                  setSelectedPrompt({ id: `edit-${sub.id}`, type: "data_input", target: sub.tstruct, caption: `Edit ${sub.tstruct} #${sub.id}` });
+                  setSelectedPrompt({ id: `edit-${sub.id}`, type: "data_input", target: sub.tstruct, targetScope: sub.scope === "user" ? "user" : "admin", caption: `Edit ${sub.tstruct} #${sub.id}` });
                   setModal("smart_structure");
                 }}
               />
