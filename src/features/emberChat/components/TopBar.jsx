@@ -14,6 +14,9 @@ export default function TopBar({
   onlineUsers = [],
   onOpenApprovals,
   pendingApprovalsCount = 0,
+  onToggleNotifications,
+  notificationsOpen = false,
+  priorityCounts = null,
 }) {
   const isOnline = !chat.isGroup && (chat.isOnline || (onlineUsers || []).some((u) => {
     const target = (
@@ -33,6 +36,8 @@ export default function TopBar({
     );
   }));
 
+  const isWorkspace = chat.id === "workspace" || chat.isWorkspace;
+
   return (
     <header className="sandesh-topbar-3d">
       <div className="topbar-left">
@@ -46,8 +51,8 @@ export default function TopBar({
 
         <div className="topbar-avatar-wrap">
           <Avatar
-            initials={chat.initials || chat.name?.[0]}
-            color={chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
+            initials={isWorkspace ? "WS" : chat.initials || chat.name?.[0]}
+            color={isWorkspace ? "#ff7a59" : chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
             group={chat.isGroup}
             size={40}
           />
@@ -62,7 +67,8 @@ export default function TopBar({
         <div className="chat-title-info">
           <div className="title-row">
             <h2 className="chat-title">{chat.name}</h2>
-            {chat.isHost && <span className="host-pill">HOST</span>}
+            {isWorkspace && <span className="workspace-pill">WORKSPACE</span>}
+            {!isWorkspace && chat.isHost && <span className="host-pill">HOST</span>}
             {chat.isGroup && <span className="group-pill">GROUP</span>}
             {isOnline && (
               <span className="online-status-pill">
@@ -71,21 +77,23 @@ export default function TopBar({
             )}
           </div>
           <span className="chat-subtitle">
-            {chat.designation ||
-              (chat.isGroup
-                ? chat.members?.length
-                  ? `${chat.members.length} members`
-                  : chat.id === "room-general"
-                    ? "Enterprise Global Channel"
-                    : "Group Channel"
-                : isOnline
-                  ? "Active Now on Sandesh"
-                  : "Active Now")}
+            {isWorkspace
+              ? "Enterprise Workspace • Type '#' for commands"
+              : chat.designation ||
+                (chat.isGroup
+                  ? chat.members?.length
+                    ? `${chat.members.length} members`
+                    : chat.id === "room-general"
+                      ? "Enterprise Global Channel"
+                      : "Group Channel"
+                  : isOnline
+                    ? "Active Now on Sandesh"
+                    : "Active Now")}
           </span>
         </div>
       </div>
 
-      {/* Center: View Switcher (Messages vs Topics/Episodes vs Timeline) */}
+      {/* Center: View Switcher (Messages vs Topics/Episodes) */}
       <div className="topbar-center-switcher">
         <button
           type="button"
@@ -109,17 +117,6 @@ export default function TopBar({
 
       {/* Right Action Icons */}
       <div className="topbar-right">
-        {/* Smart Prompts Button */}
-        <button
-          type="button"
-          className="sandesh-action-pill-btn"
-          onClick={onOpenSmartPrompts}
-          title="Access Smart Structure prompts (Leave, Vitals, Tickets, Invoices)"
-        >
-          <span className="material-icons">bolt</span>
-          <span>Smart Prompts</span>
-        </button>
-
         {/* Group Actions: Add Member & View Members */}
         {chat.isGroup && (
           <>

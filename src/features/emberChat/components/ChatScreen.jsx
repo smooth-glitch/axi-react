@@ -3,6 +3,8 @@ import TopBar from "./TopBar.jsx";
 import MessageList from "./MessageList.jsx";
 import Composer from "./Composer.jsx";
 import TopicsEpisodesView from "./TopicsEpisodesView.jsx";
+import WorkspaceNotificationsSlider from "./WorkspaceNotificationsSlider.jsx";
+import WorkspaceChatsSlider from "./WorkspaceChatsSlider.jsx";
 
 const NEAR_BOTTOM_PX = 120;
 
@@ -36,6 +38,22 @@ export default function ChatScreen({
   onCloseMediaPanel,
   onOpenApprovals,
   pendingApprovalsCount = 0,
+  onToggleNotifications,
+  notificationsOpen = false,
+  priorityCounts = null,
+  priorityNotifications = [],
+  onResolveNotification,
+  onMarkReadNotification,
+  onMarkAllReadNotifications,
+  onClearResolvedNotifications,
+  onDismissNotification,
+  onNotificationAction,
+  onToggleChatsSlider,
+  chatsSliderOpen = false,
+  onSelectChat,
+  onNewGroup,
+  socketStatus,
+  onReconnectSocket,
 }) {
   const [activeView, setActiveView] = useState("messages"); // "messages" | "episodes"
   const [replyingTo, setReplyingTo] = useState(null);
@@ -88,7 +106,7 @@ export default function ChatScreen({
         chat={chat}
         activeView={activeView}
         onChangeView={setActiveView}
-        onMenuClick={onMenuClick}
+        onMenuClick={chat.id === "workspace" || chat.isWorkspace ? onToggleChatsSlider : onMenuClick}
         onMembersClick={onMembersClick}
         onOpenSmartPrompts={onOpenSmartPrompts}
         onOpenAdminConsole={onOpenAdminConsole}
@@ -201,6 +219,85 @@ export default function ChatScreen({
             onCloseMediaPanel={onCloseMediaPanel}
           />
         </div>
+      )}
+
+      {/* Sliders on Left & Right — ONLY on My Workspace */}
+      {(chat.id === "workspace" || chat.isWorkspace) && (
+        <>
+          {/* Backdrop when either slider is open */}
+          {(chatsSliderOpen || notificationsOpen) && (
+            <div
+              className="workspace-slider-backdrop"
+              onClick={() => {
+                if (chatsSliderOpen) onToggleChatsSlider?.();
+                if (notificationsOpen) onToggleNotifications?.();
+              }}
+            />
+          )}
+
+          {/* Left-Hand Chats Slider */}
+          <WorkspaceChatsSlider
+            isOpen={chatsSliderOpen}
+            onClose={onToggleChatsSlider}
+            me={currentUser}
+            chats={chats}
+            onlineUsers={onlineUsers}
+            activeChatId={chat.id}
+            onSelectChat={(id) => {
+              onToggleChatsSlider?.();
+              onSelectChat?.(id);
+            }}
+            onNewGroup={onNewGroup}
+            socketStatus={socketStatus}
+            onReconnectSocket={onReconnectSocket}
+          />
+
+          {!chatsSliderOpen && (
+            <button
+              type="button"
+              className="workspace-slider-edge-tab edge-tab-left"
+              onClick={onToggleChatsSlider}
+              title="Open Chats Slider"
+              aria-label="Open chats slider"
+            >
+              <span className="material-icons">chat</span>
+              <span className="edge-tab-label">Chats</span>
+            </button>
+          )}
+
+          {/* Right-Hand Priority Notifications Slider */}
+          <WorkspaceNotificationsSlider
+            isOpen={notificationsOpen}
+            onClose={onToggleNotifications}
+            notifications={priorityNotifications || []}
+            onResolve={onResolveNotification}
+            onMarkRead={onMarkReadNotification}
+            onMarkAllRead={onMarkAllReadNotifications}
+            onClearResolved={onClearResolvedNotifications}
+            onDismiss={onDismissNotification}
+            onAction={onNotificationAction}
+            user={currentUser}
+          />
+
+          {!notificationsOpen && (
+            <button
+              type="button"
+              className="workspace-slider-edge-tab edge-tab-right"
+              onClick={onToggleNotifications}
+              title="Open Priority Notifications Slider"
+              aria-label="Open notifications slider"
+            >
+              <span className="material-icons">notifications</span>
+              <span className="edge-tab-label">Notifications</span>
+              {priorityCounts?.high > 0 && (
+                <span className="edge-tab-badge badge-red">{priorityCounts.high}</span>
+              )}
+              {priorityCounts?.high === 0 && priorityCounts?.medium > 0 && (
+                <span className="edge-tab-badge badge-yellow">{priorityCounts.medium}</span>
+              )}
+            </button>
+          )}
+        </>
       )}
     </main>
   );

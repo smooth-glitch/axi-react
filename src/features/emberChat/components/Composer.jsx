@@ -510,28 +510,6 @@ export default function Composer({
 
   return (
     <div className={`sandesh-composer-wrapper ${disabled ? "composer-disabled" : ""}`}>
-      {/* 1. Smart Prompts Quick Bar */}
-      <div className="sandesh-smart-prompts-bar">
-        <span className="prompts-label">
-          <span className="material-icons prompt-icon">bolt</span> Smart Prompts:
-        </span>
-        <div className="prompts-chips-scroll">
-          {activePrompts.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="sandesh-prompt-chip-3d"
-              onClick={() => !disabled && onOpenSmartPromptModal?.(p)}
-              title={p.desc}
-              disabled={disabled}
-            >
-              <span className="material-icons prompt-chip-icon">{p.icon}</span>
-              <span>{p.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* 2. Replying-to Banner */}
       {replyingTo && (
         <div className="sandesh-reply-banner-3d">

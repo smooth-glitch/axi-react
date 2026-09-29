@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "./components/Sidebar.jsx";
 import ChatScreen from "./components/ChatScreen.jsx";
 import ModalLayer from "./components/ModalLayer.jsx";
@@ -27,6 +27,7 @@ import {
   chats as initialChats,
   messagesByChat as initialMessagesByChat,
 } from "./data/sampleData.js";
+import { buildInitialRoleNotifications } from "./utils/roleNotifications.js";
 import { sandeshSocket } from "../../services/sandeshSocket.js";
 import { sandeshApi } from "../../services/sandeshApi.js";
 import { formatServerMessage } from "./utils/serverMessageFormatter.js";
@@ -102,24 +103,57 @@ export function EmberChatScreen({ onOpenAiChat }) {
   });
 
   const [chats, setChats] = useState(() => {
-    // Keep General Broadcast and department hosts from initialChats
+    // Keep Workspace, General Broadcast and department hosts from initialChats
     return initialChats.filter(
-      (c) => c.id === "room-general" || c.isHost || c.category === "department_host"
+      (c) => c.id === "workspace" || c.id === "room-general" || c.isHost || c.category === "department_host"
     );
   });
 
   // P0: Real online list. Drop sample data, start empty
   const [onlineUsers, setOnlineUsers] = useState([]);
-  const [activeChatId, setActiveChatId] = useState("room-general");
+  const [activeChatId, setActiveChatId] = useState("workspace");
   const activeChatIdRef = useRef(activeChatId);
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [chatsSliderOpen, setChatsSliderOpen] = useState(false);
+
+  const getWorkspaceWelcomeText = (user) => {
+    const userName = user?.name || user?.username || "User";
+    return `Welcome to My Workspace, ${userName}. This is your personal workspace for direct tasks, enterprise updates, and automation commands. You can type hash commands in the composer below to trigger actions, or use the sliders on the left and right to navigate conversations and priority notifications.`;
+  };
+
   const [messagesByChat, setMessagesByChat] = useState(() => ({
+    workspace: [
+      {
+        id: "ws-msg-1",
+        sender: "Workspace Assistant",
+        senderName: "Sandesh Workspace",
+        time: "now",
+        dir: "in",
+        avatar: "WS",
+        avatarColor: "#ff7a59",
+        text: getWorkspaceWelcomeText(currentUser),
+      },
+    ],
     "room-general": initialMessagesByChat["room-general"] || [],
   }));
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const welcome = getWorkspaceWelcomeText(currentUser);
+    setMessagesByChat((prev) => {
+      const ws = prev.workspace || [];
+      if (ws.length > 0 && ws[0]?.id === "ws-msg-1" && ws[0].text !== welcome) {
+        const nextWs = [...ws];
+        nextWs[0] = { ...nextWs[0], text: welcome };
+        return { ...prev, workspace: nextWs };
+      }
+      return prev;
+    });
+  }, [currentUser?.name, currentUser?.username]);
   const [groupMembersByName, setGroupMembersByName] = useState({});
   const [typingUsersByChat, setTypingUsersByChat] = useState({});
   const typingTimersRef = useRef({});
@@ -189,6 +223,68 @@ export function EmberChatScreen({ onOpenAiChat }) {
       delete typingTimersRef.current[chatId];
     }, 3500);
   }, []);
+
+  // Priority Notifications for My Workspace (Red = High, Yellow = Medium, Grey = Low, Green = Resolved)
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [priorityNotifications, setPriorityNotifications] = useState(() =>
+    buildInitialRoleNotifications(currentUser, [], [])
+  );
+
+  useEffect(() => {
+    if (!currentUser) return;
+    setPriorityNotifications((prev) => {
+      const generated = buildInitialRoleNotifications(currentUser, approvals, notifications);
+      return generated.map((gen) => {
+        const existing = prev.find((p) => p.id === gen.id);
+        if (existing) {
+          return {
+            ...gen,
+            priority: existing.priority,
+            read: existing.read,
+          };
+        }
+        return gen;
+      });
+    });
+  }, [currentUser, approvals, notifications]);
+
+  const priorityCounts = useMemo(() => {
+    const counts = { high: 0, medium: 0, low: 0, resolved: 0, unread: 0 };
+    (priorityNotifications || []).forEach((n) => {
+      const p = n.priority || "low";
+      if (counts[p] !== undefined) counts[p] += 1;
+      if (!n.read) counts.unread += 1;
+    });
+    return counts;
+  }, [priorityNotifications]);
+
+  const handleResolveNotification = useCallback((notifId) => {
+    setPriorityNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, priority: "resolved", read: true } : n))
+    );
+    pushToast("Notification marked as Resolved (Green)", false, { icon: "check_circle" });
+  }, [pushToast]);
+
+  const handleMarkReadNotification = useCallback((notifId) => {
+    setPriorityNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, read: true } : n))
+    );
+  }, []);
+
+  const handleMarkAllReadNotifications = useCallback(() => {
+    setPriorityNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    pushToast("All notifications marked as read");
+  }, [pushToast]);
+
+  const handleClearResolvedNotifications = useCallback(() => {
+    setPriorityNotifications((prev) => prev.filter((n) => n.priority !== "resolved"));
+    pushToast("Cleared resolved notifications");
+  }, [pushToast]);
+
+  const handleDismissNotification = useCallback((notifId) => {
+    setPriorityNotifications((prev) => prev.filter((n) => n.id !== notifId));
+    pushToast("Notification dismissed");
+  }, [pushToast]);
 
   // Main Socket Connection & Event Handling
   useEffect(() => {
@@ -834,6 +930,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
   // Load history & send read receipt whenever activeChatId changes
   useEffect(() => {
     if (!activeChat || socketStatus !== "connected") return;
+    if (activeChat.id === "workspace" || activeChat.isWorkspace) return;
     if (!activeChat.isGroup && !activeChat.isHost && activeChat.id.startsWith("user-")) {
       const targetUser = activeChat.username || activeChat.id.replace(/^user-/, "");
       sandeshSocket.sendHistory("dm", targetUser);
@@ -1506,9 +1603,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
       ...(replyTo ? { replyTo } : {}),
     };
 
-    // Forward through WebSocket if connected
+    // Forward through WebSocket if connected, or handle locally in My Workspace
     let sendResult = false;
-    if (activeChat.isGroup) {
+    if (activeChat.id === "workspace" || activeChat.isWorkspace) {
+      newMsg.status = "sent";
+      newMsg.ticks = "read";
+      sendResult = true;
+    } else if (activeChat.isGroup) {
       if (activeChat.id === "room-general") {
         // Don't send /groupmsg for General Broadcast
         sendResult = sandeshSocket.sendGlobalMsg(text);
@@ -1534,6 +1635,24 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     updateActiveMessages((list) => [...list, newMsg]);
+
+    // In My Workspace, provide automated prompt tips or confirmations
+    if (activeChat.id === "workspace" || activeChat.isWorkspace) {
+      setTimeout(() => {
+        const replyMsg = {
+          id: `ws-reply-${Date.now()}`,
+          kind: "text",
+          dir: "in",
+          from: "Workspace Assistant",
+          text: `Action logged in **My Workspace**: "${text}"\n\n💡 Tip: Type \`#\` to run fast enterprise workflow commands like \`#leave_req\`, \`#pay_slip\`, \`#punch_in\`, \`#expense_claim\`, \`#remind\`, or open the right-hand Priority Notifications Slider.`,
+          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          ts: Date.now(),
+          status: "sent",
+          ticks: "sent",
+        };
+        updateActiveMessages((list) => [...list, replyMsg]);
+      }, 400);
+    }
 
     // Update conversation preview in sidebar
     setChats((prevChats) =>
@@ -1810,11 +1929,22 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
+    setActiveChatId("workspace");
     try {
       localStorage.setItem("sandesh_session_user", JSON.stringify(user));
     } catch {
       // ignore
     }
+    const welcome = getWorkspaceWelcomeText(user);
+    setMessagesByChat((prev) => {
+      const ws = prev.workspace || [];
+      if (ws.length > 0 && ws[0]?.id === "ws-msg-1") {
+        const nextWs = [...ws];
+        nextWs[0] = { ...nextWs[0], text: welcome };
+        return { ...prev, workspace: nextWs };
+      }
+      return prev;
+    });
     pushToast(`Welcome to Sandesh, ${user.name}!`);
   };
 
@@ -1918,6 +2048,24 @@ export function EmberChatScreen({ onOpenAiChat }) {
     setModal(null);
   };
 
+  const handleNotificationAction = useCallback((notif) => {
+    if (!notif) return;
+    if (notif.actionType === "admin_console") {
+      setModalParam({ tab: "users" });
+      setModal("admin_console");
+    } else if (notif.actionType === "approvals") {
+      setModal("approvals");
+      refreshApprovals();
+    } else if (notif.actionType === "open_chat" && notif.chatId) {
+      handleSelectChat(notif.chatId);
+    } else if (notif.actionType === "smart_prompt" && notif.actionPrompt) {
+      setSelectedPrompt({ id: notif.actionPrompt, label: notif.title || "Smart Prompt" });
+      setModal("smart_structure");
+    } else {
+      pushToast(`Opened: ${notif.title}`);
+    }
+  }, [refreshApprovals, pushToast, handleSelectChat]);
+
   if (!currentUser) {
     return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
@@ -1974,36 +2122,40 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onClick={() => setSidebarOpen(false)}
         />
 
-        <Sidebar
-          me={currentUser}
-          chats={chats}
-          onlineUsers={onlineUsers}
-          activeChatId={activeChatId}
-          isOpen={sidebarOpen}
-          onSelectChat={handleSelectChat}
-          onSelectOnlineUser={handleSelectOnlineUser}
-          onEditProfile={() => setModal("profile")}
-          onClose={() => setSidebarOpen(false)}
-          onNewGroup={() => setModal("new-group")}
-          onOpenAiChat={onOpenAiChat}
-          onOpenAdminConsole={() => {
-            setModalParam({ tab: "users" });
-            setModal("admin_console");
-          }}
-          onOpenCommandsHelp={() => {
-            setModalParam("");
-            setModal("commands_help");
-          }}
-          onSignOut={handleSignOut}
-          socketStatus={socketStatus}
-          onReconnectSocket={() => sandeshSocket.connect(currentUser)}
-          onDeleteChat={handleDeleteChat}
-          onOpenApprovals={() => {
-            setModal("approvals");
-            refreshApprovals();
-          }}
-          pendingApprovalsCount={pendingApprovalsCount}
-        />
+        {/* Normal sidebar is shown only when NOT on My Workspace */}
+        {activeChatId !== "workspace" && (
+          <Sidebar
+            me={currentUser}
+            chats={chats}
+            onlineUsers={onlineUsers}
+            activeChatId={activeChatId}
+            isOpen={sidebarOpen}
+            onSelectChat={handleSelectChat}
+            onSelectOnlineUser={handleSelectOnlineUser}
+            onEditProfile={() => setModal("profile")}
+            onClose={() => setSidebarOpen(false)}
+            onNewGroup={() => setModal("new-group")}
+            onOpenAiChat={onOpenAiChat}
+            onOpenAdminConsole={() => {
+              setModalParam({ tab: "users" });
+              setModal("admin_console");
+            }}
+            onOpenCommandsHelp={() => {
+              setModalParam("");
+              setModal("commands_help");
+            }}
+            onOpenWorkspace={() => handleSelectChat("workspace")}
+            onSignOut={handleSignOut}
+            socketStatus={socketStatus}
+            onReconnectSocket={() => sandeshSocket.connect(currentUser)}
+            onDeleteChat={handleDeleteChat}
+            onOpenApprovals={() => {
+              setModal("approvals");
+              refreshApprovals();
+            }}
+            pendingApprovalsCount={pendingApprovalsCount}
+          />
+        )}
 
         <ChatScreen
           key={activeChatId}
@@ -2011,7 +2163,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
           messages={messages}
           userCategory={currentUser.category || "employee"}
           isAdmin={currentUser.isAdmin}
-          onMenuClick={() => setSidebarOpen(true)}
+          onMenuClick={() => {
+            if (activeChatId === "workspace") {
+              setChatsSliderOpen((v) => !v);
+            } else {
+              setSidebarOpen(true);
+            }
+          }}
           onMembersClick={() => setModal("members")}
           onOpenApprovals={() => {
             setModal("approvals");
@@ -2036,7 +2194,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onOpenAiChat={onOpenAiChat}
           typingUser={typingUsersByChat[activeChatId]}
           onTyping={handleTyping}
-          disabled={socketStatus !== "connected"}
+          disabled={activeChatId !== "workspace" && socketStatus !== "connected"}
           pushToast={pushToast}
           currentUser={currentUser}
           onlineUsers={onlineUsers}
@@ -2045,6 +2203,22 @@ export function EmberChatScreen({ onOpenAiChat }) {
           initialComposerText={composerPrefill}
           mediaPanelConfig={mediaPanelConfig}
           onCloseMediaPanel={() => setMediaPanelConfig(null)}
+          onToggleNotifications={() => setNotificationsOpen((v) => !v)}
+          notificationsOpen={notificationsOpen}
+          priorityCounts={priorityCounts}
+          priorityNotifications={priorityNotifications}
+          onResolveNotification={handleResolveNotification}
+          onMarkReadNotification={handleMarkReadNotification}
+          onMarkAllReadNotifications={handleMarkAllReadNotifications}
+          onClearResolvedNotifications={handleClearResolvedNotifications}
+          onDismissNotification={handleDismissNotification}
+          onNotificationAction={handleNotificationAction}
+          onToggleChatsSlider={() => setChatsSliderOpen((v) => !v)}
+          chatsSliderOpen={chatsSliderOpen}
+          onSelectChat={handleSelectChat}
+          onNewGroup={() => setModal("new-group")}
+          socketStatus={socketStatus}
+          onReconnectSocket={() => sandeshSocket.connect(currentUser)}
         />
 
         {modal && (

@@ -69,7 +69,7 @@ function RefSelect({ label, icon: Icon, value, onChange, options, required, empt
           required={required}
           disabled={list.length === 0}
         >
-          <option value="">{list.length === 0 ? emptyHint || "None configured yet" : "Select…"}</option>
+          <option value="">{list.length === 0 ? emptyHint || "None" : "Select…"}</option>
           {list.map((o) => (
             <option key={o} value={o}>
               {o}
