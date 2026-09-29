@@ -158,6 +158,8 @@ user_actions() ->
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
+     <<"tstruct.user.open">>,
+     <<"cfg.lookups">>,
      <<"option.user.list">>, <<"option.user.save">>, <<"option.user.delete">>].
 
 run(Action, Args, Ctx) ->
@@ -394,7 +396,27 @@ do(<<"notifications.read">>, Args, #{user := User}) ->
         _ -> {error, invalid, <<"Send {\"ids\":[...]}, {\"category\":\"personal\"} or {\"all\":true}.">>}
     end;
 
-%% ---- options / forms -----------------------------------------------------------------------------------------------
+%% ---- org config lookups (user-level, name-only) -----------------------------------------------
+%% Used by the Option Builder's "Applicable to" step to populate dropdowns for
+%% branches, departments, designations, affiliates, and categories.
+%% Returns only names (+ affiliate category/branch structure for affiliates)
+%% -- no admin-only fields (city, pin, descriptions). Same data sd_org:public/0
+%% uses for self-registration forms, just shaped for dropdown consumption.
+do(<<"cfg.lookups">>, _Args, _Ctx) ->
+    Names = fun(Kind) ->
+        [maps:get(<<"name">>, I) || I <- sd_org:active(Kind, all)]
+    end,
+    Affiliates = [#{<<"name">> => maps:get(<<"name">>, A),
+                    <<"category">> => maps:get(<<"category">>, A, null)}
+                  || A <- sd_org:list(affiliates)],
+    Categories = Names(categories),
+    {ok, #{<<"branches">>     => Names(branches),
+           <<"departments">>  => Names(departments),
+           <<"designations">> => Names(designations),
+           <<"categories">>   => Categories,
+           <<"affiliates">>   => Affiliates}};
+
+%% ---- options / forms -------------------------------------------------------------------------
 do(<<"options.list">>, _Args, #{user := User}) ->
     {ok, #{<<"options">> => sd_config:options_for(User)}};
 do(<<"tstruct.get">>, Args, #{user := User}) ->
@@ -443,6 +465,34 @@ do(<<"tstruct.user.get">>, Args, #{user := _User}) ->
         case sd_config:get_user_tstruct(N) of
             undefined -> {error, not_found, <<"No such structure.">>};
             D -> {ok, #{<<"tstruct">> => D}}
+        end
+    end);
+%% Open a user-created tstruct in the lite viewer: returns the definition
+%% together with the caller's own submissions against it, so the frontend
+%% can render the viewer and the record list in a single round-trip.
+%% Looks up user-created structs first; falls back to admin-managed ones
+%% (gated by the normal tstruct_for_user/2 options check) so one command
+%% covers both collections.
+do(<<"tstruct.user.open">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        %% Try user-created collection first; fall back to admin-managed.
+        {Def, Scope} = case sd_config:get_user_tstruct(N) of
+            D when is_map(D) -> {D, <<"user">>};
+            undefined ->
+                case sd_config:tstruct_for_user(User, N) of
+                    {ok, D2} -> {D2, <<"admin">>};
+                    _ -> {undefined, undefined}
+                end
+        end,
+        case Def of
+            undefined -> {error, not_found, <<"No such structure, or it is not available to you.">>};
+            _ ->
+                %% Submissions scoped to this user for this tstruct.
+                MySubs = sd_config:list_submissions(User, #{<<"tstruct">> => N}),
+                OwnSubs = [S || S <- MySubs,
+                                maps:get(<<"by">>, S) =:= maps:get(<<"username">>, User)],
+                {ok, #{<<"tstruct">> => Def, <<"scope">> => Scope,
+                       <<"submissions">> => OwnSubs}}
         end
     end);
 do(<<"tstruct.user.save">>, Args, #{user := User}) ->
@@ -674,7 +724,12 @@ announce_submission(Action, Sub) ->
     end).
 
 safely_announce(Fun) ->
-    try Fun() catch C:R -> ?LOG_WARNING("live change notice failed: ~p:~p", [C, R]) end,
+    %% Fire in a separate process so the caller's WS reply is never held up
+    %% by the broadcast -- other clients get the event asynchronously, but
+    %% the originator already has their {ok, ...} reply on the wire.
+    spawn(fun() ->
+        try Fun() catch C:R -> ?LOG_WARNING("live change notice failed: ~p:~p", [C, R]) end
+    end),
     ok.
 
 with_bin(Key, Args, Fun) ->
