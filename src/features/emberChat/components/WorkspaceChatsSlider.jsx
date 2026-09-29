@@ -16,6 +16,7 @@ export default function WorkspaceChatsSlider({
   onlineUsers = [],
   activeChatId,
   onSelectChat,
+  onOpenFullChat,
   onNewGroup,
   socketStatus,
   onReconnectSocket,
