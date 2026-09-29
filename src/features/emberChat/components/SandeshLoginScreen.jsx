@@ -28,6 +28,7 @@ import {
   Laptop,
   Check,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 
 function buildSessionUser(data) {
@@ -143,8 +144,11 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
           setSuccessNotice(
             "Welcome! Organisation setup is required before login. Complete this one-time step to create your enterprise organisation."
           );
-        } else if (res.data.org) {
-          setAdminOrg(res.data.org);
+        } else {
+          setActiveTab((prev) => (prev === "first_admin" ? "signin" : prev));
+          if (res.data.org) {
+            setAdminOrg(res.data.org);
+          }
         }
       } else {
         console.warn("[Sandesh] Failed to fetch public info:", res.error);
@@ -158,6 +162,11 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
   // Clear messages on tab change
   const handleTabChange = (tab) => {
+    if (tab === "first_admin" && publicData?.setupDone) {
+      setActiveTab("signin");
+      setErrorMsg("This organisation has already been configured. Please sign in with your credentials or self-register as a new user.");
+      return;
+    }
     setActiveTab(tab);
     setErrorMsg("");
     setSuccessNotice("");
@@ -717,6 +726,11 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   // ──────────────────────────────────────────────────────────────────────────
   const handleStartSetup = async (e) => {
     e?.preventDefault();
+    if (publicData?.setupDone) {
+      setErrorMsg("This organisation has already been configured. Please sign in or self-register.");
+      setActiveTab("signin");
+      return;
+    }
     if (!adminOrg.trim() || !adminName.trim() || !adminEmail.trim() || !adminMobile.trim()) {
       setErrorMsg("Please fill in all required setup fields.");
       return;
@@ -1659,13 +1673,15 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
             >
               Sign In
             </button>
-            <button
-              type="button"
-              className={`sandesh-tab-pill ${activeTab === "first_admin" ? "active" : ""}`}
-              onClick={() => handleTabChange("first_admin")}
-            >
-              First Time Setup
-            </button>
+            {(!publicData || publicData.setupDone === false) && (
+              <button
+                type="button"
+                className={`sandesh-tab-pill ${activeTab === "first_admin" ? "active" : ""}`}
+                onClick={() => handleTabChange("first_admin")}
+              >
+                First Time Setup
+              </button>
+            )}
             <button
               type="button"
               className={`sandesh-tab-pill ${activeTab === "self_reg" ? "active" : ""}`}
@@ -1736,6 +1752,43 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
           {/* TAB 2: FIRST TIME ORG SETUP (FLOW 1) */}
           {/* ────────────────────────────────────────────────────────────── */}
           {activeTab === "first_admin" && (
+            publicData?.setupDone ? (
+              <div className="sandesh-configured-notice-box" style={{ padding: "24px 20px", textAlign: "center" }}>
+                <div
+                  className="sandesh-flow-badge"
+                  style={{ margin: "0 auto 12px auto", background: "rgba(52, 199, 89, 0.15)", color: "#34c759", display: "inline-flex" }}
+                >
+                  <CheckCircle2 size={15} />
+                  <span>Organisation Active &amp; Configured</span>
+                </div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, margin: "8px 0", color: "var(--sandesh-text-primary, #1c1c1e)" }}>
+                  {publicData.org || "Agile Labs Enterprise"} is Live
+                </h3>
+                <p style={{ fontSize: 13, color: "var(--sandesh-text-muted, #666)", lineHeight: 1.5, marginBottom: 20 }}>
+                  This Sandesh enterprise server has already completed initial bootstrap setup. If you are an existing user or administrator, please Sign In. To join as a new user, please Self Register.
+                </p>
+                <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="sandesh-btn-primary-3d"
+                    onClick={() => handleTabChange("signin")}
+                    style={{ minWidth: 150 }}
+                  >
+                    <User size={16} />
+                    <span>Sign In</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sandesh-btn-secondary-3d"
+                    onClick={() => handleTabChange("self_reg")}
+                    style={{ minWidth: 150 }}
+                  >
+                    <Briefcase size={16} />
+                    <span>Self Register</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
             <form
               onSubmit={setupStep === "form" ? handleStartSetup : handleVerifySetupOtp}
               className="sandesh-auth-form"
@@ -1888,6 +1941,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 </>
               )}
             </form>
+            )
           )}
 
           {/* ────────────────────────────────────────────────────────────── */}
@@ -2190,18 +2244,72 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 {deviceId.slice(0, 8)}...{deviceId.slice(-4)}
               </span>
             </div>
-            <button
-              type="button"
-              className="sandesh-dev-chip"
-              onClick={() => {
-                const fresh = sandeshApi.rotateDeviceId();
-                setSuccessNotice("Rotated to fresh Device ID! Next login tests unrecognised device flow (Case D).");
-              }}
-              title="Rotate Device ID to test Case D without waiting 14 days"
-            >
-              <RefreshCw size={11} />
-              <span>Rotate Device (Test Flow 3)</span>
-            </button>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="sandesh-dev-chip"
+                onClick={() => {
+                  const fresh = sandeshApi.rotateDeviceId();
+                  setDeviceId(fresh);
+                  setSuccessNotice("Rotated to fresh Device ID! Next login tests unrecognised device flow (Case D).");
+                }}
+                title="Rotate Device ID to test Case D without waiting 14 days"
+              >
+                <RefreshCw size={11} />
+                <span>Rotate Device</span>
+              </button>
+              <button
+                type="button"
+                className="sandesh-dev-chip"
+                onClick={() => {
+                  try {
+                    localStorage.removeItem("sandesh_session_user");
+                    localStorage.removeItem("sandesh_device_id");
+                    sessionStorage.clear();
+                  } catch {
+                    // ignore
+                  }
+                  const freshDevId = sandeshApi.rotateDeviceId();
+                  setDeviceId(freshDevId);
+                  setSignInIdentifier("");
+                  setSignInPassword("");
+                  setAdminOrg("");
+                  setAdminName("");
+                  setAdminUsername("");
+                  setAdminEmail("");
+                  setAdminMobile("");
+                  setAdminSetupToken("");
+                  setRegName("");
+                  setRegUsername("");
+                  setRegEmail("");
+                  setRegMobile("");
+                  setRegPassword("");
+                  setErrorMsg("");
+                  setSelfRegSuccess(null);
+                  setTotpEnrollment(null);
+                  setEmailEnrollment(null);
+                  setTotpChallenge(null);
+                  setEmailChallenge(null);
+                  setRecoveryReveal(null);
+                  setAdminPasswordChange(null);
+                  sandeshApi.getPublic().then((res) => {
+                    if (res.ok && res.data) {
+                      setPublicData(res.data);
+                      if (res.data.setupDone) {
+                        setActiveTab("signin");
+                      } else {
+                        setActiveTab("first_admin");
+                      }
+                    }
+                  });
+                  setSuccessNotice("Local cache and session data cleared successfully.");
+                }}
+                title="Clear all stored session data, cached forms, and device tokens"
+              >
+                <Trash2 size={11} />
+                <span>Clear Cache &amp; Reset</span>
+              </button>
+            </div>
           </div>
 
           <div className="sandesh-auth-footer">
