@@ -270,8 +270,18 @@ resolve(Req, Status, Responder) ->
     %% approver (whoever answered it, or it was answered for them).
     lists:foreach(fun(A) -> catch sd_cards:resolve_request(A, maps:get(<<"id">>, Done)) end,
                   maps:get(<<"approvers">>, Done)),
+    %% Same for the workspace feed: approvers' items turn resolved, the requester hears the outcome.
+    lists:foreach(fun(A) -> catch sd_feed:resolve_request(A, maps:get(<<"id">>, Done)) end,
+                  maps:get(<<"approvers">>, Done)),
+    catch sd_feed:request_outcome(Done, Status, responder_name(Responder)),
     %% Tell everyone involved, so open inboxes update without a refresh.
     lists:foreach(
         fun(U) -> sd_notify:push_event(U, <<"request_resolved">>, View) end,
         lists:usort([maps:get(<<"from">>, Done) | maps:get(<<"approvers">>, Done)])),
     View.
+
+responder_name(Username) ->
+    case sd_users:get(Username) of
+        #{<<"name">> := N} when is_binary(N), N =/= <<>> -> N;
+        _ -> sd_util:b(Username)
+    end.

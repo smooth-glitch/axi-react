@@ -41,6 +41,7 @@ const SUITES = [
   { name: "sandesh_totp_test", db: 14, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_SCHEDULER_TICK_MS: "500", SANDESH_TOTP_FRESH_SEC: "6", SANDESH_DEVICE_TRUST_SEC: "6" } },
   { name: "lite_tstruct_v2_test", db: 9, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_SCHEDULER_TICK_MS: "500" } },
   { name: "hash_commands_strict_test", db: 8, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
+  { name: "sandesh_feed_test", db: 11, arg: "url", timeoutMs: 120000, env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_SCHEDULER_TICK_MS: "500" } },
   { name: "sandesh_user_options_test", db: 12, arg: "url", timeoutMs: 180000, env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_MAX_FILE_MB: "1", SANDESH_FILES_DIR: path.join(os.tmpdir(), "sd-files-runall") } },
   // Open mode (the default). Two shared backends: the first two TEST the rate limiter so they need the default
   // limit; the other two send far more than it allows, so they need it raised.

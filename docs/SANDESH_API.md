@@ -76,7 +76,10 @@ that the person must sign in again. What the frontend sees:
 |---|---|---|
 | sign-in reply, `GET /api/sd/session`, `/sd me` | `expiresTs` / `sessionExpiresTs` (epoch ms) | optionally show "sign in again by …" |
 | REST, after it ends | `401 unauthenticated` | show the sign-in screen |
-| an **open** WebSocket, when it ends | `{"type":"sd_event","event":"session_expired","reason":"two_week_login"}`, then the server closes the socket | show the sign-in screen (don't auto-reconnect with the old token) |
+| an **open** WebSocket, when it ends | `{"type":"sd_event","event":"feed_item","data":{"notification","counts"}}` | a workspace-panel item was created or changed (new message, count bumped, resolved, read) | upsert by `notification.id`; `counts` = `{high,medium,low,resolved,unread,total}` |
+| `{"type":"sd_event","event":"feed_removed","data":{"ids","counts"}}` | items dismissed / cleared (also your other tabs) | remove by id |
+| `{"type":"sd_event","event":"feed_changed","data":{"ids","read","counts"}}` | those items were marked read (`read:true`) or unread (`read:false`) | set `read` on the listed ids; `counts` refreshes the badges |
+| `{"type":"sd_event","event":"session_expired","reason":"two_week_login"}`, then the server closes the socket | show the sign-in screen (don't auto-reconnect with the old token) |
 | `/sd …` in the short gap before that | `error.code:"session_expired"`; `/sd me` → `authenticated:false, sessionExpired:true` | same |
 
 A connection re-checks its session at most every 30 s (on its next command),
@@ -397,7 +400,7 @@ those four categories.
 | `notifications.summary` | user | → `{counts:{priority,pending,personal,reminders}, total, personalBySender:{username:n}}` — `personalBySender` is the per-conversation badge |
 | `notifications.list` | user | `{category?:"priority"\|"pending"\|"personal"\|"reminders"\|"all", unreadOnly?:true, limit?}` → `{notifications:[card], counts}`. With `unreadOnly:false` read ones are included, and upcoming reminders appear with `due:false` |
 | `notifications.read` | user | one of `{ids:[cardId]}`, `{category}`, `{all:true}` → the new summary |
-| `reminder.add` | user | `{text, dueTs?}` — no `dueTs` (or a past one) notifies immediately; a future one fires at that time (within ~15 s) |
+| `reminder.add` | user | `{text, dueTs?}` — no `dueTs` (or a past one) notifies immediately; a future one fires at that time (within ~2 s) |
 
 **What marks things read without the UI asking:** sending `/read dm <user>`
 (the chat UI already does this when a DM is opened) clears that sender's
@@ -411,6 +414,105 @@ anyone) clears its `pending` notification for every approver.
 
 A card now also carries `read`, `category` (one of the four, or `null`) and
 `due`.
+
+### My Workspace notification feed (the right-hand expandable panel)
+
+The real notifications behind the MWS panel. Every item comes from something that actually
+happened to **this user** -- nothing is a preset, so there is no role-based mock list any more:
+who gets what follows from who the event is addressed to (approvers get approvals, hosts/admins get
+submissions, everyone gets their own messages and security events).
+
+It is a **separate layer** from `notifications.*` above (the four badge categories). Keep using
+`notifications.*` for the chat-list badges; use `feed.*` for the workspace panel.
+
+**The item is the object the panel already renders**, so it is a drop-in for `buildInitialRoleNotifications`:
+
+```json
+{ "id": "k3J…", "priority": "high", "category": "messages",
+  "title": "Sam W", "message": "!server is down", "ts": 1790000000000,
+  "icon": "chat", "read": false, "resolved": false, "resolvedTs": null,
+  "actionType": "open_chat", "actionLabel": "Open chat", "chatId": "user-sam1",
+  "count": 3, "severity": "high", "from": "sam1",
+  "chat": {"scope":"dm","with":"sam1"}, "ref": null }
+```
+
+| Field | Notes |
+|---|---|
+| `priority` | `high` (red) \| `medium` (yellow) \| `low` (grey) \| `resolved` (green). Exactly the panel's four tabs |
+| `severity` | the priority it has/had before being resolved (`high\|medium\|low`) |
+| `ts` | epoch **milliseconds** of the last activity -- format it client-side ("15m ago"). There is deliberately no pre-formatted `time` string: it would go stale |
+| `read` | drives the unread dot and the "N unread" count |
+| `count` | how many messages are folded into this row (see "coalescing") |
+| `category` | `messages` \| `approvals` \| `submissions` \| `reminders` \| `security` \| `system` |
+| `actionType` / `actionLabel` | what the arrow button does: `open_chat` (use `chatId`), `approvals` (open the approvals view; `ref.requestId`), `submissions` (`ref.submissionId`, `ref.tstruct`), `none` (no button). Same names `handleAction` already switches on |
+| `chatId` | in the frontend's own convention: `user-<username>` for a DM, `room-<group>` for a group -- pass straight to `onSelectChat` |
+| `ref` | what it is about: `{requestId,type}`, `{submissionId,tstruct}`, `{cardId}`; else `null` |
+
+**Priority rules.** DM = `medium`; group message = `low`; either becomes `high` when the text is urgent
+(`!` prefix, `#urgent`, `#priority`). Approval waiting on you = `high`. Form submitted to you = `medium`.
+Due reminder = `medium`. Security: account locked / 2FA turned off = `high`; signed in elsewhere / recovery
+codes regenerated = `medium`; password changed = `low`. The outcome of an approval you asked for = `low`.
+
+**Where items come from** (all real events): DMs and group messages (only from *other* people); approval
+requests waiting on you (associate, host transfer, group invite, new-user onboarding); the answer to a request
+you raised; a form submitted to you as its host or as an admin (never to the submitter); reminders when they
+come due; and account-security events (a new sign-in ended your other session, account locked after repeated
+failed sign-ins, password changed, 2FA turned off, recovery codes regenerated).
+
+**Coalescing.** Messages fold into one row per conversation (`count` goes up, the text is the latest, it
+turns unread again) instead of flooding the panel. New activity also **re-opens** a conversation you had
+resolved. Approvals, submissions and reminders are one row each.
+
+**Resolved.** Marking done (`feed.resolve`) turns an item green and read. An approval also turns green **by
+itself** for every approver when anyone answers it, and a DM row is marked read when the chat opens
+(`/read dm <user>`, which the chat UI already sends). Keeps the newest 300 items per user.
+
+| Action (WS `/sd …`) | REST | Args → Returns |
+|---|---|---|
+| `feed.list` | `GET /api/sd/feed?priority=&category=&unreadOnly=&limit=&before=` | `{priority?:"all\|high\|medium\|low\|resolved", category?, unreadOnly?, limit? (50, max 200), before?: ts}` → `{notifications:[item], counts, hasMore}` newest activity first. Page with `before` = the last item's `ts` |
+| `feed.summary` | `GET /api/sd/feed/summary` | → `{high, medium, low, resolved, unread, total}` (the tab badges + "N unread"). Also in `/sd me` as `feed` |
+| `feed.read` | `POST /api/sd/feed/read` | `{ids:[id]}` or `{all:true}`; add `read:false` to mark **unread** (the panel's toggle) → `{updated, counts}` |
+| `feed.resolve` | `POST /api/sd/feed/resolve` | `{id}` → `{notification, counts}` (`not_found` for an unknown id) |
+| `feed.dismiss` | `POST /api/sd/feed/dismiss` | `{id}` → `{dismissed:true, counts}` |
+| `feed.clear` | `POST /api/sd/feed/clear` | removes every **resolved** item ("Clear Resolved") → `{cleared, counts}` |
+
+REST needs `Authorization: Bearer <token>` (401 otherwise) and answers in the usual `{ok,data}` envelope, so the
+panel can load **before** the socket is up. Offline users simply accumulate items -- call `feed.list` on connect.
+
+**Live, with no refresh and no polling** (see §6). Every change is pushed to the affected user's open app
+the moment it happens: `feed_item` (new *or changed* item -- upsert by `id`), `feed_removed` (`ids`), and
+`feed_changed` (`ids` + `read`: those items were marked read/unread). Each carries `counts`, so the header
+updates without another call. Nothing that causes a notification ever waits on it: the feed is written by
+its own background worker, so sending a message or answering an approval is never slowed down by it.
+**Reload `feed.list` on every (re)connect of the socket** -- pushes only reach a connected app, so anything
+that happened while it was disconnected is picked up by that reload. Due reminders arrive within ~2 s of their time.
+
+**Wiring it into MyWorkspace (for the frontend dev)** -- replace the local list with server state:
+
+```js
+// on mount / after the socket connects
+const { notifications, counts } = (await sandeshApi.get('/feed')).data;   // or ws.sd('feed.list')
+setNotifications(notifications);
+
+// live: upsert / remove
+onSdEvent('feed_item',    ({ notification }) => setNotifications(p => [notification, ...p.filter(n => n.id !== notification.id)]));
+onSdEvent('feed_removed', ({ ids })          => setNotifications(p => p.filter(n => !ids.includes(n.id))));
+onSdEvent('feed_changed', ({ ids, read }) => setNotifications(p => p.map(n => ids.includes(n.id) ? { ...n, read } : n)));
+onSocketOpen(() => reload());   // every (re)connect: pushes only reach a connected app
+
+// the existing handlers become one call each
+handleResolve      = (id) => ws.sd('feed.resolve', { id });
+handleMarkRead     = (n)  => ws.sd('feed.read', { ids: [n.id], read: !n.read });
+handleMarkAllRead  = ()   => ws.sd('feed.read', { all: true });
+handleClearResolved= ()   => ws.sd('feed.clear');
+handleDismiss      = (id) => ws.sd('feed.dismiss', { id });
+```
+
+`handleAction` keeps working unchanged (`actionType`, `chatId`). The panel can drop `buildInitialRoleNotifications`,
+the role presets, and the `approvals` merge: approvals now arrive as `category:"approvals"` items. Format `ts`
+with the same relative-time helper used elsewhere. The counts object maps 1:1 onto the existing `priorityCounts`.
+Not included on purpose: the old fake "Erlang node sync", "Database backup" and "Quota" presets -- those had no
+real event behind them.
 
 ### Options and forms ("lite tstructs")
 
@@ -566,6 +668,7 @@ approvers[], data, createdTs, resolvedTs, resolvedBy}` where `status` is
 | Configuring options + "Applicable to" | `admin.option.*`, `options.list` |
 | Home page: options section, associates (left), cards (right) | `options.list`, `assoc.list`, `cards.*`, `sections.*` |
 | Notifications: priority, pending, personal, reminders | `notifications.*`, `reminder.add`, `notification` / `notifications_changed` pushes |
+| My Workspace notification panel (real, prioritised, resolvable) | `feed.*`, `GET/POST /api/sd/feed*`, `feed_item` / `feed_removed` / `feed_changed` pushes |
 | Ask the user to log in again every two weeks (app login, not ARM) | 14-day session, `sessionExpiresTs`, `session_expired`; ARM sign-in no longer needed |
 | My Work Space | client-side only, as today (`workspace` host is never routed by the backend) |
 

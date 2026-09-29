@@ -37,7 +37,7 @@
          list/3, dismiss/2, sections/1, save_section/2, delete_section/2,
          builtin_sections/0, classify/2,
          summary/1, notifications/4, mark_read/2, mark_dm_read/2, resolve_request/2,
-         fire_due/0, categories/0]).
+         fire_due/0, categories/0, category/1]).
 
 -define(NOTIFY_CATEGORIES, [<<"priority">>, <<"pending">>, <<"personal">>, <<"reminders">>]).
 -define(REMINDERS_ZSET, "sd:reminders").
@@ -69,6 +69,7 @@ add(User, Card) when is_map(Card) ->
     Classified = decorate(Full, custom_sections(U)),
     sd_notify:push_event(U, <<"card">>, Classified),
     push_notification(U, Classified),
+    sd_feed:from_card(U, Classified),
     {ok, Classified}.
 
 %% A brand-new card that is a live notification (right category, and -- for a
@@ -155,7 +156,10 @@ fire(Member) ->
     case binary:split(Member, <<"|">>) of
         [U, CardId] ->
             case sd_db:hget_json(card_hash(U), CardId) of
-                Card when is_map(Card) -> push_notification(U, decorate(Card, custom_sections(U)));
+                Card when is_map(Card) ->
+                    Decorated = decorate(Card, custom_sections(U)),
+                    push_notification(U, Decorated),
+                    sd_feed:from_card(U, Decorated);
                 _ -> ok    %% dismissed before it was due
             end;
         _ -> ok
@@ -272,6 +276,7 @@ mark_dm_read(User, Other) ->
                          (_) -> false
                       end),
     N > 0 andalso push_counts(U),
+    catch sd_feed:dm_read(U, O),
     ok.
 
 %% An approval that has been answered is no longer "pending" for anyone.

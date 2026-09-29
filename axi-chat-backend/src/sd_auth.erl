@@ -411,6 +411,8 @@ count_failure(Username) ->
     Key = ["sd:lf:", sd_util:s(Username)],
     N = sd_db:incr(Key),
     N =:= 1 andalso sd_db:expire(Key, ?LOGIN_FAIL_WINDOW),
+    %% Tell the account holder the moment it locks (once, on the attempt that trips it).
+    N =:= ?LOGIN_FAIL_MAX andalso (catch sd_feed:security(Username, account_locked, #{})),
     ok.
 
 locked(Username) ->
@@ -527,7 +529,8 @@ revoke_previous_session(Username, NewToken, Ttl) ->
     case sd_db:get(Key) of
         Old when is_binary(Old), Old =/= NewToken ->
             sd_db:del(["sd:sess:", Old]),
-            catch sd_notify:replaced(Username);
+            catch sd_notify:replaced(Username),
+            catch sd_feed:security(Username, session_replaced, #{});
         _ -> ok
     end,
     sd_db:setex(Key, Ttl, NewToken).
@@ -637,6 +640,7 @@ change_password(Token, Old, New) ->
                     case check_password_policy(Username, New) of
                         ok ->
                             store_password(Username, New, false),
+                            catch sd_feed:security(Username, password_changed, #{}),
                             {ok, #{<<"changed">> => true}};
                         {error, _, _} = Err -> Err
                     end

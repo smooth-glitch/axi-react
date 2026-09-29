@@ -7,7 +7,7 @@
 %%% take the whole node down over something that only delays a reminder by
 %%% a few seconds. Reminders aren't lost: they stay in Redis until claimed.
 %%%
-%%% SANDESH_SCHEDULER_TICK_MS (default 15000) sets the wake-up interval; a
+%%% SANDESH_SCHEDULER_TICK_MS (default 2000) sets the wake-up interval; a
 %%% reminder is therefore delivered at most one tick late.
 -module(sd_scheduler).
 -behaviour(gen_server).
@@ -41,6 +41,6 @@ schedule() ->
 
 tick_ms() ->
     case os:getenv("SANDESH_SCHEDULER_TICK_MS") of
-        false -> 15000;
-        S -> case string:to_integer(S) of {N, []} when N >= 100 -> N; _ -> 15000 end
+        false -> 2000;
+        S -> case string:to_integer(S) of {N, []} when N >= 100 -> N; _ -> 2000 end
     end.

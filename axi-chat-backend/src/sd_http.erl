@@ -10,6 +10,7 @@
 %%%                                    -> see "Login / mandatory two-factor" below
 %%%   POST /api/sd/logout              (Bearer)
 %%%   GET  /api/sd/session             (Bearer) -> current user, or 401
+%%%   GET  /api/sd/feed                (Bearer) the My Workspace notification feed (+ /feed/summary, POST /feed/read|resolve|dismiss|clear) -- see sd_feed
 %%%   POST /api/sd/password/change     (Bearer) {oldPassword?, newPassword}
 %%%   POST /api/sd/admin/unlock/start  (Bearer) sends the admin-console OTP (unaffected by mandatory 2FA below)
 %%%   POST /api/sd/admin/unlock        (Bearer) {password, otp}
@@ -90,6 +91,10 @@ route(Socket, "GET", "/api/sd/session", H, _B) ->
                 error -> fail(Socket, {error, unauthenticated, <<"Session expired. Sign in again.">>})
             end
     end;
+route(Socket, "GET", "/api/sd/feed", H, _B) ->
+    feed(Socket, H, <<"list">>, feed_query());
+route(Socket, "GET", "/api/sd/feed/summary", H, _B) ->
+    feed(Socket, H, <<"summary">>, #{});
 route(Socket, "POST", "/api/sd/files", H, B) ->
     upload_file(Socket, H, B);
 route(Socket, "GET", "/api/sd/files", H, _B) ->
@@ -104,6 +109,9 @@ route(Socket, "POST", Path, Headers, BodyStart) ->
 route(Socket, _Method, _Path, _H, _B) ->
     fail(Socket, {error, not_found, <<"No such endpoint.">>}).
 
+post(Socket, "/api/sd/feed/" ++ Sub, Body, H)
+        when Sub =:= "read"; Sub =:= "resolve"; Sub =:= "dismiss"; Sub =:= "clear" ->
+    feed(Socket, H, list_to_binary(Sub), Body);
 post(Socket, "/api/sd/setup/start", Body, H) ->
     respond(Socket, sd_auth:setup_start(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/setup/verify", Body, H) ->
@@ -175,6 +183,33 @@ with_user(Socket, Headers, Fun) ->
                 {ok, User, _State} -> Fun(User);
                 error -> fail(Socket, {error, unauthenticated, <<"Session expired. Sign in again.">>})
             end
+    end.
+
+%% ---- My Workspace notification feed (sd_feed) ------------------------------------------------------------
+%%   GET  /api/sd/feed?priority=&category=&unreadOnly=&limit=&before=   GET /api/sd/feed/summary
+%%   POST /api/sd/feed/read {ids|all, read?}   /resolve {id}   /dismiss {id}   /clear
+feed(Socket, Headers, Action, Args) ->
+    with_user(Socket, Headers, fun(User) ->
+        respond(Socket, sd_feed:call(Action, maps:get(<<"username">>, User), Args))
+    end).
+
+feed_query() ->
+    lists:foldl(
+        fun({K, V}, Acc) ->
+            case K of
+                "priority" -> Acc#{<<"priority">> => list_to_binary(V)};
+                "category" -> Acc#{<<"category">> => list_to_binary(V)};
+                "unreadOnly" -> Acc#{<<"unreadOnly">> => V =:= "true"};
+                "limit" -> int_arg(<<"limit">>, V, Acc);
+                "before" -> int_arg(<<"before">>, V, Acc);
+                _ -> Acc
+            end
+        end, #{}, get(sd_query)).
+
+int_arg(Key, V, Acc) ->
+    case string:to_integer(V) of
+        {N, []} -> Acc#{Key => N};
+        _ -> Acc
     end.
 
 %% POST /api/sd/files?name=<file name>   raw file bytes as the body (Content-Type = the file's type)

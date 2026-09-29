@@ -66,6 +66,13 @@ init([TcpPort, WebPort]) ->
                     shutdown => 5000,
                     type => worker,
                     modules => [sd_scheduler]},
+    %% Sandesh: the single writer behind the workspace notification feed (sd_feed_srv.erl).
+    SdFeedSrv = #{id => sd_feed_srv,
+                  start => {sd_feed_srv, start_link, []},
+                  restart => permanent,
+                  shutdown => 5000,
+                  type => worker,
+                  modules => [sd_feed_srv]},
     UploadLimiter = #{id => chat_upload_limiter,
                        start => {chat_upload_limiter, start_link, []},
                        restart => permanent,
@@ -84,7 +91,7 @@ init([TcpPort, WebPort]) ->
     %% just unused.
     Children = case TcpPort of
         undefined ->
-            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, SdScheduler, UploadLimiter, WebListener];
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, SdFeedSrv, SdScheduler, UploadLimiter, WebListener];
         _ ->
             Listener = #{id => chat_listener,
                          start => {chat_listener, start_link, [TcpPort]},
@@ -92,6 +99,6 @@ init([TcpPort, WebPort]) ->
                          shutdown => 5000,
                          type => worker,
                          modules => [chat_listener]},
-            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, SdScheduler, UploadLimiter, Listener, WebListener]
+            [ChatRedis, ChatHosts, ChatRoom, ChatGroups, SdFeedSrv, SdScheduler, UploadLimiter, Listener, WebListener]
     end,
     {ok, {SupFlags, Children}}.
