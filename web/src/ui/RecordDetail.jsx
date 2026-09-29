@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import { Pencil } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { Button, Sheet, Text } from './kit';
 import { formatValue, fullDate, hasValue } from '../core/format';
 
@@ -10,7 +10,7 @@ const Item = styled.div`
 `;
 
 // Right-hand drawer (bottom sheet on narrow screens) with every field of one record. onEdit adds an "Edit record" button.
-export default function RecordDetail({ struct, record, number, onClose, onEdit }) {
+export default function RecordDetail({ struct, record, number, onClose, onEdit, onDelete }) {
   return (
     <Sheet
       visible={!!record}
@@ -21,6 +21,7 @@ export default function RecordDetail({ struct, record, number, onClose, onEdit }
       footer={
         <>
           <Button title="Close" variant="secondary" onPress={onClose} />
+          {onDelete ? <Button title="Delete" icon={Trash2} variant="danger" onPress={onDelete} testID="delete-record" /> : null}
           {onEdit ? <Button title="Edit record" icon={Pencil} onPress={onEdit} testID="edit-record" /> : null}
         </>
       }

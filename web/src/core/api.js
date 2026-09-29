@@ -271,23 +271,40 @@ function sandeshStructToWeb(s) {
   };
 }
 
-// Sandesh submission → web record shape
+// Sandesh submission → web record shape (backend fields: id, by, ts, editedTs, values)
 function sandeshSubToWeb(sub) {
   return {
     id: sub.id,
     structId: sub.tstruct,
     data: sub.values || {},
-    createdBy: sub.submittedBy || null,
-    createdAt: sub.submittedAt || null,
+    createdBy: sub.by || null,
+    createdAt: sub.ts || null,
+    modifiedAt: sub.editedTs || sub.ts || null,
   };
 }
+
+// The signed-in user's username, used to decide who may delete a struct / edit or delete a record
+// (the server enforces the same rules; this only decides which buttons to show).
+export function currentUsername() {
+  const u = config.user || _client._resolveUser();
+  return u?.username ? String(u.username).toLowerCase() : null;
+}
+export const isMine = (owner) => !!owner && !!currentUsername() && String(owner).toLowerCase() === currentUsername();
+
+// Route params are strings; the backend's ids are numbers.
+const numId = (id) => (typeof id === 'number' ? id : Number.parseInt(id, 10));
 
 function toApiError(err) {
   if (err instanceof Error) return err;
   const msg = err?.message || err?.code || 'Request failed';
   const e = new Error(msg);
   const code = err?.code;
+  // Server field errors {fields:{name:message}} -> the form's [{fieldId, message}]
+  if (err?.details?.fields && typeof err.details.fields === 'object') {
+    e.details = Object.entries(err.details.fields).map(([fieldId, message]) => ({ fieldId, message }));
+  }
   e.status =
+    code === 'invalid_values' ? 422 :
     code === 'not_found' ? 404 :
     code === 'forbidden' ? 403 :
     code === 'duplicate' ? 409 :
@@ -313,14 +330,21 @@ export const createStruct = (payload) => {
     .catch((e) => { throw toApiError(e); });
 };
 
-// Sandesh org structs are immutable after creation — deleting + recreating would lose all records.
+// The backend keeps user-created structures create-only (owner may delete). Kept so callers get a clear error.
 export const updateStruct = (_structRef, _payload) =>
   Promise.reject(
     Object.assign(
-      new Error('Org-wide struct definitions cannot be edited after creation. Delete and recreate to change fields.'),
+      new Error('A struct definition can\'t be changed after it is created. Delete it and create a new one to change its fields.'),
       { status: 400 }
     )
   );
+
+// Only the creator may delete a struct (server rule). Records already submitted against it are kept by the
+// server but can no longer be edited.
+export const deleteStruct = (structRef) =>
+  _client.sd('tstruct.user.delete', { name: structRef })
+    .then(() => ({ deleted: true }))
+    .catch((e) => { throw toApiError(e); });
 
 // ─── Records API (Sandesh submissions) ────────────────────────────────────────
 export const listRecords = (structRef, opts = {}) =>
@@ -334,7 +358,7 @@ export const listRecords = (structRef, opts = {}) =>
 export const getRecord = (structRef, recordId) =>
   _client.sd('submissions.list', { tstruct: structRef })
     .then((r) => {
-      const sub = (r.submissions || []).find((s) => s.id === recordId);
+      const sub = (r.submissions || []).find((s) => String(s.id) === String(recordId));
       if (!sub) {
         const e = new Error('Record not found');
         e.status = 404;
@@ -354,9 +378,14 @@ export const createRecord = (structRef, data, extra = {}) =>
     .then((r) => ({ record: sandeshSubToWeb(r.submission) }))
     .catch((e) => { throw toApiError(e); });
 
+export const deleteRecord = (_structRef, recordId) =>
+  _client.sd('submissions.delete', { id: numId(recordId) })
+    .then(() => ({ deleted: true }))
+    .catch((e) => { throw toApiError(e); });
+
 export const updateRecord = (_structRef, recordId, data, extra = {}) =>
   _client.sd('submissions.update', {
-    id: recordId,
+    id: numId(recordId),
     values: data,
     ...(extra.meta !== undefined ? { meta: extra.meta } : {}),
   })

@@ -8,6 +8,7 @@ import Home from "@tstruct/studio/pages/Home";
 import Definitions from "@tstruct/studio/pages/Definitions";
 import { EditStruct, NewStruct } from "@tstruct/studio/pages/StructPages";
 import { EditRecord, NewRecord, Records } from "@tstruct/studio/pages/RecordPages";
+import { OptionBuilderPage, OptionRunPage, OptionsPage } from "@tstruct/studio/pages/OptionPages";
 import { configure } from "@tstruct/core/api";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 
@@ -91,6 +92,10 @@ export default function TStructUserModal({ onClose, currentUser }) {
                   <Routes>
                     <Route element={<Shell />}>
                       <Route index element={<Home />} />
+                      <Route path="options" element={<OptionsPage />} />
+                      <Route path="options/new" element={<OptionBuilderPage mode="new" />} />
+                      <Route path="options/:optionId/edit" element={<OptionBuilderPage mode="edit" />} />
+                      <Route path="options/:optionId/run" element={<OptionRunPage />} />
                       <Route path="structs" element={<Definitions />} />
                       <Route path="structs/new" element={<NewStruct />} />
                       <Route path="structs/:id/edit" element={<EditStruct />} />
