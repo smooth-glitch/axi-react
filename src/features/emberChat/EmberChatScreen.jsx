@@ -1877,7 +1877,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const respondToApproval = async (reqId, action, reqItem) => {
     const res = await sandeshSocket.sd("req.respond", { id: Number(reqId), action });
     if (!res.ok) {
-      pushToast({ ok: false, error: res.error });
+      pushToast({ type: "sd", ok: false, error: res.error });
       await refreshApprovals();
       return;
     }

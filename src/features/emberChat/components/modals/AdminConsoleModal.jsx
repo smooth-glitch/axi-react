@@ -10,8 +10,6 @@ const EMPTY_DATA = {
   categories: [],
 };
 
-const emptyScope = { any: false, branches: [], departments: [], designations: [] };
-
 function toRow(u) {
   return {
     id: u.username,
@@ -23,6 +21,8 @@ function toRow(u) {
     branch: u.branch,
     category: u.userType === "external" ? u.category || "external" : u.userType || "external",
     isHost: !!u.isHost,
+    isEmployee: !!u.isEmployee,
+    hostScope: u.hostScope || null,
     hostFor: u.isHost ? scopeLabel(u.hostScope) : undefined,
     hostUser: u.host || null,
     active: u.active !== false && u.status === "active",
@@ -39,6 +39,111 @@ function scopeLabel(scope) {
   return bits.length ? bits.join(", ") : "selected users";
 }
 
+const emptyHostScope = () => ({
+  employees: { any: false, branches: [], departments: [], designations: [] },
+  affiliates: { any: false, selected: [] },
+  categories: [],
+});
+
+function normaliseScope(scope) {
+  const base = emptyHostScope();
+  return {
+    employees: { ...base.employees, ...(scope?.employees || {}) },
+    affiliates: { ...base.affiliates, ...(scope?.affiliates || {}) },
+    categories: scope?.categories || [],
+  };
+}
+
+function scopeIsEmpty(scope) {
+  const e = scope.employees;
+  return !(
+    e.any || e.branches.length || e.departments.length || e.designations.length ||
+    scope.affiliates.any || scope.affiliates.selected.length || scope.categories.length
+  );
+}
+
+const toggleIn = (list, value) => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+
+// "Who does this host cover?" -- a person matches if they fit ANY selected group.
+function HostScopePicker({ scope, onChange, data }) {
+  const chip = (label, checked, onToggle, disabled) => (
+    <label
+      key={label}
+      className="checkbox-label"
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 10, opacity: disabled ? 0.5 : 1 }}
+    >
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} />
+      <span>{label}</span>
+    </label>
+  );
+  const emp = scope.employees;
+  const setEmp = (patch) => onChange({ ...scope, employees: { ...emp, ...patch } });
+  const group = (title, children) => (
+    <div style={{ marginTop: 10 }}>
+      <label style={{ fontWeight: 600, fontSize: 12 }}>{title}</label>
+      <div style={{ marginTop: 4 }}>{children}</div>
+    </div>
+  );
+  const none = (what) => <span className="section-note">No {what} configured yet.</span>;
+  return (
+    <div className="host-scope-select">
+      <p className="section-note">
+        This host will cover users who match <strong>any</strong> of the groups selected below.
+      </p>
+      {group(
+        "Employees",
+        <>
+          {chip("All employees", emp.any, () => setEmp({ any: !emp.any }))}
+          <div>
+            {data.branches.length
+              ? data.branches.map((b) =>
+                  chip(`Branch: ${b.name}`, emp.branches.includes(b.name), () =>
+                    setEmp({ branches: toggleIn(emp.branches, b.name) }), emp.any))
+              : none("branches")}
+          </div>
+          <div>
+            {data.departments.length
+              ? data.departments.map((d) =>
+                  chip(`Dept: ${d.name}`, emp.departments.includes(d.name), () =>
+                    setEmp({ departments: toggleIn(emp.departments, d.name) }), emp.any))
+              : none("departments")}
+          </div>
+          <div>
+            {data.designations.length
+              ? data.designations.map((d) =>
+                  chip(`Role: ${d.name}`, emp.designations.includes(d.name), () =>
+                    setEmp({ designations: toggleIn(emp.designations, d.name) }), emp.any))
+              : none("designations")}
+          </div>
+        </>
+      )}
+      {group(
+        "Affiliates",
+        <>
+          {chip("All affiliates", scope.affiliates.any, () =>
+            onChange({ ...scope, affiliates: { ...scope.affiliates, any: !scope.affiliates.any } }))}
+          <div>
+            {data.affiliates.length
+              ? data.affiliates.map((a) =>
+                  chip(a.name, scope.affiliates.selected.includes(a.name), () =>
+                    onChange({
+                      ...scope,
+                      affiliates: { ...scope.affiliates, selected: toggleIn(scope.affiliates.selected, a.name) },
+                    }), scope.affiliates.any))
+              : none("affiliates")}
+          </div>
+        </>
+      )}
+      {group(
+        "User categories",
+        data.categories.filter((c) => c.active !== false).map((c) =>
+          chip(c.name, scope.categories.includes(c.name), () =>
+            onChange({ ...scope, categories: toggleIn(scope.categories, c.name) })))
+      )}
+    </div>
+  );
+}
+
 export default function AdminConsoleModal({ initialTab = "users", initialQuery = "", onClose, pushToast }) {
   const [activeTab, setActiveTab] = useState(initialTab || "users"); // "users" | "affiliates" | "setup" | "invite"
   const [adminData, setAdminData] = useState(EMPTY_DATA);
@@ -47,6 +152,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
   const [busy, setBusy] = useState(false);
   const [reassignTargetUser, setReassignTargetUser] = useState(null);
   const [selectedNewHost, setSelectedNewHost] = useState("");
+  const [hostEditUser, setHostEditUser] = useState(null); // { user, isHost, scope }
   const [userSearch, setUserSearch] = useState(initialQuery || "");
   const [setupDraft, setSetupDraft] = useState({
     branches: { name: "", city: "", country: "India", pin: "" },
@@ -70,11 +176,12 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
     city: "",
     pin: "",
     isHost: false,
-    hostAny: true,
+    hostScope: emptyHostScope(),
   });
 
   const fail = useCallback(
-    (res) => pushToast({ ok: false, error: res?.error || { message: "Request failed." } }),
+    (res) =>
+      pushToast({ type: "sd", ok: false, error: res?.error || { message: "Request failed." } }),
     [pushToast]
   );
 
@@ -107,6 +214,11 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
 
   useEffect(() => {
     loadAll();
+    // If the console is opened before the socket is up (or after a reconnect),
+    // load as soon as it connects instead of waiting for a manual Retry.
+    return sandeshSocket.subscribe((event) => {
+      if (event.type === "status_change" && event.status === "connected") loadAll();
+    });
   }, [loadAll]);
 
   const hostCandidates = adminData.users.filter((u) => u.active && (u.isHost || u.role === "admin"));
@@ -132,6 +244,28 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
     if (!res.ok) return fail(res);
     pushToast(`Reassigned Host for ${reassignTargetUser.name} to @${selectedNewHost}`);
     setReassignTargetUser(null);
+    loadAll();
+  };
+
+  const saveHostScope = async (e) => {
+    e.preventDefault();
+    const { user, isHost, scope } = hostEditUser;
+    if (isHost && scopeIsEmpty(scope)) {
+      pushToast({ type: "sd", ok: false, error: { message: "Choose at least one group this host will cover." } });
+      return;
+    }
+    setBusy(true);
+    const res = await sandeshSocket.sd("admin.user.update", {
+      username: user.username,
+      isHost,
+      hostScope: isHost ? scope : null,
+    });
+    setBusy(false);
+    if (!res.ok) return fail(res);
+    pushToast(
+      !isHost ? `${user.name} is no longer a host` : user.isHost ? `Updated ${user.name}'s host scope` : `${user.name} is now a host`
+    );
+    setHostEditUser(null);
     loadAll();
   };
 
@@ -180,8 +314,12 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
     if (f.userType === "employee") {
       Object.assign(args, { isEmployee: true, branch: f.branch, department: f.department, designation: f.designation });
       if (f.isHost) {
+        if (scopeIsEmpty(f.hostScope)) {
+          pushToast({ type: "sd", ok: false, error: { message: "Choose at least one group this host will cover." } });
+          return;
+        }
         args.isHost = true;
-        args.hostScope = { employees: { ...emptyScope, any: f.hostAny } };
+        args.hostScope = f.hostScope;
       }
     } else if (f.userType === "affiliate") {
       Object.assign(args, { isEmployee: false, affiliate: f.affiliate, city: f.city, country: f.country, pin: f.pin });
@@ -194,7 +332,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
     if (!res.ok) return fail(res);
     const created = res.data?.user;
     pushToast(`Invited ${created?.name || f.name} (@${created?.username}). They sign in and set up 2FA on first login.`);
-    setInviteForm({ ...inviteForm, name: "", email: "", mobile: "" });
+    setInviteForm({ ...inviteForm, name: "", email: "", mobile: "", isHost: false, hostScope: emptyHostScope() });
     setActiveTab("users");
     loadAll();
   };
@@ -350,10 +488,52 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
                       >
                         Change Host
                       </button>
+                      {u.isEmployee && u.role !== "admin" && (
+                        <button
+                          type="button"
+                          className="sandesh-btn-link"
+                          onClick={() =>
+                            setHostEditUser({ user: u, isHost: u.isHost, scope: normaliseScope(u.hostScope) })
+                          }
+                        >
+                          {u.isHost ? "Edit Host Scope" : "Make Host"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
             </div>
+
+            {hostEditUser && (
+              <div className="reassign-host-panel">
+                <h5>Host settings for {hostEditUser.user.name}</h5>
+                <form onSubmit={saveHostScope} className="reassign-form" style={{ display: "block" }}>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={hostEditUser.isHost}
+                      onChange={(e) => setHostEditUser({ ...hostEditUser, isHost: e.target.checked })}
+                    />
+                    <span>Chat Host (SPOC for other users)</span>
+                  </label>
+                  {hostEditUser.isHost && (
+                    <HostScopePicker
+                      scope={hostEditUser.scope}
+                      data={adminData}
+                      onChange={(scope) => setHostEditUser({ ...hostEditUser, scope })}
+                    />
+                  )}
+                  <div className="reassign-btns" style={{ marginTop: 12 }}>
+                    <button type="submit" className="sandesh-btn-primary-3d" disabled={busy}>
+                      Save
+                    </button>
+                    <button type="button" className="sandesh-btn-secondary-3d" onClick={() => setHostEditUser(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             {reassignTargetUser && (
               <div className="reassign-host-panel">
@@ -585,11 +765,11 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
                     <span>Appoint this user as a Chat Host (SPOC for other users)</span>
                   </label>
                   {inviteForm.isHost && (
-                    <label className="checkbox-label">
-                      <input type="checkbox" checked={inviteForm.hostAny}
-                        onChange={(e) => setInviteForm({ ...inviteForm, hostAny: e.target.checked })} />
-                      <span>Host for all employees in the organisation</span>
-                    </label>
+                    <HostScopePicker
+                      scope={inviteForm.hostScope}
+                      data={adminData}
+                      onChange={(hostScope) => setInviteForm({ ...inviteForm, hostScope })}
+                    />
                   )}
                 </div>
               </>
