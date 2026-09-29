@@ -1479,6 +1479,29 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* The bar has a fixed height and many pills (Smart Prompts, Org Structs, Add Member, Approvals...):
+     never clip the right-hand ones off-screen -- shrink to the space left and scroll if it still doesn't fit. */
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.topbar-right > * {
+  flex-shrink: 0;
+}
+.topbar-left {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* On narrower windows the pills go icon-only (each keeps its tooltip) so all of them stay visible. */
+@media (max-width: 1500px) {
+  .topbar-right .sandesh-action-pill-btn > span:not(.material-icons) {
+    display: none;
+  }
+  .topbar-right .sandesh-action-pill-btn {
+    padding: 6px 9px;
+  }
 }
 
 .sandesh-action-pill-btn {

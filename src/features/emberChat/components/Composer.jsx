@@ -519,7 +519,12 @@ export default function Composer({
         </span>
         <div className="prompts-chips-scroll">
           {activePrompts.length === 0 && (
-            <span className="section-note" style={{ padding: "0 8px" }}>No options set up for you yet</span>
+            <span className="section-note" style={{ padding: "0 8px" }}>
+              No options set up for you yet.{" "}
+              {currentUser?.isAdmin
+                ? "Add forms and options under Admin Console → Forms / Options."
+                : "Ask an administrator, or make your own under Org Structs → Options."}
+            </span>
           )}
           {activePrompts.map((p) => (
             <button
