@@ -26,7 +26,6 @@ import ToastContainer from "./components/Toast.jsx";
 import {
   chats as initialChats,
   messagesByChat as initialMessagesByChat,
-  authorizedUsers,
 } from "./data/sampleData.js";
 import { sandeshSocket } from "../../services/sandeshSocket.js";
 import { sandeshApi } from "../../services/sandeshApi.js";
@@ -47,10 +46,19 @@ export function EmberChatScreen({ onOpenAiChat }) {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && (parsed.token || parsed.username || parsed.name)) {
-          const match = authorizedUsers.find(
-            (u) => (u.username || "").toLowerCase() === (parsed.username || "").toLowerCase()
-          );
-          return match ? { ...match, ...parsed } : parsed;
+          return {
+            id: parsed.id || parsed.username,
+            username: parsed.username || "",
+            name: parsed.name || parsed.username || "User",
+            role: parsed.role || "User",
+            org: parsed.org || "",
+            category: parsed.category || "employee",
+            status: parsed.status || "Available",
+            initials: (parsed.name || parsed.username || "U").slice(0, 2).toUpperCase(),
+            color: parsed.color || "#ff7a59",
+            isAdmin: parsed.role === "Admin" || !!parsed.isAdmin,
+            ...parsed,
+          };
         }
       }
     } catch {
@@ -92,83 +100,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const [socketStatus, setSocketStatus] = useState("disconnected");
   const [catalog, setCatalog] = useState(DEFAULT_COMMANDS_CATALOG);
 
-  const [associates, setAssociates] = useState(() => {
-    return authorizedUsers.filter(
-      (u) => (u.username || "").toLowerCase() !== (currentUser?.username || "").toLowerCase()
-    );
-  });
+  const [associates, setAssociates] = useState([]);
 
-  const [approvals, setApprovals] = useState([
-    {
-      id: 101,
-      type: "invitation",
-      status: "pending",
-      title: "Associate Connection Invitation",
-      details: "Anish invited you to connect as a Sandesh Associate.",
-      fromUser: "anish",
-      time: "10 mins ago",
-    },
-    {
-      id: 102,
-      type: "transfer",
-      status: "pending",
-      title: "SPOC Mentorship Transfer",
-      details: "Nageshwari requested to transfer department host mentorship for Arjun to you.",
-      fromUser: "nageshwari",
-      time: "1 hour ago",
-    },
-  ]);
+  const [approvals, setApprovals] = useState([]);
 
-  const [cards, setCards] = useState([
-    {
-      id: "c1",
-      section: "reminders",
-      title: "Architecture Review",
-      text: "Submit OTP / Sandesh protocol audit review to Executive Leadership.",
-      time: "Today, 5:00 PM",
-    },
-    {
-      id: "c2",
-      section: "tasks",
-      title: "Pending Onboarding Form",
-      text: "Verify departmental permissions for Bangalore HQ engineering associates.",
-      time: "2 hours ago",
-    },
-    {
-      id: "c3",
-      section: "system",
-      title: "Redis Cluster Active",
-      text: "Backend chat session cache synchronized across cluster nodes.",
-      time: "Today",
-    },
-  ]);
+  const [cards, setCards] = useState([]);
 
-  const [notifications, setNotifications] = useState([
-    {
-      id: "n1",
-      category: "approvals",
-      title: "New Associate Request",
-      text: "Anish sent you a Sandesh connection invitation.",
-      time: "10m ago",
-      read: false,
-    },
-    {
-      id: "n2",
-      category: "reminders",
-      title: "Upcoming Architecture Sync",
-      text: "Enterprise Platform meeting starting in 30 minutes in General Broadcast.",
-      time: "25m ago",
-      read: false,
-    },
-    {
-      id: "n3",
-      category: "system",
-      title: "Sandesh Socket Synchronized",
-      text: "Real-time WebSocket connection active with Erlang backend.",
-      time: "1h ago",
-      read: true,
-    },
-  ]);
+  const [notifications, setNotifications] = useState([]);
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0] || {
     id: "room-general",
@@ -1241,7 +1179,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         setModal("profile");
       } else {
         const found =
-          authorizedUsers.find((u) => (u.username || "").toLowerCase() === user.toLowerCase()) ||
+          associates.find((u) => (u.username || "").toLowerCase() === user.toLowerCase()) ||
           onlineUsers.find((u) => (u.username || "").toLowerCase() === user.toLowerCase()) ||
           { username: user, name: user, designation: "Associate", status: "Active on Sandesh" };
         setModalParam(found);
@@ -1897,9 +1835,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   const enrichedGroupMembers = currentGroupMembersRaw.map((m) => {
     if (typeof m === "object" && m !== null) return m;
-    const found = authorizedUsers.find(
-      (u) => (u.username || u.name || u.id || "").toLowerCase() === String(m).toLowerCase()
-    );
+    const found =
+      associates.find(
+        (u) => (u.username || u.name || u.id || "").toLowerCase() === String(m).toLowerCase()
+      ) ||
+      onlineUsers.find(
+        (u) => (u.username || u.name || u.id || "").toLowerCase() === String(m).toLowerCase()
+      );
     if (found) return found;
     return {
       id: m,
@@ -1912,7 +1854,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     };
   });
 
-  const teamPool = (authorizedUsers && authorizedUsers.length > 0) ? authorizedUsers : (onlineUsers || []);
+  const teamPool = [...(onlineUsers || []), ...(associates || [])];
   const currentAddableUsers = teamPool.filter((u) => {
     const uName = (u.username || u.name || u.id || "").toLowerCase();
     return !currentGroupMembersRaw.some((m) => {
@@ -1994,7 +1936,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           pushToast={pushToast}
           currentUser={currentUser}
           onlineUsers={onlineUsers}
-          availableUsers={authorizedUsers}
+          availableUsers={associates}
           chats={chats}
           initialComposerText={composerPrefill}
           mediaPanelConfig={mediaPanelConfig}
@@ -2023,7 +1965,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             {modal === "online_users" && (
               <OnlineUsersModal
                 onlineUsers={onlineUsers}
-                availableUsers={authorizedUsers}
+                availableUsers={associates}
                 currentUsername={currentUser.username}
                 onSelectUser={handleSelectOnlineUser}
                 onViewProfile={(u) => {
@@ -2102,14 +2044,18 @@ export function EmberChatScreen({ onOpenAiChat }) {
             {modal === "find_people" && (
               <FindPeopleModal
                 initialQuery={typeof modalParam === "string" ? modalParam : ""}
-                availableUsers={authorizedUsers}
+                availableUsers={associates.length > 0 ? associates : onlineUsers}
                 currentUsername={currentUser.username}
                 associates={associates}
                 onConnect={(username) => {
                   sandeshSocket.send(`#connect ${username}`);
-                  const found = authorizedUsers.find(
-                    (u) => (u.username || "").toLowerCase() === username.toLowerCase()
-                  );
+                  const found =
+                    associates.find(
+                      (u) => (u.username || "").toLowerCase() === username.toLowerCase()
+                    ) ||
+                    onlineUsers.find(
+                      (u) => (u.username || "").toLowerCase() === username.toLowerCase()
+                    );
                   if (found && !associates.some((a) => a.username === found.username)) {
                     setAssociates((prev) => [...prev, found]);
                   }
@@ -2157,10 +2103,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "hosted_users" && (
               <HostedUsersModal
-                hostedUsers={authorizedUsers.filter(
-                  (u) => u.hostUser === currentUser.name || u.hostUser === "Sabarish"
+                hostedUsers={associates.filter(
+                  (u) =>
+                    (u.hostUser && u.hostUser === currentUser.name) ||
+                    u.hostUser === currentUser.username
                 )}
-                availableHosts={["sabarish", "nageshwari", "hr", "finance"]}
+                availableHosts={onlineUsers.map((u) => u.username || u.name).filter(Boolean)}
                 onTransferUser={(user, toHost) => {
                   sandeshSocket.send(`#transfer ${user} ${toHost}`);
                   pushToast(`Transferred @${user} to Host @${toHost}`);
@@ -2220,7 +2168,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             {modal === "new-group" && (
               <NewGroupModal
                 onlineUsers={onlineUsers}
-                availableUsers={authorizedUsers}
+                availableUsers={associates.length > 0 ? associates : onlineUsers}
                 currentUsername={currentUser.username}
                 onCancel={() => setModal(null)}
                 onCreate={(payload) => {
@@ -2334,7 +2282,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 message={forwardTargetMsg}
                 chats={chats}
                 onlineUsers={onlineUsers}
-                availableUsers={authorizedUsers}
+                availableUsers={associates.length > 0 ? associates : onlineUsers}
                 currentUsername={currentUser.username}
                 onCancel={() => {
                   setModal(null);

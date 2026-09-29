@@ -65,11 +65,11 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [showPassword, setShowPassword] = useState(false);
 
   // Tab 2: First-Time Setup inputs (Flow 1)
-  const [adminOrg, setAdminOrg] = useState("Agile Labs Enterprise");
-  const [adminName, setAdminName] = useState("Sabarish");
-  const [adminUsername, setAdminUsername] = useState("sabarish");
-  const [adminEmail, setAdminEmail] = useState("sabarish@agilelabs.com");
-  const [adminMobile, setAdminMobile] = useState("+91 98860 11111");
+  const [adminOrg, setAdminOrg] = useState("");
+  const [adminName, setAdminName] = useState("");
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminMobile, setAdminMobile] = useState("");
   const [adminSetupToken, setAdminSetupToken] = useState("");
   const [setupStep, setSetupStep] = useState("form"); // "form" | "otp"
   const [setupOtp, setSetupOtp] = useState("");
@@ -83,15 +83,15 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
   const [regPassword, setRegPassword] = useState("");
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regType, setRegType] = useState("employee"); // "employee" | "affiliate" | "external"
-  const [regBranch, setRegBranch] = useState("Bangalore HQ");
-  const [regDept, setRegDept] = useState("Engineering");
-  const [regDesignation, setRegDesignation] = useState("Systems Specialist");
+  const [regBranch, setRegBranch] = useState("");
+  const [regDept, setRegDept] = useState("");
+  const [regDesignation, setRegDesignation] = useState("");
   const [regCategory, setRegCategory] = useState("Citizen");
   const [regAffiliate, setRegAffiliate] = useState("");
   const [regAffiliateBranch, setRegAffiliateBranch] = useState("");
   const [regCountry, setRegCountry] = useState("India");
-  const [regCity, setRegCity] = useState("Bangalore");
-  const [regPin, setRegPin] = useState("560001");
+  const [regCity, setRegCity] = useState("");
+  const [regPin, setRegPin] = useState("");
   const [selfRegSuccess, setSelfRegSuccess] = useState(null); // { registered, requestId, awaitingApprovalFrom }
 
   // Multi-Factor & Enrollment Modals / Views
@@ -1690,7 +1690,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                   <User size={18} className="sandesh-lucide-icon" />
                   <input
                     type="text"
-                    placeholder="e.g. sabarish, alice, or +919886000000"
+                    placeholder="e.g. username, email, or +919886000000"
                     value={signInIdentifier}
                     onChange={(e) => setSignInIdentifier(e.target.value)}
                     required
@@ -1729,61 +1729,6 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 <span>{loading ? "Authenticating..." : "Sign In to Sandesh"}</span>
                 <ArrowRight size={18} className="sandesh-btn-arrow" />
               </button>
-
-              {/* Demo Accounts Quick-Fill */}
-              <div className="sandesh-quick-demo-accounts">
-                <span className="demo-label">Quick Sign-in:</span>
-                <button
-                  type="button"
-                  className="sandesh-pill-chip"
-                  onClick={() => {
-                    setSignInIdentifier("sabarish");
-                    setSignInPassword("Sandesh123");
-                  }}
-                >
-                  👑 Admin (Sabarish)
-                </button>
-                <button
-                  type="button"
-                  className="sandesh-pill-chip"
-                  onClick={() => {
-                    setSignInIdentifier("nageshwari");
-                    setSignInPassword("");
-                  }}
-                >
-                  👩‍💼 HR (Nageshwari)
-                </button>
-                <button
-                  type="button"
-                  className="sandesh-pill-chip"
-                  onClick={() => {
-                    setSignInIdentifier("gunn");
-                    setSignInPassword("");
-                  }}
-                >
-                  👨‍💻 Eng (Gunn)
-                </button>
-                <button
-                  type="button"
-                  className="sandesh-pill-chip"
-                  onClick={() => {
-                    setSignInIdentifier("anish");
-                    setSignInPassword("");
-                  }}
-                >
-                  👨‍💻 Eng (Anish)
-                </button>
-                <button
-                  type="button"
-                  className="sandesh-pill-chip"
-                  onClick={() => {
-                    setSignInIdentifier("arjun");
-                    setSignInPassword("");
-                  }}
-                >
-                  👨‍💻 Eng (Arjun)
-                </button>
-              </div>
             </form>
           )}
 
@@ -1832,7 +1777,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                         <User size={18} className="sandesh-lucide-icon" />
                         <input
                           type="text"
-                          placeholder="e.g. sabarish"
+                          placeholder="e.g. admin"
                           value={adminUsername}
                           onChange={(e) => setAdminUsername(e.target.value)}
                         />

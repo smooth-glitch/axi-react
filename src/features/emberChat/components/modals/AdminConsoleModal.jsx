@@ -5,7 +5,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
   const [activeTab, setActiveTab] = useState(initialTab || "users"); // "users" | "affiliates" | "setup" | "invite"
   const [adminData, setAdminData] = useState(initialAdminData);
   const [reassignTargetUser, setReassignTargetUser] = useState(null);
-  const [selectedNewHost, setSelectedNewHost] = useState("Nageshwari");
+  const [selectedNewHost, setSelectedNewHost] = useState("Enterprise Administrator");
   const [userSearch, setUserSearch] = useState(initialQuery || "");
 
   // Invite user form state
@@ -66,7 +66,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
       designation: inviteForm.designation,
       isHost: inviteForm.isHost,
       hostFor: inviteForm.isHost ? inviteForm.hostFor : undefined,
-      hostUser: "Arjun S.",
+      hostUser: inviteForm.hostUser || "Enterprise Administrator",
       active: true,
     };
     setAdminData((prev) => ({
@@ -226,8 +226,8 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
                       value={selectedNewHost}
                       onChange={(e) => setSelectedNewHost(e.target.value)}
                     >
-                      <option value="Sabarish (Admin Host)">Sabarish (Enterprise Administrator)</option>
-                      <option value="Nageshwari (HR Host)">Nageshwari (HR Operations)</option>
+                      <option value="Enterprise Administrator">Enterprise Administrator</option>
+                      <option value="HR Operations Desk">HR Operations Desk</option>
                       <option value="Central IT Operations">Central IT Operations</option>
                       <option value="Corporate Finance Host">Corporate Finance Host</option>
                     </select>
