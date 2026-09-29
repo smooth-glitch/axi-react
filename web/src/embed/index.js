@@ -10,7 +10,7 @@ export { default as DynamicForm } from '../ui/DynamicForm';
 export { OptionsList, OptionBuilder, OptionRun } from '../ui/options';
 
 // API client (configure once; every call accepts a struct id or key)
-export { configure, getConfig, listStructs, getStruct, createStruct, updateStruct, listRecords, getRecord, createRecord, updateRecord, listOptions, getOption, createOption, updateOption, deleteOption, listFiles, uploadFile, downloadFile } from '../core/api';
+export { configure, getConfig, listStructs, getStruct, createStruct, updateStruct, deleteStruct, listRecords, getRecord, createRecord, updateRecord, deleteRecord, currentUsername, isMine, listOptions, getOption, createOption, updateOption, deleteOption, listFiles, uploadFile, downloadFile } from '../core/api';
 
 // Framework-free logic, handy for hosts that build their own UI
 export { evaluateCondition, isFieldVisible } from '../core/conditions';

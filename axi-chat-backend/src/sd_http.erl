@@ -60,7 +60,8 @@
 -define(MAX_BODY, 65536).
 
 %% Called by chat_web:dispatch/6. Always answers and closes the socket.
-handle(Socket, Method, Path, _Query, Headers, BodyStart) ->
+handle(Socket, Method, Path, Query, Headers, BodyStart) ->
+    put(sd_query, Query),
     try
         route(Socket, Method, Path, Headers, BodyStart)
     catch
@@ -89,6 +90,12 @@ route(Socket, "GET", "/api/sd/session", H, _B) ->
                 error -> fail(Socket, {error, unauthenticated, <<"Session expired. Sign in again.">>})
             end
     end;
+route(Socket, "POST", "/api/sd/files", H, B) ->
+    upload_file(Socket, H, B);
+route(Socket, "GET", "/api/sd/files", H, _B) ->
+    with_user(Socket, H, fun(User) -> ok_(Socket, #{<<"files">> => sd_files:list_for(User)}) end);
+route(Socket, "GET", "/api/sd/files/" ++ Id, H, _B) ->
+    with_user(Socket, H, fun(User) -> download_file(Socket, User, list_to_binary(Id)) end);
 route(Socket, "POST", Path, Headers, BodyStart) ->
     case read_json(Socket, Headers, BodyStart) of
         {ok, Body} -> post(Socket, Path, Body, Headers);
@@ -158,6 +165,97 @@ self_register(Body, Ip) ->
             end
     end.
 
+%% ---- files (upload / download options) ------------------------------------------------------------------
+
+with_user(Socket, Headers, Fun) ->
+    case bearer(Headers) of
+        undefined -> fail(Socket, {error, unauthenticated, <<"Missing Authorization: Bearer <token>.">>});
+        Token ->
+            case sd_auth:session(Token) of
+                {ok, User, _State} -> Fun(User);
+                error -> fail(Socket, {error, unauthenticated, <<"Session expired. Sign in again.">>})
+            end
+    end.
+
+%% POST /api/sd/files?name=<file name>   raw file bytes as the body (Content-Type = the file's type)
+upload_file(Socket, Headers, BodyStart) ->
+    with_user(Socket, Headers, fun(User) ->
+        Max = sd_files:max_bytes(),
+        Username = maps:get(<<"username">>, User),
+        case sd_db:rate(["files:", Username], 60, 3600) of
+            limited -> fail(Socket, {error, rate_limited, <<"Too many uploads -- try again later.">>});
+            ok ->
+                case read_raw(Socket, Headers, BodyStart, Max) of
+                    {ok, Bin} when byte_size(Bin) > 0 ->
+                        Name = case lists:keyfind("name", 1, get(sd_query)) of
+                                   {_, N} -> unicode:characters_to_binary(N);
+                                   false -> <<"file">>
+                               end,
+                        Mime = list_to_binary(maps:get("content-type", Headers, "application/octet-stream")),
+                        case sd_files:store(User, Name, Mime, Bin) of
+                            {ok, Meta} -> ok_(Socket, #{<<"file">> => Meta});
+                            {error, _, _} = E -> fail(Socket, E)
+                        end;
+                    {ok, _} -> fail(Socket, {error, bad_request, <<"The file is empty.">>});
+                    {error, too_large} ->
+                        fail(Socket, {error, too_large,
+                                      iolist_to_binary(io_lib:format("File too large (max ~p MB).",
+                                                                     [Max div (1024 * 1024)]))});
+                    {error, _} -> fail(Socket, {error, bad_request, <<"Couldn't read the upload.">>})
+                end
+        end
+    end).
+
+download_file(Socket, User, Id) ->
+    case sd_files:read(User, Id) of
+        {ok, Meta, Bin} ->
+            Name = maps:get(<<"name">>, Meta),
+            %% Name is UTF-8 bytes: decode to code points first, or quote/1 re-encodes each byte
+            %% as if it were Latin-1 ("ü" -> "%C3%83%C2%BC") and the download name comes out garbled.
+            Encoded = uri_string:quote(unicode:characters_to_list(Name)),
+            Head = ["HTTP/1.1 200 OK\r\n",
+                    %% Always octet-stream + attachment + nosniff: an uploaded .html can never run as a page.
+                    "Content-Type: application/octet-stream\r\n",
+                    "Content-Disposition: attachment; filename*=UTF-8''", Encoded, "\r\n",
+                    "X-File-Name: ", Encoded, "\r\n",
+                    "Content-Length: ", integer_to_list(byte_size(Bin)), "\r\n",
+                    "Access-Control-Allow-Origin: ", cors_origin(), "\r\n",
+                    "Access-Control-Expose-Headers: X-File-Name, Content-Disposition, Content-Length\r\n",
+                    "X-Content-Type-Options: nosniff\r\n",
+                    "Cache-Control: private, no-store\r\n",
+                    "Connection: close\r\n\r\n"],
+            gen_tcp:send(Socket, [Head, Bin]);
+        {error, _, _} = E -> fail(Socket, E)
+    end.
+
+%% Raw body up to Max bytes. An oversize request is drained (bounded) before answering so
+%% the client sees our message instead of a connection reset.
+read_raw(Socket, Headers, BodyStart, Max) ->
+    case maps:find("content-length", Headers) of
+        {ok, LenStr} ->
+            case string:to_integer(LenStr) of
+                {Len, []} when Len >= 0, Len =< Max -> read_bytes_or_error(Socket, BodyStart, Len);
+                {Len, []} when Len > Max ->
+                    drain_raw(Socket, byte_size(BodyStart), min(Len, Max * 2)),
+                    {error, too_large};
+                _ -> {error, bad_length}
+            end;
+        error -> {error, no_length}
+    end.
+
+read_bytes_or_error(Socket, Acc, Len) ->
+    case read_bytes(Socket, Acc, Len) of
+        {ok, Bin} -> {ok, Bin};
+        error -> {error, closed}
+    end.
+
+drain_raw(_Socket, Read, Target) when Read >= Target -> ok;
+drain_raw(Socket, Read, Target) ->
+    case gen_tcp:recv(Socket, 0, 3000) of
+        {ok, D} -> drain_raw(Socket, Read + byte_size(D), Target);
+        {error, _} -> ok
+    end.
+
 %% ---- plumbing -----------------------------------------------------------------------------------------
 
 respond(Socket, {ok, Data}) -> ok_(Socket, Data);
@@ -195,6 +293,7 @@ status(no_pending_setup) -> 404;
 status(rate_limited) -> 429;
 status(locked) -> 429;
 status(internal) -> 500;
+status(too_large) -> 413;
 status(C) when C =:= already_setup; C =:= email_taken; C =:= mobile_taken; C =:= username_taken;
                C =:= in_use; C =:= duplicate; C =:= already_associated; C =:= already_resolved;
                C =:= not_ready; C =:= already_enabled -> 409;
@@ -271,6 +370,7 @@ reason(401) -> "Unauthorized";
 reason(403) -> "Forbidden";
 reason(404) -> "Not Found";
 reason(409) -> "Conflict";
+reason(413) -> "Payload Too Large";
 reason(429) -> "Too Many Requests";
 reason(500) -> "Internal Server Error";
 reason(_) -> "Error".

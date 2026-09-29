@@ -201,6 +201,23 @@ cleared). `POST /api/sd/password/change { oldPassword?, newPassword }` →
 
 ---
 
+## One active session per account
+
+Signing in (any successful `POST /api/sd/login` that returns a token) ends the
+account's previous session. Any other tab, browser or device still holding the
+old token is signed out:
+
+- **Live WebSocket:** it receives
+  `{"type":"sd_event","event":"session_replaced","reason":"signed_in_elsewhere"}`
+  and the server closes the connection. Show the sign-in screen (with a message)
+  and do **not** auto-reconnect with the old token.
+- **REST / offline client:** its next call with the old token returns
+  `401 unauthenticated`. `GET /api/sd/session` is a cheap way to check.
+- The strict-mode admin-console unlock belongs to a session, so the new session
+  has to unlock again.
+
+Device trust (the 14-day 2FA window) is per device and unaffected.
+
 ## Error codes to handle explicitly
 
 - `invalid_credentials` (401) — wrong password (admin accounts), or unknown

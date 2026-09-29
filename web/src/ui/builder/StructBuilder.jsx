@@ -159,7 +159,7 @@ function Block({ title, subtitle, count, children }) {
 
 // Controlled builder: name (+ optional key) + field list + sections. The parent owns the state (see the New/Edit struct pages).
 // Fields are added via a categorised type picker, then edited in a slide-over drawer - no permanent side panel.
-export default function StructBuilder({ name, setName, structKey, setStructKey, fields, setFields, sections, setSections, error, nameError }) {
+export default function StructBuilder({ name, setName, structKey, setStructKey, lockKey, fields, setFields, sections, setSections, error, nameError }) {
   const t = useTheme();
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(null); // { draft, isNew }
@@ -199,8 +199,8 @@ export default function StructBuilder({ name, setName, structKey, setStructKey, 
         <Input placeholder="e.g. Leave Request" value={name} onChangeText={setName} invalid={!!nameError} testID="struct-name" />
         {setStructKey ? (
           <>
-            <FieldLabel hint="Optional stable name other apps can use instead of the id (letters, digits, - and _)">Key</FieldLabel>
-            <Input placeholder="e.g. leave-request" autoCapitalize="none" value={structKey || ''} onChangeText={setStructKey} testID="struct-key" />
+            <FieldLabel hint={lockKey ? "The key is this struct's permanent identity and can't be changed" : "Optional stable name other apps can use instead of the id (letters, digits, - and _)"}>Key</FieldLabel>
+            <Input placeholder="e.g. leave-request" autoCapitalize="none" value={structKey || ''} onChangeText={setStructKey} editable={!lockKey} testID="struct-key" />
           </>
         ) : null}
       </Block>

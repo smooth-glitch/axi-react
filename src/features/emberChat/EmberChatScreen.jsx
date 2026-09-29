@@ -6,6 +6,8 @@ import NewGroupModal from "./components/modals/NewGroupModal.jsx";
 import MembersModal from "./components/modals/MembersModal.jsx";
 import ProfileModal from "./components/modals/ProfileModal.jsx";
 import SmartStructureModal from "./components/modals/SmartStructureModal.jsx";
+import SubmissionsModal from "./components/modals/SubmissionsModal.jsx";
+import TStructUserModal from "./components/modals/TStructUserModal.jsx";
 import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
 import ForwardModal from "./components/modals/ForwardModal.jsx";
 import CommandsHelpModal from "./components/modals/CommandsHelpModal.jsx";
@@ -128,6 +130,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const [modalParam, setModalParam] = useState(null);
   const [forwardTargetMsg, setForwardTargetMsg] = useState(null);
   const [selectedPrompt, setSelectedPrompt] = useState(null);
+  const [editingSubmission, setEditingSubmission] = useState(null);
+  // Shown on the sign-in screen after the session was ended by the server / another sign-in.
+  const [loginNotice, setLoginNotice] = useState("");
   const [composerPrefill, setComposerPrefill] = useState("");
   const [mediaPanelConfig, setMediaPanelConfig] = useState(null);
   const [toasts, setToasts] = useState([]);
@@ -140,6 +145,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
   // this is just a cache of `req.list`, refreshed on connect, on live push
   // events, and after every accept/reject/ignore.
   const [approvals, setApprovals] = useState([]);
+
+  // The "Options section": only the options this user is allowed to see
+  // ("Applicable to" is applied by the server).
+  const [options, setOptions] = useState([]);
+  const refreshOptions = useCallback(async () => {
+    const res = await sandeshSocket.sd("options.list");
+    if (res.ok) setOptions(res.data?.options || []);
+  }, []);
 
   const pendingApprovalsCount = approvals.filter((r) => r.status === "pending").length;
 
@@ -201,6 +214,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         setSocketStatus(event.status);
         if (event.status === "connected") {
           refreshApprovals();
+          refreshOptions();
           // Re-fetch history for currently active chat on reconnect
           const currentId = activeChatIdRef.current;
           if (currentId.startsWith("user-")) {
@@ -789,6 +803,16 @@ export function EmberChatScreen({ onOpenAiChat }) {
         (event.event === "request_created" || event.event === "request_resolved")
       ) {
         refreshApprovals();
+      } else if (event.type === "sd_event" && event.event === "session_replaced") {
+        forceSignOut("You were signed out because this account signed in on another tab or device.");
+      } else if (event.type === "sd_event" && event.event === "session_expired") {
+        forceSignOut("Your session has ended. Please sign in again.");
+      } else if (
+        event.type === "sd_event" &&
+        event.event === "disconnected" &&
+        event.reason === "account_deactivated"
+      ) {
+        forceSignOut("This account has been deactivated. Please contact your administrator.");
       } else if (event.type === "cmd_catalog" && Array.isArray(event.commands)) {
         setCatalog(event.commands);
       } else if (event.type === "cmd_help" && event.command) {
@@ -1805,7 +1829,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
     ]);
     setModal(null);
     setSelectedPrompt(null);
-    pushToast("Smart Structure submitted to Host");
+    setEditingSubmission(null);
+    pushToast(editingSubmission ? "Submission updated" : "Submitted");
   };
 
   const handleLoginSuccess = (user) => {
@@ -1824,6 +1849,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
     sandeshSocket.disconnect();
     setCurrentUser(null);
+    setLoginNotice("");
     try {
       localStorage.removeItem("sandesh_session_user");
     } catch {
@@ -1832,31 +1858,51 @@ export function EmberChatScreen({ onOpenAiChat }) {
     pushToast("Signed out of Sandesh");
   };
 
+  // The server ended this session (signed in elsewhere, expired, deactivated).
+  // Nothing to log out server-side; just drop local state and say why on the sign-in screen.
+  const forceSignOut = (message) => {
+    sandeshSocket.disconnect();
+    try {
+      // Another tab of this browser may have just signed in and stored a NEW session;
+      // only clear storage if it still holds the one that was ended.
+      const saved = JSON.parse(localStorage.getItem("sandesh_session_user") || "null");
+      if (!saved || saved.token === currentUser?.token) localStorage.removeItem("sandesh_session_user");
+    } catch {
+      // ignore
+    }
+    setLoginNotice(message);
+    setCurrentUser(null);
+  };
+
   useEffect(() => {
-    if (!currentUser?.token) return;
+    if (!currentUser?.token) return undefined;
     let isMounted = true;
-    sandeshApi.getSession(currentUser.token).then((res) => {
-      if (!isMounted) return;
-      if (!res.ok) {
-        if (res.error?.code === "unauthenticated" || res.error?.status === 401) {
-          pushToast("Session expired. Please sign in again.");
-          handleSignOut();
+    const check = () =>
+      sandeshApi.getSession(currentUser.token).then((res) => {
+        if (!isMounted) return;
+        if (!res.ok) {
+          if (res.error?.code === "unauthenticated" || res.error?.status === 401) {
+            forceSignOut("You were signed out because this session ended. Please sign in again.");
+          }
+        } else if (res.data?.user) {
+          // Backend `status` is the account state ("active"), not the UI presence
+          // status ("Available"/"Away"), so keep the local one.
+          const { status: _accountStatus, ...serverUser } = res.data.user;
+          setCurrentUser((prev) => ({
+            ...prev,
+            ...serverUser,
+            mustChangePassword: !!res.data.password?.mustChange,
+          }));
         }
-      } else if (res.data?.user) {
-        // Backend `status` is the account state ("active"), not the UI presence
-        // status ("Available"/"Away"), so keep the local one.
-        const { status: _accountStatus, ...serverUser } = res.data.user;
-        setCurrentUser((prev) => ({
-          ...prev,
-          ...serverUser,
-          mustChangePassword: !!res.data.password?.mustChange,
-        }));
-      }
-    });
+      });
+    check();
+    // Fallback for a missed live event (socket down/asleep): notice a revoked session within a minute.
+    const timer = setInterval(check, 60000);
     return () => {
       isMounted = false;
+      clearInterval(timer);
     };
-  }, [currentUser?.token]);
+  }, [currentUser?.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshApprovals = useCallback(async () => {
     const res = await sandeshSocket.sd("req.list", { status: "all" });
@@ -1919,7 +1965,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
   };
 
   if (!currentUser) {
-    return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} />;
+    return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} notice={loginNotice} />;
   }
 
   const currentGroupMembersRaw =
@@ -2025,10 +2071,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onDeleteMessage={handleDeleteMessage}
           onDeleteChat={handleDeleteChat}
           onActionCardClick={handleActionCardClick}
+          options={options}
+          onOpenSubmissions={() => setModal("submissions")}
           onOpenSmartPrompts={(p) => {
-            setSelectedPrompt(p || { id: "general", label: "Smart Prompt" });
+            setEditingSubmission(null);
+            setSelectedPrompt(p || null);
             setModal("smart_structure");
           }}
+          onOpenTStructUser={() => setModal("tstruct_user")}
           onOpenAdminConsole={() => {
             setModalParam({ tab: "users" });
             setModal("admin_console");
@@ -2345,14 +2395,36 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 }}
               />
             )}
-            {modal === "smart_structure" && selectedPrompt && (
+            {modal === "submissions" && (
+              <SubmissionsModal
+                currentUser={currentUser}
+                onClose={() => setModal(null)}
+                onEdit={(sub) => {
+                  setEditingSubmission(sub);
+                  setSelectedPrompt({ id: `edit-${sub.id}`, type: "data_input", target: sub.tstruct, targetScope: sub.scope === "user" ? "user" : "admin", caption: `Edit ${sub.tstruct} #${sub.id}` });
+                  setModal("smart_structure");
+                }}
+              />
+            )}
+            {modal === "smart_structure" && (
               <SmartStructureModal
                 prompt={selectedPrompt}
+                options={options}
+                editing={editingSubmission}
+                currentUser={currentUser}
                 onClose={() => {
                   setModal(null);
                   setSelectedPrompt(null);
+                  setEditingSubmission(null);
                 }}
                 onSubmit={handleSmartStructureSubmit}
+              />
+            )}
+            {modal === "tstruct_user" && (
+              <TStructUserModal
+                onClose={() => setModal(null)}
+                pushToast={pushToast}
+                currentUser={currentUser}
               />
             )}
             {modal === "admin_console" && (
@@ -2362,6 +2434,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 onClose={() => {
                   setModal(null);
                   setModalParam(null);
+                  refreshOptions();
                 }}
                 pushToast={pushToast}
               />

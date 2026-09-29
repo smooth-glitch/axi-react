@@ -121,6 +121,31 @@ async function main() {
     r = await api("GET", "/api/sd/session", undefined, r.json.data.token);
     ok("...which is valid", r.status === 200);
 
+    console.log("=== One active session per account: a new sign-in ends the old one ===");
+    r = await api("POST", "/api/sd/login", { identifier: admin, password: `Sandesh${admin}` });
+    const first = r.json.data.token;
+    const ws1 = new WebSocket(WS_URL);
+    const events = [];
+    let ws1Closed = false;
+    ws1.onmessage = (e) => { try { events.push(JSON.parse(e.data)); } catch { /* */ } };
+    ws1.onclose = () => { ws1Closed = true; };
+    await new Promise((res) => { ws1.onopen = res; });
+    ws1.send(JSON.stringify({ username: admin, token: first }));
+    await sleep(400);
+    ok("first session's WebSocket is connected", events.some(m => m.type === "welcome"), events);
+    r = await api("POST", "/api/sd/login", { identifier: admin, password: `Sandesh${admin}` });
+    const second = r.json.data.token;
+    ok("a second sign-in of the same account gets a different token", second !== first, r.json);
+    await sleep(600);
+    ok("the FIRST session's live connection is told session_replaced",
+        events.some(m => m.type === "sd_event" && m.event === "session_replaced" && m.reason === "signed_in_elsewhere"), events);
+    ok("...and the server closes that connection", ws1Closed || ws1.readyState >= 2, ws1.readyState);
+    r = await api("GET", "/api/sd/session", undefined, first);
+    ok("REST: the first session's token is now refused (401)", r.status === 401, r.json);
+    r = await api("GET", "/api/sd/session", undefined, second);
+    ok("REST: the newest session's token still works", r.status === 200, r.json);
+    try { ws1.close(); } catch { /* */ }
+
     console.log(`\n=== SUMMARY ===\n${pass} passed, ${fail} failed`);
     if (failures.length) console.log("Failures:\n  - " + failures.join("\n  - "));
     try { ws.close(); } catch { /* */ }
