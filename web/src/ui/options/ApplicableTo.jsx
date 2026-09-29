@@ -249,7 +249,7 @@ export default function ApplicableTo({ value, onChange }) {
       <div style={{ display: 'flex', gap: t.spacing.sm, alignItems: 'flex-start', padding: t.spacing.md, borderRadius: t.radius.lg, background: t.warningSoft, marginBottom: t.spacing.md }}>
         <Info size={16} color={t.warning} style={{ flex: 'none', marginTop: 2 }} />
         <Text $variant="small" $color="warning">
-          Saved with the option but <strong>not enforced yet</strong> — the app has no user identity, so nothing checks these rules when an option is run.
+          The server <strong>enforces</strong> these rules: only people who match see this option. Leave a group on “All” to not restrict by it.
         </Text>
       </div>
 
