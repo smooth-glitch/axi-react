@@ -159,12 +159,13 @@ function TypeConfig({ type, config, set, structNames }) {
           <FieldLabel required hint="Running the option opens this struct's form (looked up by name when it is run)">
             Struct name
           </FieldLabel>
-          <Input testID="cfg-structName" list="tstruct-struct-names" placeholder="e.g. Leave Request" value={config.structName} onChangeText={(v) => set({ structName: v })} />
-          <datalist id="tstruct-struct-names">
-            {structNames.map((n) => (
-              <option key={n} value={n} />
-            ))}
-          </datalist>
+          <Select
+            testID="cfg-structName"
+            value={config.structName || undefined}
+            onChange={(v) => set({ structName: v || '' })}
+            placeholder="e.g. Leave Request"
+            options={structNames.map((n) => ({ value: n, label: n }))}
+          />
         </div>
       );
     case 'download':
