@@ -100,6 +100,13 @@ class SandeshClient {
       return Promise.reject(e);
     }
 
+    // The backend only accepts a real session token from POST /api/sd/login.
+    if (!user.token) {
+      const e = new Error('Not signed in to Sandesh. Sign in again.');
+      e.status = 401;
+      return Promise.reject(e);
+    }
+
     const epoch = ++this._epoch;
     this._status = 'connecting';
 
@@ -122,7 +129,7 @@ class SandeshClient {
         const username = (user.username || user.name || 'user').toLowerCase().replace(/\s+/g, '_').slice(0, 24);
         ws.send(JSON.stringify({
           username,
-          token: user.token || 'web-' + Date.now(),
+          token: user.token,
           armSessionId: user.armSessionId || 'sess-' + Date.now(),
         }));
       };
