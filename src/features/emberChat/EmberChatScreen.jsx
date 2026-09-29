@@ -834,10 +834,18 @@ export function EmberChatScreen({ onOpenAiChat }) {
           setAssociates(event.data.associates);
         } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
           setNotifications(event.data.notifications);
-        } else if ((event.reqId === "#tstruct" || event.reqId === "#tstruct-add") && event.ok && event.data?.tstruct) {
+        } else if ((event.reqId === "#tstruct" || event.reqId === "#tstruct-add" || event.reqId === "#tstruct-edit") && event.ok && event.data?.tstruct) {
           const name = event.data.tstruct.name;
-          setModalParam({ initialPath: `/structs/${name}/${event.reqId === "#tstruct-add" ? "form" : "records"}` });
+          const path =
+            event.reqId === "#tstruct-add"
+              ? `/structs/${name}/form`
+              : event.reqId === "#tstruct-edit" && event.data.editRecordId != null
+                ? `/structs/${name}/record/${event.data.editRecordId}`
+                : `/structs/${name}/records`;
+          setModalParam({ initialPath: path });
           setModal("tstruct_user");
+        } else if (event.reqId === "#tstruct-delete" && event.ok) {
+          pushToast("Record deleted.");
         } else if (!event.ok && event.error?.message) {
           pushToast(event);
         }
