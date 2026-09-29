@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
+import { useLiveChanges } from "../../utils/useLiveChanges.js";
 
 // Admin: options (the buttons above the chat) and who they apply to (admin.option.*).
 // A form is only offered to a user when an option pointing at it applies to them.
@@ -72,6 +73,11 @@ export default function AdminOptionsPanel({ pushToast }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // options (anyone's) and the forms they can point at change live; an open editor keeps what was typed
+  useLiveChanges((c) => {
+    if (c.event === "options_changed" || c.event === "tstructs_changed" || c.event === "resync") load();
+  });
 
   const fail = (res) => pushToast({ type: "sd", ok: false, error: res.error });
 

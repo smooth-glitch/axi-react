@@ -4,6 +4,7 @@ import DynamicForm from './DynamicForm';
 import RecordsBrowser from './RecordsBrowser';
 import { Alert, Skeleton } from './kit';
 import { Ensure } from './Provider';
+import { useLiveChanges } from './hooks';
 import { createRecord, getRecord, getStruct, listRecords, updateRecord } from '../core/api';
 
 const providerProps = ({ apiUrl, getAuthToken, user, theme, colorMode }) => ({ apiUrl, getAuthToken, user, theme, colorMode });
@@ -35,9 +36,19 @@ function StructFormInner({ struct: structRef, mode = 'new', recordId, initialVal
     load();
   }, [load]);
 
+  // The definition changed (or was deleted) while this form is open. Reloading it silently would throw away what
+  // the user has typed, so say so and let them choose.
+  const [staleNote, setStaleNote] = useState(null);
+  useLiveChanges((c) => {
+    if (c.event === 'tstructs_changed' && (c.name === structRef || c.name === struct?.id || c.name === struct?.key)) {
+      setStaleNote(c.action === 'deleted' ? 'This struct was deleted, so this form can no longer be saved.' : 'This form was changed by its creator. Close and reopen it to use the latest version.');
+    }
+  });
+
   const ready = struct && (mode !== 'edit' || record);
   return (
     <div>
+      {staleNote ? <Alert tone="warning">{staleNote}</Alert> : null}
       <Alert onRetry={load}>{error}</Alert>
       {!ready && !error ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: t.spacing.lg }}>

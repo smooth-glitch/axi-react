@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 import { displayValue } from "../../utils/formEngine.js";
+import { useLiveChanges } from "../../utils/useLiveChanges.js";
 
 // submissions.list: the user's own submissions plus those from people they host.
 // Only the author can edit or delete a submission (server-enforced).
@@ -23,6 +24,11 @@ export default function SubmissionsModal({ currentUser, onClose, onEdit }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // a submission of yours (or of someone you host) was made, edited or deleted -- update the list at once
+  useLiveChanges((c) => {
+    if (c.event === "submissions_changed" || c.event === "resync") load();
+  });
 
   const remove = async (sub) => {
     setBusyId(sub.id);

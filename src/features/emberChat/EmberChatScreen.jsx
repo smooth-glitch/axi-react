@@ -803,6 +803,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
         (event.event === "request_created" || event.event === "request_resolved")
       ) {
         refreshApprovals();
+      } else if (event.type === "sd_event" && event.event === "options_changed") {
+        // an option was made/changed/removed (by anyone): re-ask what THIS user is offered -- the server applies
+        // "applicable to", so we never guess from the event
+        refreshOptions();
       } else if (event.type === "sd_event" && event.event === "session_replaced") {
         forceSignOut("You were signed out because this account signed in on another tab or device.");
       } else if (event.type === "sd_event" && event.event === "session_expired") {

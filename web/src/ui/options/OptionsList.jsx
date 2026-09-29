@@ -6,6 +6,7 @@ import { Alert, Badge, Button, EmptyState, HoverCard, IconButton, IconTile, Inpu
 import { iconFor } from '../icons';
 import { Ensure } from '../Provider';
 import { deleteOption, listOptions } from '../../core/api';
+import { useLiveChanges } from '../hooks';
 import { applicableSummary, optionType } from '../../core/options';
 import { timeAgo } from '../../core/format';
 
@@ -32,6 +33,11 @@ function OptionsListInner({ onNew, onEdit, onRun, onDeleted, onLoaded, refreshKe
   useEffect(() => {
     load();
   }, [load, refreshKey]);
+
+  // an option made, changed or removed anywhere (or a struct it opens) shows up here at once
+  useLiveChanges((c) => {
+    if (c.event === 'options_changed' || c.event === 'tstructs_changed' || c.event === 'resync') load();
+  });
 
   const shown = useMemo(() => (options || []).filter((o) => o.caption.toLowerCase().includes(q.trim().toLowerCase())), [options, q]);
 

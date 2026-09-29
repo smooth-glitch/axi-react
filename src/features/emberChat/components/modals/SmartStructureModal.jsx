@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 import OptionActionPanel from "./OptionActionPanel.jsx";
+import { useLiveChanges } from "../../utils/useLiveChanges.js";
 import {
   buildSubmission,
   displayValue,
@@ -202,6 +203,19 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
     };
   }, [current, currentUser, editing]);
 
+  // The form's definition changed (or it was deleted) while it is open. Reloading it would throw away what the user
+  // has typed, so say so instead.
+  const [staleNote, setStaleNote] = useState("");
+  useLiveChanges((c) => {
+    if (c.event === "tstructs_changed" && current?.type === "data_input" && c.name === current.target) {
+      setStaleNote(
+        c.action === "deleted"
+          ? "This form was deleted, so it can no longer be submitted."
+          : "This form was just changed. Close and reopen it to use the latest version."
+      );
+    }
+  });
+
   const setValue = (name, v, raw) => {
     setValues((prev) => {
       const next = { ...prev, [name]: v };
@@ -303,6 +317,7 @@ export default function SmartStructureModal({ prompt: option, options = [], curr
 
       {current && tstruct && (
         <form onSubmit={handleSubmit} className="sandesh-modal-body" noValidate>
+          {staleNote && <div className="sandesh-alert sandesh-alert-danger" role="status">{staleNote}</div>}
           {groupBySection(tstruct, values).map((group) => (
             <div key={group.name || "_"}>
               {group.caption && <h4 style={{ margin: "12px 0 6px" }}>{group.caption}</h4>}

@@ -7,7 +7,7 @@ import RecordsBrowser from '../../ui/RecordsBrowser';
 import { StructForm } from '../../ui/StructForm';
 import ConfirmSheet from '../../ui/ConfirmSheet';
 import { Alert, Button, EmptyState, IconButton, Skeleton, useToast } from '../../ui/kit';
-import { useWindowWidth } from '../../ui/hooks';
+import { useLiveChanges, useWindowWidth } from '../../ui/hooks';
 import { deleteRecord, deleteStruct, getStruct, isMine, listRecords } from '../../core/api';
 import { fullDate } from '../../core/format';
 import { useStructs } from '../StructsContext';
@@ -41,6 +41,26 @@ export function Records() {
   useEffect(() => {
     load();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live: re-read quietly (no skeleton) when this struct or its records change anywhere; leave if it was deleted.
+  const leaveDeleted = useCallback(() => {
+    toast.show({ title: 'Struct deleted', message: 'This struct was deleted, so it was closed.' });
+    refresh();
+    navigate('/structs', { replace: true });
+  }, [navigate, refresh, toast]);
+  useLiveChanges((c) => {
+    const mine = c.name === id || c.tstruct === id;
+    if (c.event === 'tstructs_changed' && c.name === id && c.action === 'deleted') return leaveDeleted();
+    if (!(mine || c.event === 'resync')) return;
+    Promise.all([getStruct(id), listRecords(id)])
+      .then(([s, r]) => {
+        setStruct(s);
+        setRecords(r);
+      })
+      .catch((e) => {
+        if (e.status === 404) leaveDeleted();
+      });
+  });
 
   const add = () => navigate(`/structs/${id}/form`);
   const edit = () => navigate(`/structs/${id}/edit`);

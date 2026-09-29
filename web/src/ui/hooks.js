@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { subscribeChanges } from '../core/api';
 
 // Current window width (re-renders on resize).
 export function useWindowWidth() {
@@ -38,4 +39,32 @@ export function useSystemDark() {
     return () => mq.removeEventListener('change', on);
   }, []);
   return dark;
+}
+
+/**
+ * useLiveChanges(handler): calls handler({ event, ...data }) for each server "something changed" push
+ * (tstructs_changed / options_changed / submissions_changed) and for `resync` after a reconnect.
+ * Bursts are coalesced (the latest handler runs once per ~150 ms) so a flurry of changes triggers one re-read.
+ */
+export function useLiveChanges(handler) {
+  const ref = useRef(handler);
+  ref.current = handler;
+  useEffect(() => {
+    let timer = null;
+    let pending = [];
+    const off = subscribeChanges((change) => {
+      pending.push(change);
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        const batch = pending;
+        pending = [];
+        for (const c of batch) ref.current?.(c);
+      }, 150);
+    });
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 }
