@@ -35,7 +35,7 @@
 -define(APPCONNS, "sd:appconns").
 -define(FIELD_TYPES, [<<"text">>, <<"date">>, <<"time">>, <<"wholenumber">>, <<"number">>,
                       <<"email">>, <<"url">>, <<"mobile">>, <<"location">>, <<"list">>,
-                      <<"selection">>, <<"fill">>]).
+                      <<"selection">>, <<"fill">>, <<"barcode">>]).
 -define(OPTION_TYPES, [<<"data_input">>, <<"get_data">>, <<"download">>, <<"upload">>, <<"pay">>,
                        <<"axpert_tstruct">>, <<"axpert_smartview">>, <<"axpert_iview">>,
                        <<"axpert_page">>]).
@@ -156,6 +156,10 @@ field_extras(<<"selection">>, F, _) ->
 field_extras(<<"fill">>, F, _) ->
     {ok, #{<<"fillFrom">> => sd_util:get(<<"fillFrom">>, F, null),
            <<"sourceProp">> => sd_util:get(<<"sourceProp">>, F, null)}};
+%% barcode/QR: scanned value is a plain string; no required extras for v1.
+%% (A future `formats` list could restrict accepted symbologies, e.g.
+%%  ["qr","ean13","code128"], but there's no concrete need to restrict yet.)
+field_extras(<<"barcode">>, _F, _) -> {ok, #{}};
 field_extras(_, _, _) -> {ok, #{}}.
 
 validate_sections(L, _FieldNames) when not is_list(L) ->
@@ -890,6 +894,10 @@ num(_) -> error.
 
 check_type(<<"text">>, V, _) when is_binary(V) ->
     case byte_size(V) =< 5000 of true -> {ok, V}; false -> {error, <<"Too long (max 5000 characters).">>} end;
+%% barcode/QR: the scanned result is a plain string (same cap as text).
+check_type(<<"barcode">>, V, _) when is_binary(V) ->
+    case byte_size(V) =< 5000 of true -> {ok, V}; false -> {error, <<"Too long (max 5000 characters).">>} end;
+check_type(<<"barcode">>, _, _) -> {error, <<"Barcode value must be text.">>};
 check_type(<<"email">>, V, _) when is_binary(V) ->
     E = sd_util:norm_email(V),
     case sd_util:valid_email(E) of true -> {ok, E}; false -> {error, <<"Enter a valid email address.">>} end;
