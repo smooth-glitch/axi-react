@@ -10,43 +10,74 @@ function ScannerOverlay({ onDetected, onClose }) {
   const scannerRef = useRef(null);
   const stoppedRef = useRef(false);
 
+  // Html5Qrcode.stop() THROWS SYNCHRONOUSLY (not a rejected promise) when called on a scanner
+  // whose start() never actually got going (e.g. camera permission denied) -- calling it
+  // unconditionally from a useEffect cleanup crashes the whole app with no error boundary to
+  // catch it. Only stop() a scanner that's actually running, and never let this throw.
+  const safeStop = (qr) => {
+    try {
+      if (qr?.isScanning) {
+        qr.stop()
+          .then(() => {
+            try {
+              qr.clear();
+            } catch (_) {
+              /* nothing left to clear */
+            }
+          })
+          .catch(() => {});
+      } else {
+        try {
+          qr?.clear();
+        } catch (_) {
+          /* never started: nothing to clear */
+        }
+      }
+    } catch (_) {
+      /* defensive: never let a cleanup throw */
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     stoppedRef.current = false;
 
-    import("html5-qrcode").then(({ Html5Qrcode }) => {
-      if (cancelled) return;
-      const qr = new Html5Qrcode(domId, { verbose: false });
-      scannerRef.current = qr;
-      qr
-        .start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 240, height: 240 } },
-          (decodedText) => {
-            if (stoppedRef.current) return;
-            stoppedRef.current = true;
-            qr.stop().then(() => qr.clear()).catch(() => {});
-            onDetected(decodedText);
-          },
-          () => {
-            // per-frame "no code found" -- expected while aiming the camera, not an error
-          }
-        )
-        .catch((err) => {
-          if (cancelled) return;
-          setError(
-            err?.message?.includes("Permission") || String(err).includes("NotAllowed")
-              ? "Camera permission was denied. Allow it in the browser and try again."
-              : "Could not start the camera on this device."
-          );
-        });
-    });
+    import("html5-qrcode")
+      .then(({ Html5Qrcode }) => {
+        if (cancelled) return;
+        const qr = new Html5Qrcode(domId, { verbose: false });
+        scannerRef.current = qr;
+        qr
+          .start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 240, height: 240 } },
+            (decodedText) => {
+              if (stoppedRef.current) return;
+              stoppedRef.current = true;
+              safeStop(qr);
+              onDetected(decodedText);
+            },
+            () => {
+              // per-frame "no code found" -- expected while aiming the camera, not an error
+            }
+          )
+          .catch((err) => {
+            if (cancelled) return;
+            setError(
+              err?.message?.includes("Permission") || String(err).includes("NotAllowed")
+                ? "Camera permission was denied. Allow it in the browser and try again."
+                : "Could not start the camera on this device."
+            );
+          });
+      })
+      .catch(() => {
+        if (!cancelled) setError("Could not load the scanner on this device.");
+      });
 
     return () => {
       cancelled = true;
       stoppedRef.current = true;
-      const qr = scannerRef.current;
-      if (qr) qr.stop().then(() => qr.clear()).catch(() => {});
+      safeStop(scannerRef.current);
     };
   }, [domId, onDetected]);
 

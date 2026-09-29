@@ -834,6 +834,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           setAssociates(event.data.associates);
         } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
           setNotifications(event.data.notifications);
+        } else if ((event.reqId === "#tstruct" || event.reqId === "#tstruct-add") && event.ok && event.data?.tstruct) {
+          const name = event.data.tstruct.name;
+          setModalParam({ initialPath: `/structs/${name}/${event.reqId === "#tstruct-add" ? "form" : "records"}` });
+          setModal("tstruct_user");
         } else if (!event.ok && event.error?.message) {
           pushToast(event);
         }
@@ -2426,9 +2430,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "tstruct_user" && (
               <TStructUserModal
-                onClose={() => setModal(null)}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
                 pushToast={pushToast}
                 currentUser={currentUser}
+                initialPath={modalParam?.initialPath}
               />
             )}
             {modal === "admin_console" && (

@@ -76,6 +76,11 @@ export const Input = forwardRef(function Input({ icon: IconCmp, invalid, multili
           onChange?.(e);
         }}
         {...NO_AUTOFILL}
+        // No name is set anywhere else in this app - Chrome/Edge's autofill heuristics look at name/id
+        // (and, absent those, nearby label/placeholder text) to guess a field's purpose, and can decide
+        // "Field name" + "e.g. Employment type" looks like a person's name. A name that doesn't match any
+        // known pattern (and doesn't leak field labels into the DOM attribute) heads that off.
+        name={testID ? `f_${testID}` : undefined}
         {...rest}
       />
       {right}
@@ -246,6 +251,7 @@ export function Select({ value, onChange, options, placeholder = 'Select...', in
                       }}
                       onKeyDown={onKey}
                       placeholder="Search..."
+                      name="select-filter"
                       {...NO_AUTOFILL}
                       style={{ flex: 1, border: 0, outline: 'none', boxShadow: 'none', background: 'transparent', padding: 0, color: t.text, fontSize: t.type.body.size }}
                     />
