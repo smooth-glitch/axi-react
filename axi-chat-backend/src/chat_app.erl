@@ -14,6 +14,7 @@ start() ->
 start([TcpPortArg]) ->
     start([TcpPortArg, integer_to_list(?DEFAULT_WEB_PORT)]);
 start([TcpPortArg, WebPortArg]) ->
+    preload_modules(),
     configure_logging(),
     {ok, _} = application:ensure_all_started(crypto),
     ok = chat_store:init(),
@@ -36,6 +37,7 @@ start([TcpPortArg, WebPortArg]) ->
 %% chat room with fake join/leave/messages -- exactly what an HTTP HEAD
 %% probe hitting that port looks like.
 start_web_only([WebPortArg]) ->
+    preload_modules(),
     configure_logging(),
     {ok, _} = application:ensure_all_started(crypto),
     ok = chat_store:init(),
@@ -45,6 +47,18 @@ start_web_only([WebPortArg]) ->
     receive
         stop -> ok
     end.
+
+%% Load every module of this app (and eredis) up front. Erlang otherwise loads a module
+%% the first time something calls it, from the -pa directory; if that directory is
+%% removed after start -- e.g. a second deploy job cleaning the shared checkout, which
+%% is what happened on the VM -- the first call into a not-yet-loaded module (sd_totp on
+%% the first login) dies with `undef`. Preloaded, a removed build tree can't break a
+%% running node.
+preload_modules() ->
+    Dirs = lists:usort([filename:dirname(code:which(M)) || M <- [?MODULE, eredis], code:which(M) =/= non_existing]),
+    [code:ensure_loaded(list_to_atom(filename:basename(F, ".beam")))
+     || D <- Dirs, F <- filelib:wildcard(filename:join(D, "*.beam"))],
+    ok.
 
 to_port(Port) when is_integer(Port) -> Port;
 to_port(Port) when is_atom(Port) -> to_port(atom_to_list(Port));
