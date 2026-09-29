@@ -1812,9 +1812,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
           handleSignOut();
         }
       } else if (res.data?.user) {
+        // Backend `status` is the account state ("active"), not the UI presence
+        // status ("Available"/"Away"), so keep the local one.
+        const { status: _accountStatus, ...serverUser } = res.data.user;
         setCurrentUser((prev) => ({
           ...prev,
-          ...res.data.user,
+          ...serverUser,
           mustChangePassword: !!res.data.password?.mustChange,
         }));
       }
