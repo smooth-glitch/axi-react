@@ -491,8 +491,22 @@ do(<<"tstruct.user.open">>, Args, #{user := User}) ->
                 MySubs = sd_config:list_submissions(User, #{<<"tstruct">> => N}),
                 OwnSubs = [S || S <- MySubs,
                                 maps:get(<<"by">>, S) =:= maps:get(<<"username">>, User)],
-                {ok, #{<<"tstruct">> => Def, <<"scope">> => Scope,
-                       <<"submissions">> => OwnSubs}}
+                %% editRecordId: passed by #tstruct-edit so the frontend knows which
+                %% record to pre-select/pre-fill in the edit form. Passed through
+                %% as-is (integer or null) -- the server does not validate it here;
+                %% the actual update is a separate submissions.update call with full
+                %% values once the user confirms the edit.
+                EditId = case maps:get(<<"editRecordId">>, Args, undefined) of
+                    V when is_integer(V) -> V;
+                    _ -> null
+                end,
+                Base = #{<<"tstruct">> => Def, <<"scope">> => Scope,
+                         <<"submissions">> => OwnSubs},
+                Resp = case EditId of
+                    null -> Base;
+                    _    -> Base#{<<"editRecordId">> => EditId}
+                end,
+                {ok, Resp}
         end
     end);
 do(<<"tstruct.user.save">>, Args, #{user := User}) ->

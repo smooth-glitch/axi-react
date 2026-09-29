@@ -213,7 +213,7 @@ commands() ->
      %% ---- lite tstruct viewer (hash commands) ----
      %% #tstruct <name>         -- open the viewer: returns the definition + your own records
      %% #tstruct-add <name>     -- opens the definition only (caller fills values via tstruct.user.submit)
-     %% #tstruct-edit <name> <id> -- edit your own record (caller fills values via submissions.update)
+     %% #tstruct-edit <name> <id> -- open the viewer with a specific record pre-selected for editing
      %% #tstruct-delete <name> <id> -- delete your own record
      cmd("tstruct", ["ts", "struct"], forms, "Open a lite T-Struct in the viewer (definition + your records)",
          [{name, word, req}],
@@ -223,7 +223,7 @@ commands() ->
          {sd, <<"tstruct.user.open">>, fun([N]) -> #{<<"name">> => ub(N), <<"mode">> => <<"add">>} end}, ["sd"]),
      cmd("tstruct-edit", ["ts-edit", "struct-edit"], forms, "Edit your own record in a lite T-Struct",
          [{name, word, req}, {submissionId, msgid, req}],
-         {sd, <<"submissions.update">>, fun([N, I]) -> #{<<"tstruct">> => ub(N), <<"id">> => I} end}, ["sd"]),
+         {sd, <<"tstruct.user.open">>, fun([N, I]) -> #{<<"name">> => ub(N), <<"editRecordId">> => I} end}, ["sd"]),
      cmd("tstruct-delete", ["ts-delete", "struct-delete"], forms, "Delete your own record from a lite T-Struct",
          [{name, word, req}, {submissionId, msgid, req}],
          {sd, <<"submissions.delete">>, fun([_N, I]) -> #{<<"id">> => I} end}, ["sd"]),
