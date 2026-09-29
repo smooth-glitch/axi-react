@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import QRCode from "qrcode";
 import { sandeshApi, ERROR_MESSAGES, validatePasswordPolicy } from "../../../services/sandeshApi.js";
-import { generateTotpCode } from "../../../services/totpHelper.js";
+import { generateTotpCode as computeTotpCode } from "../../../services/totpHelper.js";
 import sandeshLogo from "../../../assets/sandesh-logo.png";
 import { SmokeyBackground } from "@/components/ui/login-form";
 import {
@@ -31,6 +31,14 @@ import {
   Trash2,
 } from "lucide-react";
 
+// Computing the valid TOTP code in the browser and pre-filling it defeats the
+// second factor, so it is a local-development convenience only
+// (enable elsewhere with VITE_SANDESH_DEV_TOTP=1).
+const DEV_TOTP_PREFILL =
+  import.meta.env.DEV || import.meta.env.VITE_SANDESH_DEV_TOTP === "1";
+const generateTotpCode = (secret) =>
+  DEV_TOTP_PREFILL ? computeTotpCode(secret) : Promise.resolve(null);
+
 function buildSessionUser(data) {
   const u = data.user || {};
   return {
@@ -43,6 +51,34 @@ function buildSessionUser(data) {
     color: "#ff7a59",
     armSessionId: "arm-" + Date.now(),
   };
+}
+
+// Branch / department / designation / affiliate values must come from the
+// organisation's own lists (GET /api/sd/public); the backend rejects anything
+// else ("branch isn't in the organisation's list"), so free text can't work.
+function RefSelect({ label, icon: Icon, value, onChange, options, required, emptyHint }) {
+  const list = Array.isArray(options) ? options : [];
+  return (
+    <div className="sandesh-input-group">
+      <label>{label}</label>
+      <div className="sandesh-input-box-3d select-box">
+        <Icon size={18} className="sandesh-lucide-icon" />
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required={required}
+          disabled={list.length === 0}
+        >
+          <option value="">{list.length === 0 ? emptyHint || "None configured yet" : "Select…"}</option>
+          {list.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
 }
 
 export default function SandeshLoginScreen({ onLoginSuccess }) {
@@ -866,6 +902,15 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
       return;
     }
 
+    if (regType === "employee" && !(regBranch && regDept && regDesignation)) {
+      setErrorMsg("Please choose your branch, department and designation from the organisation's lists.");
+      return;
+    }
+    if (regType === "affiliate" && !regAffiliate) {
+      setErrorMsg("Please choose your affiliate organisation.");
+      return;
+    }
+
     const pwValidation = validatePasswordPolicy(regPassword);
     if (!pwValidation.valid) {
       setErrorMsg(pwValidation.message);
@@ -891,7 +936,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
         payload.designation = regDesignation;
       } else if (regType === "affiliate") {
         payload.isEmployee = false;
-        payload.affiliate = regAffiliate || "Affiliate Partner";
+        payload.affiliate = regAffiliate;
         if (regAffiliateBranch) payload.affiliateBranch = regAffiliateBranch;
         payload.city = regCity;
         payload.country = regCountry;
@@ -1756,6 +1801,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                   <input
                     type="text"
                     placeholder="e.g. username, email, or +919886000000"
+                    autoComplete="username"
                     value={signInIdentifier}
                     onChange={(e) => setSignInIdentifier(e.target.value)}
                     required
@@ -1772,6 +1818,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                   <input
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter password (optional for non-admins)"
+                    autoComplete="current-password"
                     value={signInPassword}
                     onChange={(e) => setSignInPassword(e.target.value)}
                   />
@@ -2006,6 +2053,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                     <input
                       type="text"
                       placeholder="Your full name"
+                    autoComplete="off"
                       value={regName}
                       onChange={(e) => setRegName(e.target.value)}
                       required
@@ -2020,6 +2068,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                     <input
                       type="text"
                       placeholder="e.g. john_doe"
+                    autoComplete="off"
                       value={regUsername}
                       onChange={(e) => setRegUsername(e.target.value)}
                     />
@@ -2035,6 +2084,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                     <input
                       type="email"
                       placeholder="name@company.com"
+                    autoComplete="off"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
                       required
@@ -2049,6 +2099,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                     <input
                       type="text"
                       placeholder="+91..."
+                    autoComplete="off"
                       value={regMobile}
                       onChange={(e) => setRegMobile(e.target.value)}
                     />
@@ -2063,6 +2114,7 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                   <input
                     type={showRegPassword ? "text" : "password"}
                     placeholder="Choose a strong password"
+                    autoComplete="new-password"
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
                     required
@@ -2101,46 +2153,42 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                 </div>
               </div>
 
+              {regType === "employee" && !(publicData?.branches?.length && publicData?.departments?.length && publicData?.designations?.length) && (
+                <div className="sandesh-alert sandesh-alert-danger" style={{ textAlign: "left" }}>
+                  This organisation hasn&apos;t set up its branches, departments and designations yet, so employee
+                  registration isn&apos;t available. Ask an administrator, or register as a Customer / Citizen or
+                  Affiliate.
+                </div>
+              )}
+
               {regType === "employee" && (
                 <div className="sandesh-form-row">
-                  <div className="sandesh-input-group">
-                    <label>Branch</label>
-                    <div className="sandesh-input-box-3d">
-                      <Building2 size={18} className="sandesh-lucide-icon" />
-                      <input
-                        type="text"
-                        value={regBranch}
-                        onChange={(e) => setRegBranch(e.target.value)}
-                        placeholder="e.g. Bangalore HQ"
-                      />
-                    </div>
-                  </div>
+                  <RefSelect
+                    label="Branch"
+                    icon={Building2}
+                    value={regBranch}
+                    onChange={setRegBranch}
+                    options={publicData?.branches}
+                    required={true}
+                  />
 
-                  <div className="sandesh-input-group">
-                    <label>Department</label>
-                    <div className="sandesh-input-box-3d">
-                      <Briefcase size={18} className="sandesh-lucide-icon" />
-                      <input
-                        type="text"
-                        value={regDept}
-                        onChange={(e) => setRegDept(e.target.value)}
-                        placeholder="e.g. Engineering"
-                      />
-                    </div>
-                  </div>
+                  <RefSelect
+                    label="Department"
+                    icon={Briefcase}
+                    value={regDept}
+                    onChange={setRegDept}
+                    options={publicData?.departments}
+                    required={true}
+                  />
 
-                  <div className="sandesh-input-group">
-                    <label>Designation</label>
-                    <div className="sandesh-input-box-3d">
-                      <ShieldCheck size={18} className="sandesh-lucide-icon" />
-                      <input
-                        type="text"
-                        value={regDesignation}
-                        onChange={(e) => setRegDesignation(e.target.value)}
-                        placeholder="e.g. Specialist"
-                      />
-                    </div>
-                  </div>
+                  <RefSelect
+                    label="Designation"
+                    icon={ShieldCheck}
+                    value={regDesignation}
+                    onChange={setRegDesignation}
+                    options={publicData?.designations}
+                    required={true}
+                  />
                 </div>
               )}
 
@@ -2154,11 +2202,14 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
                         value={regCategory}
                         onChange={(e) => setRegCategory(e.target.value)}
                       >
-                        <option value="Citizen">Citizen</option>
-                        <option value="Customer">Customer</option>
-                        <option value="Vendor">Vendor / Supplier</option>
-                        <option value="Consultant">Consultant</option>
-                        <option value="Patient">Patient</option>
+                        {(publicData?.categories?.length
+                          ? publicData.categories
+                          : ["Citizen", "Customer", "Vendor", "Consultant", "Patient"]
+                        ).map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -2207,30 +2258,24 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
               {regType === "affiliate" && (
                 <>
                   <div className="sandesh-form-row">
-                    <div className="sandesh-input-group">
-                      <label>Affiliate Organisation</label>
-                      <div className="sandesh-input-box-3d">
-                        <Building2 size={18} className="sandesh-lucide-icon" />
-                        <input
-                          type="text"
-                          value={regAffiliate}
-                          onChange={(e) => setRegAffiliate(e.target.value)}
-                          placeholder="Partner Org"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="sandesh-input-group">
-                      <label>Affiliate Branch (Optional)</label>
-                      <div className="sandesh-input-box-3d">
-                        <input
-                          type="text"
-                          value={regAffiliateBranch}
-                          onChange={(e) => setRegAffiliateBranch(e.target.value)}
-                          placeholder="Branch"
-                        />
-                      </div>
-                    </div>
+                    <RefSelect
+                    label="Affiliate Organisation"
+                    icon={Building2}
+                    value={regAffiliate}
+                    onChange={setRegAffiliate}
+                    options={publicData?.affiliates?.map((a) => a.name || a)}
+                    required={true}
+                  />
+                    <RefSelect
+                      label="Affiliate Branch (Optional)"
+                      icon={Building2}
+                      value={regAffiliateBranch}
+                      onChange={setRegAffiliateBranch}
+                      options={
+                        publicData?.affiliates?.find((a) => (a.name || a) === regAffiliate)?.branches
+                      }
+                      emptyHint="No branches"
+                    />
                   </div>
 
                   <div className="sandesh-form-row">
