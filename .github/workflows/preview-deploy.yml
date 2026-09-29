@@ -80,6 +80,13 @@ jobs:
           SLOT="${{ steps.slot.outputs.slot }}"
           PORT="${{ steps.slot.outputs.port }}"
           SLUG="${{ steps.slot.outputs.slug }}"
+          sudo mkdir -p /etc/nginx/conf.d/previews /etc/nginx/conf.d/preview
+          # Clean up any rogue/legacy preview files that contain invalid 'server' directives inside include scopes
+          if [ -d "/etc/nginx/conf.d/preview" ]; then
+            sudo rm -rf /etc/nginx/conf.d/preview/*
+          fi
+          sudo rm -f /etc/nginx/conf.d/preview-*.conf
+
           sudo tee "/etc/nginx/conf.d/previews/preview-$SLOT.conf" > /dev/null <<EOF
           location /preview/$SLUG/ws {
               proxy_pass http://127.0.0.1:$PORT/;
@@ -117,6 +124,13 @@ jobs:
               try_files \$uri \$uri/ /preview/$SLUG/index.html;
           }
           EOF
+
+          # If nginx config specifically includes /etc/nginx/conf.d/preview/ instead of previews/, copy it there too
+          if grep -rq "conf.d/preview/" /etc/nginx/ 2>/dev/null && ! grep -rq "conf.d/previews" /etc/nginx/ 2>/dev/null; then
+            sudo cp "/etc/nginx/conf.d/previews/preview-$SLOT.conf" "/etc/nginx/conf.d/preview/preview-$SLOT.conf"
+            sudo restorecon -v "/etc/nginx/conf.d/preview/preview-$SLOT.conf" || true
+          fi
+
           sudo restorecon -v "/etc/nginx/conf.d/previews/preview-$SLOT.conf"
           sudo nginx -t
           sudo systemctl reload nginx
