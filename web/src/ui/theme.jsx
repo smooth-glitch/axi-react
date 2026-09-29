@@ -1,19 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import styled, { createGlobalStyle, ThemeProvider as StyledProvider } from 'styled-components';
 import { buildTheme } from '../core/tokens';
 import { useAutoDark } from './hooks';
 
-const STORAGE_KEY = 'tstruct.theme';
-const ModeContext = createContext({ mode: 'light', preference: 'system', setPreference: () => {} });
+// Theme is always automatic - light by day, dark by night (useAutoDark) - there is no user-facing
+// toggle. `mode` here is read-only, for anything that wants to show the current effective mode.
+const ModeContext = createContext({ mode: 'light' });
 export const useThemeMode = () => useContext(ModeContext);
-
-const readPref = () => {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) || 'light';
-  } catch (e) {
-    return 'light';
-  }
-};
 
 // Page-level reset - only used by the standalone app (an embedded component must not restyle the host page).
 export const GlobalStyle = createGlobalStyle`
@@ -43,33 +36,16 @@ export const TstructRoot = styled.div`
 
 /**
  * Provides the styled-components theme + light/dark mode.
- *  - mode: 'light' | 'dark' forces a mode (embedding); otherwise the user's saved preference / system setting is used
+ *  - mode: 'light' | 'dark' forces a mode (embedding, e.g. to match a host app's theme); otherwise
+ *    it follows the time of day automatically (useAutoDark) - there is no manual user toggle.
  *  - overrides: palette overrides so a host can re-brand (see core/tokens.js buildTheme)
- *  - persist: store the light/dark/system preference in localStorage (standalone app only)
  */
-export default function AppThemeProvider({ children, mode: forced, overrides, persist = true }) {
+export default function AppThemeProvider({ children, mode: forced, overrides }) {
   const autoDark = useAutoDark();
-  const [preference, setPref] = useState('light');
-  useEffect(() => {
-    if (persist) setPref(readPref());
-  }, [persist]);
-  const mode = forced || (preference === 'system' ? (autoDark ? 'dark' : 'light') : preference);
-
-  const setPreference = useCallback(
-    (p) => {
-      setPref(p);
-      if (!persist) return;
-      try {
-        window.localStorage.setItem(STORAGE_KEY, p);
-      } catch (e) {
-        /* storage unavailable: preference lasts for this session only */
-      }
-    },
-    [persist]
-  );
+  const mode = forced || (autoDark ? 'dark' : 'light');
 
   const theme = useMemo(() => buildTheme(mode, overrides), [mode, overrides]);
-  const ctx = useMemo(() => ({ mode, preference, setPreference }), [mode, preference, setPreference]);
+  const ctx = useMemo(() => ({ mode }), [mode]);
 
   return (
     <ModeContext.Provider value={ctx}>

@@ -412,6 +412,19 @@ export function subscribeChanges(handler) {
 // remembers which is which so records are saved through the right action.
 const scopeByName = new Map();
 
+// Org config lookups (branches / departments / designations / categories / affiliates) for the Option
+// Builder's "Applicable to" dropdowns. User-level, names only.
+export const listCfgLookups = () =>
+  _client.sd('cfg.lookups')
+    .then((r) => ({
+      branches: r.branches || [],
+      departments: r.departments || [],
+      designations: r.designations || [],
+      categories: r.categories || [],
+      affiliates: (r.affiliates || []).map((a) => a.name),
+    }))
+    .catch((e) => { throw toApiError(e); });
+
 export const listStructs = () =>
   _client.sd('tstruct.user.list')
     .then(async (r) => {

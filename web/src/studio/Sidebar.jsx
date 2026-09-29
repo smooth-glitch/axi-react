@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { Boxes, LayoutDashboard, Monitor, Moon, Plus, Search, Settings2, SlidersHorizontal, Sun, Table2, X } from 'lucide-react';
-import { Button, IconButton, Skeleton, Text } from '../ui/kit';
+import { Boxes, LayoutDashboard, Moon, Plus, Search, Settings2, SlidersHorizontal, Sun, Table2, X } from 'lucide-react';
+import { Button, Skeleton, Text } from '../ui/kit';
 import { useStructs } from './StructsContext';
 import { useThemeMode } from '../ui/theme';
 
@@ -147,8 +147,7 @@ function NavLink({ icon: IconCmp, label, active, onPress, testID, badge, index =
   );
 }
 
-const NEXT = { system: 'light', light: 'dark', dark: 'system' };
-const MODE_ICON = { system: Monitor, light: Sun, dark: Moon };
+const MODE_ICON = { light: Sun, dark: Moon };
 
 // Struct navigation. variant="sidebar": fixed left menu (wide screens). variant="screen": full-screen home list (narrow).
 export default function Sidebar({ variant = 'sidebar' }) {
@@ -157,10 +156,10 @@ export default function Sidebar({ variant = 'sidebar' }) {
   const { pathname } = useLocation();
   const activeRef = matchPath('/structs/:ref/:view/*', pathname)?.params.ref;
   const { structs, error, refresh } = useStructs();
-  const { preference, setPreference } = useThemeMode();
+  const { mode } = useThemeMode();
   const [q, setQ] = useState('');
   const fixed = variant === 'sidebar';
-  const ModeIcon = MODE_ICON[preference];
+  const ModeIcon = MODE_ICON[mode];
 
   const shown = useMemo(() => (structs || []).filter((s) => s.name.toLowerCase().includes(q.trim().toLowerCase())), [structs, q]);
   // wide: replace (switching structs doesn't build history); narrow: push so Back returns to the list
@@ -249,9 +248,9 @@ export default function Sidebar({ variant = 'sidebar' }) {
 
       <Foot>
         <Text $variant="caption" style={{ color: t.navMuted }}>
-          Theme: {preference}
+          Theme: Automatic ({mode})
         </Text>
-        <IconButton icon={ModeIcon} label={`Switch theme (now ${preference})`} color={t.navMuted} hoverBg={t.navHover} onPress={() => setPreference(NEXT[preference])} testID="theme-toggle" />
+        <ModeIcon size={15} strokeWidth={1.9} color={t.navMuted} aria-hidden="true" data-testid="theme-indicator" />
       </Foot>
     </Root>
   );
