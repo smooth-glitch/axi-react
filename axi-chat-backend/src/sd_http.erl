@@ -6,29 +6,47 @@
 %%%   POST /api/sd/setup/start         {org, name, username?, email, mobile, setupToken?}  -> sends a bootstrap OTP
 %%%   POST /api/sd/setup/verify        {otp}  -> creates the org + first admin; NOT a session yet, see below
 %%%   POST /api/sd/register            {..., password}  -> pending, sent to a host for approval
-%%%   POST /api/sd/login               {identifier, password, totp?, recoveryCode?}  -> see "Login / mandatory TOTP" below
+%%%   POST /api/sd/login               {identifier, password?, totp?, emailOtp?, recoveryCode?, deviceId?, mfaMethod?}
+%%%                                    -> see "Login / mandatory two-factor" below
 %%%   POST /api/sd/logout              (Bearer)
 %%%   GET  /api/sd/session             (Bearer) -> current user, or 401
 %%%   POST /api/sd/password/change     (Bearer) {oldPassword?, newPassword}
-%%%   POST /api/sd/admin/unlock/start  (Bearer) sends the admin-console OTP (unaffected by mandatory TOTP below)
+%%%   POST /api/sd/admin/unlock/start  (Bearer) sends the admin-console OTP (unaffected by mandatory 2FA below)
 %%%   POST /api/sd/admin/unlock        (Bearer) {password, otp}
-%%%   GET  /api/sd/2fa/totp             (Bearer) -> {enabled} -- always true for a live session; see below
-%%%   POST /api/sd/2fa/totp/disable      (Bearer) {password, code} (code: totp or a recovery code)
+%%%   GET  /api/sd/2fa/totp             (Bearer) -> {enabled, method} -- enabled is always true for a live session
+%%%   POST /api/sd/2fa/totp/disable      (Bearer) {password, code} (code: totp/emailOtp or a recovery code)
 %%%   POST /api/sd/2fa/totp/recovery/regenerate (Bearer) {password, code} -> {recoveryCodes}
+%%%   POST /api/sd/2fa/email/request    (Bearer) sends a code to use as `code` above, for an email-method account only
 %%%
-%%% Login / mandatory TOTP: every account needs a password (set at
-%%% setup/register/invite time) AND a TOTP code from an authenticator app --
-%%% there is no OTP-only or password-only login any more (except within the
-%%% 14-day freshness window after a code was last given). A password-correct
-%%% call for an account with no confirmed TOTP secret doubles as enrollment:
-%%%   1. POST /login {identifier, password}            -> no `token`; instead
-%%%      {totpSetupRequired:true, secret, otpauthUri, issuer, digits, periodSec, recommendedApps}
-%%%      -- render the QR, the user scans it.
-%%%   2. POST /login {identifier, password, totp:"123456"} (their app's code)
+%%% Login / mandatory two-factor: a PASSWORD is required only for admin
+%%% accounts (checked first, before anything below); every account, admin or
+%%% not, also needs a second-factor code -- either an authenticator-app TOTP
+%%% code or an emailed OTP code, whichever it enrolled in -- but only from a
+%%% DEVICE this account hasn't verified from in the last 14 days (`deviceId`
+%%% in the body identifies the device; omit it and a coarser User-Agent-based
+%%% fallback is used). A trusted device's login succeeds outright once any
+%%% password requirement is met, no code needed. An account with no
+%%% confirmed second factor yet enrolls inline, on whichever call first gets
+%%% it past the password gate (mfaMethod: "totp", the default, or "email"):
+%%%   1. POST /login {identifier, password?}            -> no `token`; instead
+%%%      for mfaMethod "totp" (default):
+%%%        {totpSetupRequired:true, mfaMethod:"totp", secret, otpauthUri, issuer, digits, periodSec, recommendedApps}
+%%%        -- render the QR, the user scans it.
+%%%      for mfaMethod "email":
+%%%        {totpSetupRequired:true, mfaMethod:"email", sent:true, expiresInSec} -- a code was just emailed.
+%%%   2. POST /login {identifier, password?, totp:"123456"} or {..., emailOtp:"123456"}
 %%%      -> {token, ..., recoveryCodes:[...10], totpJustEnabled:true}. Show
 %%%      the recovery codes exactly once -- the API never returns them again.
 %%% setup/verify (the very first admin) works the same way: its response is
-%%% step 1 above (with `defaultPassword` included), not a session.
+%%% step 1 above (mfaMethod "totp", with `defaultPassword` included), not a
+%%% session.
+%%%
+%%% For an already-enrolled account on an untrusted device: a TOTP-method
+%%% account gets {"error":{"code":"totp_required",...}} (401) until it sends
+%%% one; an email-method account instead gets an ok response with
+%%% {emailOtpRequired:true, mfaMethod:"email", sent:true/false, expiresInSec,
+%%% retryAfter?} -- login itself triggers sending the code, since there's
+%%% nothing for the user to generate locally.
 %%%
 %%% Success:  200 {"ok":true,"data":{...}}
 %%% Failure:  4xx {"ok":false,"error":{"code":"...","message":"...","details":{...}}}
@@ -66,7 +84,7 @@ route(Socket, "GET", "/api/sd/session", H, _B) ->
                 {ok, User, State} ->
                     ok_(Socket, #{<<"user">> => User, <<"password">> => State,
                                   <<"sessionExpiresTs">> => sd_auth:session_expires(Token),
-                                  <<"totpDue">> => not sd_auth:totp_fresh(User),
+                                  <<"totpDue">> => sd_auth:totp_due_for_token(Token),
                                   <<"mode">> => atom_to_binary(sd_util:mode(), utf8)});
                 error -> fail(Socket, {error, unauthenticated, <<"Session expired. Sign in again.">>})
             end
@@ -86,7 +104,7 @@ post(Socket, "/api/sd/setup/verify", Body, H) ->
 post(Socket, "/api/sd/register", Body, H) ->
     respond(Socket, self_register(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/login", Body, H) ->
-    respond(Socket, sd_auth:login(Body, client_ip(Socket, H)));
+    respond(Socket, sd_auth:login(Body, client_ip(Socket, H), H));
 post(Socket, "/api/sd/logout", _Body, H) ->
     sd_auth:logout(bearer(H)),
     ok_(Socket, #{<<"loggedOut">> => true});
@@ -104,6 +122,8 @@ post(Socket, "/api/sd/2fa/totp/disable", Body, H) ->
 post(Socket, "/api/sd/2fa/totp/recovery/regenerate", Body, H) ->
     respond(Socket, sd_totp:regenerate_recovery(bearer(H), sd_util:get(<<"password">>, Body),
                                                 sd_util:get(<<"code">>, Body)));
+post(Socket, "/api/sd/2fa/email/request", _Body, H) ->
+    respond(Socket, sd_totp:request_manage_code(bearer(H)));
 post(Socket, _Path, _Body, _H) ->
     fail(Socket, {error, not_found, <<"No such endpoint.">>}).
 

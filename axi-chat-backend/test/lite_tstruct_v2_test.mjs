@@ -13,6 +13,12 @@
 //   CHAT_RATE_LIMIT_MAX=1000 SANDESH_SCHEDULER_TICK_MS=500 .\run.ps1 5557 8082
 //   redis-cli -n 13 FLUSHDB   (must be empty -- first-run setup runs once)
 //   node test/lite_tstruct_v2_test.mjs [http://localhost:8082]
+//
+// Login follows the mandatory-2FA rules in sd_auth/sd_totp: a password is
+// checked only for the admin account (see enrollAndLogin below, used for
+// ravi/sam); everyone still needs a TOTP code the first time.
+
+import crypto from "node:crypto";
 
 const BASE = process.argv[2] || "http://localhost:8082";
 const WS_URL = BASE.replace(/^http/, "ws");
@@ -38,10 +44,35 @@ async function http(method, path, body, token) {
 const post = (p, b, t) => http("POST", p, b ?? {}, t);
 const data = (r) => r.json?.data;
 
-async function loginWithOtp(identifier) {
-    const s = await post("/api/sd/otp/send", { identifier });
-    const otp = data(s)?.devOtp;
-    const r = await post("/api/sd/login", { identifier, otp });
+// ---- Pure-JS RFC 6238 TOTP, same as sandesh_totp_test.mjs -----------------
+function b32decode(str) {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const clean = str.replace(/=+$/, "").toUpperCase();
+    let bits = "";
+    for (const c of clean) bits += alphabet.indexOf(c).toString(2).padStart(5, "0");
+    const bytes = [];
+    for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+    return Buffer.from(bytes);
+}
+function hotp(secretBuf, counter) {
+    const msg = Buffer.alloc(8);
+    msg.writeBigUInt64BE(BigInt(counter));
+    const hmac = crypto.createHmac("sha1", secretBuf).update(msg).digest();
+    const offset = hmac[hmac.length - 1] & 0x0f;
+    const code = ((hmac[offset] & 0x7f) << 24) | (hmac[offset + 1] << 16) | (hmac[offset + 2] << 8) | hmac[offset + 3];
+    return String(code % 1000000).padStart(6, "0");
+}
+function totpNow(secretB32) { return hotp(b32decode(secretB32), Math.floor(Date.now() / 1000 / 30)); }
+
+// A password is checked only for the admin account (see sd_auth), so this
+// covers ravi/sam's login: no password is ever sent. Handles both
+// first-ever enrollment (server hands back a `secret`) and a login from an
+// already-trusted device (server hands back a `token` straight away).
+async function enrollAndLogin(identifier) {
+    let r = await post("/api/sd/login", { identifier });
+    if (data(r)?.token) return { token: data(r).token };
+    const secret = data(r)?.secret;
+    r = await post("/api/sd/login", { identifier, totp: totpNow(secret) });
     return { token: data(r)?.token };
 }
 
@@ -90,9 +121,15 @@ async function main() {
     r = await post("/api/sd/setup/start", { org: "Acme Corp", name: "Root Admin", username: adminName, email: `root${sfx}@acme.com`, mobile: "+919886012345" });
     const setupOtp = data(r).devOtp;
     r = await post("/api/sd/setup/verify", { otp: setupOtp });
+    // setup/verify hands back enrollment step 1 (secret + defaultPassword),
+    // not a session yet -- finish TOTP enrollment to get the admin's first
+    // real token, same as any other unenrolled account's first login.
+    const adminSecret = data(r).secret;
+    const defaultPw = data(r).defaultPassword;
+    r = await post("/api/sd/login", { identifier: adminName, password: defaultPw, totp: totpNow(adminSecret) });
     let adminToken = data(r).token;
     // A fresh admin must change the default password before anything else works.
-    r = await post("/api/sd/password/change", { oldPassword: `Sandesh${adminName}`, newPassword: "Str0ngPass99" }, adminToken);
+    r = await post("/api/sd/password/change", { oldPassword: defaultPw, newPassword: "Str0ngPass99" }, adminToken);
     if (!r.json?.ok) { console.log("password change failed:", r.json); process.exit(1); }
     r = await post("/api/sd/login", { identifier: adminName, password: "Str0ngPass99" });
     adminToken = data(r).token;
@@ -112,8 +149,8 @@ async function main() {
     const ravi = `ravi${sfx}`, sam = `sam${sfx}`;
     await A.sd("users.invite", { name: "Ravi", username: ravi, email: `${ravi}@acme.com`, isEmployee: true, branch: "HQ", department: "Eng", designation: "Engineer" });
     await A.sd("users.invite", { name: "Sam", username: sam, email: `${sam}@acme.com`, isEmployee: true, branch: "HQ", department: "Eng", designation: "Engineer" });
-    const RV = await connectAs(ravi, (await loginWithOtp(ravi)).token);
-    const SM = await connectAs(sam, (await loginWithOtp(sam)).token);
+    const RV = await connectAs(ravi, (await enrollAndLogin(ravi)).token);
+    const SM = await connectAs(sam, (await enrollAndLogin(sam)).token);
     ok("ravi connects", RV.first.type === "welcome", RV.first);
     ok("sam connects", SM.first.type === "welcome", SM.first);
 

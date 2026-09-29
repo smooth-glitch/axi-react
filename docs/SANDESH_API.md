@@ -8,10 +8,14 @@ users, hosts, approvals, host-only messaging, groups, message cards, forms
 
 Source of truth is the code in `axi-chat-backend/src/sd_*.erl`. Every
 behaviour described here is exercised by the tests in `axi-chat-backend/test/`
-(`sandesh_test.mjs` 198 checks, `sandesh_session_test.mjs` 13, and
+(`sandesh_test.mjs` 203 checks, `sandesh_session_test.mjs` 14,
+`sandesh_totp_test.mjs` 31, `sandesh_mfa_test.mjs` 41, and
 `integration_test.mjs` 44 for plain chat) — if this doc and the code
 disagree, the test is right; tell the backend owner. Backend internals, env vars and debugging live in
-[`axi-chat-backend/docs/SANDESH.md`](../axi-chat-backend/docs/SANDESH.md).
+[`axi-chat-backend/docs/SANDESH.md`](../axi-chat-backend/docs/SANDESH.md); a
+step-by-step login/signup integration walkthrough (the same content as this
+doc's §3 login section, laid out flow-by-flow) is
+[`axi-chat-backend/docs/LOGIN_INTEGRATION.md`](../axi-chat-backend/docs/LOGIN_INTEGRATION.md).
 
 ---
 
@@ -40,11 +44,15 @@ rules. `/sd me` (or `GET /api/sd/public`) tells you which mode you're on.
 ## 2. The integration in three steps
 
 ```
-1. REST   POST /api/sd/login  {identifier, otp | password}   →  { token, user, … }
+1. REST   POST /api/sd/login  {identifier, password?, totp|emailOtp|recoveryCode?, deviceId?}   →  { token, user, … }
 2. WS     connect, first frame: {"username": <user.username>, "token": <token>}
 3. WS     send  /sd <action> {json}   ←→   {"type":"sd", "ok":…, "data"|"error":…}
           listen for  {"type":"sd_event", "event":…}  pushes
 ```
+
+`password` is required only for admin accounts (see §3's "Login rules"
+below) — everyone else logs in with just `identifier` plus, when due, a
+second-factor code.
 
 `username` in the handshake must equal `user.username` from step 1
 (usernames are lowercase; the backend rejects a token used under a different
@@ -73,10 +81,17 @@ that the person must sign in again. What the frontend sees:
 
 A connection re-checks its session at most every 30 s (on its next command),
 so it can take up to about 30 s after the end time for the socket to close.
-Separately, a **password** login needs a fresh one-time code if the last code
-is older than 14 days (`otp_required`), and an admin's password must be
-changed every 30 days. `GET /api/sd/session` (with the token) restores the
-user after a page reload; a 401 means sign in again.
+
+Separately, from **the same device**, no second-factor code is needed again
+for 14 days after the last one — but this is now tracked **per device**, not
+just per account: a `deviceId` (a stable, client-generated id — see §3's
+"Login rules") that hasn't verified in the last 14 days, or a device the
+backend has never seen, is asked for a code (`totp_required`, or for an
+email-method account, the login call itself sends one — see §3) regardless
+of how recently the account verified somewhere else. An admin's password
+must also be changed every 30 days, independent of device trust. `GET
+/api/sd/session` (with the token) restores the user after a page reload; a
+401 means sign in again.
 
 ### Local dev
 
@@ -133,43 +148,111 @@ Failure: `4xx {"ok":false,"error":{"code":"…","message":"…","details":{…}}
 |---|---|---|
 | `GET /api/sd/public` | — | `{org, setupDone, categories[], branches[], departments[], designations[], affiliates[{name,category,branches[]}]}` — names for the **registration form**, no login needed. `setupDone:false` ⇒ show the first-time setup screen. |
 | `POST /api/sd/setup/start` | `{org, name, username?, email, mobile, setupToken?}` | `{sent, expiresInSec, username, devOtp?}` — validates and sends an OTP. Only works before the org exists. |
-| `POST /api/sd/setup/verify` | `{otp}` | a **session** (below) for the new first administrator. `mustChangePassword` is `true`. |
-| `POST /api/sd/register` | self-registration fields (§5) | `{registered, status:"pending", username, requestId, awaitingApprovalFrom}` |
-| `POST /api/sd/otp/send` | `{identifier}` | `{sent:true, expiresInSec, devOtp?}` or `{sent:false, retryAfter}`. `identifier` = username, email or mobile. Unknown identifiers also get `sent:true` (no account enumeration). |
-| `POST /api/sd/login` | `{identifier, otp}` **or** `{identifier, password}` **or** both | a **session** |
-| `GET /api/sd/session` | header `Authorization: Bearer <token>` | `{user, sessionExpiresTs, password:{hasPassword,expired,mustChange}, otpDue, mode}` — `401` once the 14-day session has ended |
+| `POST /api/sd/setup/verify` | `{otp}` | enrollment step 1 (see "Login rules" below): `{totpSetupRequired:true, mfaMethod:"totp", secret, otpauthUri, issuer, digits, periodSec, recommendedApps, defaultPassword, org, user}`. **Not a session yet** — `POST /api/sd/login` with that password (+ a code, once scanned) produces the admin's first session. |
+| `POST /api/sd/register` | self-registration fields (§5) + `password` | `{registered, status:"pending", username, requestId, awaitingApprovalFrom}` |
+| `POST /api/sd/login` | `{identifier, password?, totp?, emailOtp?, recoveryCode?, deviceId?, mfaMethod?}` | a **session**, or an enrollment/2FA step — see "Login rules" below |
+| `GET /api/sd/session` | header `Authorization: Bearer <token>` | `{user, sessionExpiresTs, password:{hasPassword,expired,mustChange}, totpDue, mode}` — `401` once the 14-day session has ended |
 | `POST /api/sd/logout` | Bearer | `{loggedOut:true}` |
 | `POST /api/sd/password/change` | Bearer; `{oldPassword?, newPassword}` | `{changed:true}` (`oldPassword` not needed if the user has no password yet) |
 | `POST /api/sd/admin/unlock/start` | Bearer | `{sent, …}` — OTP for the admin console |
 | `POST /api/sd/admin/unlock` | Bearer; `{password, otp}` | `{unlockedForSec}` (strict mode only needs this) |
+| `GET /api/sd/2fa/totp` | Bearer | `{enabled, method}` — `method` is `"totp"` or `"email"` |
+| `POST /api/sd/2fa/totp/disable` | Bearer; `{password, code}` | `{disabled:true}` — `code` is the current totp/email code, or a recovery code. The next login re-enrolls (fresh secret or a fresh emailed code, per `mfaMethod`) |
+| `POST /api/sd/2fa/totp/recovery/regenerate` | Bearer; `{password, code}` | `{recoveryCodes:[...10 fresh strings]}`, invalidating every previous code |
+| `POST /api/sd/2fa/email/request` | Bearer | `{sent, expiresInSec, devOtp?}` — **email-method accounts only**: fetches the code to pass as `code` to the two endpoints above (there's nothing to compute locally, unlike an app) |
 
-**Session** = `{token, expiresTs, user, mustChangePassword, otpDue}` (setup
-also adds `org`). `otpDue` means the 14-day OTP re-check is due — a
-password-only login then fails with `otp_required` (an OTP has just been
-sent; retry with `{identifier, password, otp}`).
+**Session** = `{token, expiresTs, user, mustChangePassword, totpDue}` (setup
+also adds `org`). `totpDue` means a code is due again **on this device** — a
+call from it with no code then fails with `totp_required` (totp method) or,
+for an email-method account, sends one automatically (see "Login rules").
 
 ### Login rules (from the spec)
 
 - **Sign in with** email, mobile number or username. Mobiles match however
   they're formatted (`+91 98860 12345` = `919886012345`).
-- **First login = OTP.** Invited users have no password: they sign in with
-  `{identifier, otp}`. After that they may set one (`password/change`).
-- **OTP again every 14 days**, even with a password.
+- **A password is required only for admin accounts.** Every other account's
+  password, if it even set one, is never checked at login — send `password`
+  for an admin, omit it (or send anything) for anyone else.
+- **Every account needs a second factor** — an authenticator-app TOTP code or
+  an emailed OTP code, whichever it enrolled in — but only from a **device
+  this account hasn't verified from in the last 14 days**. A trusted device's
+  login succeeds outright (once any password requirement is met); a new or
+  expired-trust device always asks. See "Enrollment" and "Device trust" below.
 - **Admin:** default password is `"Sandesh" + username`. It must be changed at
   first login (`mustChangePassword`), and again **every 30 days**
   (`/sd me → password.expired`). New passwords: ≥ 8 chars, letters + a digit,
   not the default.
-- **Admin console** = password **and** OTP (`admin/unlock`), in strict mode.
-- **Abuse limits:** OTP valid 5 min, 5 tries per code; resend cooldown 30 s;
-  5 failed logins locks the account for 15 min (`locked`, HTTP 429); per-IP
-  limits on OTP/login/register/setup.
+- **Admin console** = password **and** a delivered OTP (`admin/unlock`), in
+  strict mode — unaffected by any of the above.
+- **Abuse limits:** OTP/TOTP/email-code valid 5 min (TOTP: 30s step, ±1 step
+  drift), 5 tries per code; resend cooldown 30 s; 5 failed logins locks the
+  account for 15 min (`locked`, HTTP 429); per-IP limits on login/register/setup.
+
+#### Enrollment (first-ever login, or after disabling 2FA)
+
+A body of `{identifier, password?}` for an account with no confirmed second
+factor yet doubles as the enrollment flow. Pick the method with an optional
+`mfaMethod` field — `"totp"` (default) or `"email"`:
+
+1. `POST /api/sd/login {identifier, password?}` → **no `token`**. For
+   `mfaMethod:"totp"`: `{totpSetupRequired:true, mfaMethod:"totp", secret,
+   otpauthUri, issuer, digits, periodSec, recommendedApps}` — render
+   `otpauthUri` as a QR code (the `qrcode` npm package works well) and show
+   `secret` as text for manual entry. Re-calling this before finishing gives
+   back the **same** QR — safe to re-hit if the user navigates away.
+   For `mfaMethod:"email"`: `{totpSetupRequired:true, mfaMethod:"email",
+   sent:true, expiresInSec:300, devOtp?}` — a code was just emailed instead;
+   there's no secret/QR. Re-calling resends (30s cooldown:
+   `{sent:false, retryAfter}`).
+
+   `recommendedApps` is `[{name, ios, android}]` — Google Authenticator +
+   Microsoft Authenticator store links, for a "don't have one?" prompt.
+
+2. `POST /api/sd/login {identifier, password?, totp:"123456"}` (or
+   `{..., emailOtp:"123456"}`, whichever step 1 used) → `{token, user,
+   expiresTs, mustChangePassword, recoveryCodes:[...10 strings],
+   totpJustEnabled:true}`. **Show the recovery codes exactly once, right
+   here** — the API never returns them again. Wrong code → `otp_invalid`, let
+   them retry, no need to restart the flow.
+
+`setup/verify` (the very first admin) works the same way — its response *is*
+step 1 above, always `mfaMethod:"totp"`, plus `defaultPassword` (so the
+frontend doesn't have to know the `"Sandesh"+username` convention).
+
+#### Device trust
+
+Pass `deviceId` — an opaque string your client generates once per
+install/browser and persists (e.g. `localStorage`) — in every login call, so
+the backend can recognise "this same device" across logins. Omit it and a
+coarser fallback (derived from the `User-Agent` header) is used instead, so
+things still work before you wire this up, but two browsers/OSes that share
+that fallback would be treated as one device, and a request with neither
+`deviceId` nor a `User-Agent` is **never** treated as returning (always asks
+for a code — fails closed).
+
+Once enrolled, a call from a **known, still-trusted** device succeeds with
+just `{identifier, password?}` — no code needed, `totpSetupRequired` absent,
+`recoveryCodes` absent, ordinary session response. A call from an
+**unrecognised or trust-expired** device:
+- **totp method**: `totp_required` (401). Retry with `{..., totp:"123456"}`,
+  or `{..., recoveryCode:"ABCDE-FGHJK"}` if the device with the app is lost
+  (each recovery code works once, for either method).
+- **email method**: the *same* login call, with no `emailOtp` yet, instead
+  returns `{ok:true, data:{emailOtpRequired:true, mfaMethod:"email",
+  sent:true/false, expiresInSec, retryAfter?, devOtp?}}` — login itself
+  triggers sending the code, since there's nothing to generate locally. Retry
+  with `{..., emailOtp:"123456"}`.
+
+A successful code check trusts that device for another 14 days, independent
+of every other device on the account.
 
 ### First-time setup (spec: "First login")
 
 ```
 GET  /api/sd/public                → setupDone:false → show "Set up your organisation"
 POST /api/sd/setup/start  {org,name,username?,email,mobile}   → OTP sent
-POST /api/sd/setup/verify {otp}   → session; user.role === "admin"; mustChangePassword === true
+POST /api/sd/setup/verify {otp}    → enrollment step 1 (mfaMethod:"totp"); defaultPassword included
+POST /api/sd/login {identifier, password:defaultPassword, totp:"123456"}  → session; mustChangePassword === true
 POST /api/sd/password/change      → then continue
 ```
 
@@ -222,7 +305,7 @@ Arguments are JSON keys in the command; "→" is `data` in the reply.
 
 | Action | Level | Args → Returns |
 |---|---|---|
-| `me` | none | → `{authenticated, mode, sessionExpired, …}`; when signed in also `user, org, sessionExpiresTs, notifications{counts,total,personalBySender}, permissions{isAdmin,isHost,canManageUsers}, pendingRequests, password{hasPassword,expired,mustChange}, otpDue, adminUnlocked` — **one call gives the whole header: who, badges, when to sign in again** |
+| `me` | none | → `{authenticated, mode, sessionExpired, …}`; when signed in also `user, org, sessionExpiresTs, notifications{counts,total,personalBySender}, permissions{isAdmin,isHost,canManageUsers}, pendingRequests, password{hasPassword,expired,mustChange}, totpDue, adminUnlocked` — **one call gives the whole header: who, badges, when to sign in again**. `totpDue` reflects the **calling device's** trust, same as the REST session endpoint |
 
 ### Associates, hosts, approvals
 
@@ -416,8 +499,8 @@ approvers[], data, createdTs, resolvedTs, resolvedBy}` where `status` is
 |---|---|---|
 | `unauthenticated` | 401 | no/expired session, or the connection has no Sandesh session |
 | `session_expired` | 401 | the connection *was* signed in but its 14-day session has ended — sign in again |
-| `invalid_credentials` | 401 | wrong details (same answer for unknown user — no enumeration) |
-| `otp_required` | 401 | 14-day OTP check is due; an OTP was just sent |
+| `invalid_credentials` | 401 | wrong password (admin accounts), or unknown identifier (same answer either way — no enumeration) |
+| `totp_required` | 401 | this device's 2FA trust is due; send `totp` or `recoveryCode` (totp-method accounts only — an email-method account gets an `ok:true` response with `emailOtpRequired` instead, see §3) |
 | `otp_invalid` / `otp_locked` | 401 / 429 | wrong or expired code / too many wrong codes |
 | `locked` / `rate_limited` | 429 | too many attempts / requests |
 | `forbidden` | 403 | signed in but not allowed |
@@ -444,7 +527,7 @@ approvers[], data, createdTs, resolvedTs, resolvedBy}` where `status` is
 | User self-registration → host approval | `/api/sd/register`, `req.list`, `req.respond` |
 | User associations ("message only your host"; invitations; host transfer) | `assoc.*`, `host.transfer`, strict-mode DM rule |
 | User groups (host creates; invitee's host approves) | `/creategroup`, `/addmember`, `group_invite` requests |
-| User login (email/mobile, OTP every 2 weeks) | `/api/sd/login`, `/api/sd/otp/send` |
+| User login (email/mobile; password for admins only; 2FA every 2 weeks per device) | `/api/sd/login`, `/api/sd/2fa/*` |
 | Admin console (listings, activate/deactivate, host change, admins, password) | `admin.*`, `/api/sd/admin/unlock`, `password/change` |
 | Messaging | existing chat protocol |
 | Setup application connections | `admin.appconn.*` |
