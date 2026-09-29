@@ -9,12 +9,26 @@ function ScannerOverlay({ onDetected, onClose }) {
   const [error, setError] = useState(null);
   const scannerRef = useRef(null);
   const stoppedRef = useRef(false);
+  const tracksRef = useRef([]);
+
+  // Privacy: the camera must be off the moment scanning ends (a code was read, the dialog was
+  // closed, or it unmounted). Stop the underlying media tracks directly -- synchronously -- rather
+  // than relying only on Html5Qrcode.stop(), which is async and is skipped while start() is pending.
+  const releaseCamera = () => {
+    try {
+      tracksRef.current.forEach((t) => t.stop());
+    } catch (_) {
+      /* already stopped */
+    }
+    tracksRef.current = [];
+  };
 
   // Html5Qrcode.stop() THROWS SYNCHRONOUSLY (not a rejected promise) when called on a scanner
   // whose start() never actually got going (e.g. camera permission denied) -- calling it
   // unconditionally from a useEffect cleanup crashes the whole app with no error boundary to
   // catch it. Only stop() a scanner that's actually running, and never let this throw.
   const safeStop = (qr) => {
+    releaseCamera();
     try {
       if (qr?.isScanning) {
         qr.stop()
@@ -68,6 +82,14 @@ function ScannerOverlay({ onDetected, onClose }) {
               // per-frame "no code found" -- expected while aiming the camera, not an error
             }
           )
+          .then(() => {
+            // Remember the live camera tracks so they can be shut off synchronously.
+            const video = document.getElementById(domId)?.querySelector("video");
+            tracksRef.current = video?.srcObject?.getTracks?.() || [];
+            // Closed while the camera was still starting: it just turned on after the dialog is
+            // gone, so turn it straight back off.
+            if (cancelled || stoppedRef.current) safeStop(qr);
+          })
           .catch((err) => {
             if (cancelled) return;
             setError(
@@ -85,6 +107,7 @@ function ScannerOverlay({ onDetected, onClose }) {
       cancelled = true;
       stoppedRef.current = true;
       safeStop(scannerRef.current);
+      releaseCamera();
     };
   }, [domId, onDetected]);
 
