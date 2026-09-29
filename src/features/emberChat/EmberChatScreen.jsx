@@ -29,6 +29,7 @@ import {
   authorizedUsers,
 } from "./data/sampleData.js";
 import { sandeshSocket } from "../../services/sandeshSocket.js";
+import { sandeshApi } from "../../services/sandeshApi.js";
 import { formatServerMessage } from "./utils/serverMessageFormatter.js";
 import "./EmberChat.css";
 
@@ -39,16 +40,18 @@ const formatTs = (ts) => {
 };
 
 export function EmberChatScreen({ onOpenAiChat }) {
-  // Authorized session user. Fall back to null if no valid session for authorized personnel
+  // Authorized session user. Check localStorage for active Sandesh session
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem("sandesh_session_user");
       if (saved) {
         const parsed = JSON.parse(saved);
-        const match = authorizedUsers.find(
-          (u) => u.username.toLowerCase() === (parsed.username || "").toLowerCase()
-        );
-        if (match) return { ...match, ...parsed };
+        if (parsed && (parsed.token || parsed.username || parsed.name)) {
+          const match = authorizedUsers.find(
+            (u) => (u.username || "").toLowerCase() === (parsed.username || "").toLowerCase()
+          );
+          return match ? { ...match, ...parsed } : parsed;
+        }
       }
     } catch {
       // ignore
@@ -1847,6 +1850,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
   };
 
   const handleSignOut = () => {
+    if (currentUser?.token) {
+      sandeshApi.logout(currentUser.token).catch(() => {});
+    }
     sandeshSocket.disconnect();
     setCurrentUser(null);
     try {
@@ -1856,6 +1862,29 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
     pushToast("Signed out of Sandesh");
   };
+
+  useEffect(() => {
+    if (!currentUser?.token) return;
+    let isMounted = true;
+    sandeshApi.getSession(currentUser.token).then((res) => {
+      if (!isMounted) return;
+      if (!res.ok) {
+        if (res.error?.code === "unauthenticated" || res.error?.status === 401) {
+          pushToast("Session expired. Please sign in again.");
+          handleSignOut();
+        }
+      } else if (res.data?.user) {
+        setCurrentUser((prev) => ({
+          ...prev,
+          ...res.data.user,
+          mustChangePassword: !!res.data.password?.mustChange,
+        }));
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.token]);
 
   if (!currentUser) {
     return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} />;

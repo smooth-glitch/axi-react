@@ -611,6 +611,207 @@
   color: var(--sandesh-text-subtle);
 }
 
+/* 2FA & Multi-factor Enrollment & Challenge Styles */
+.sandesh-auth-subcard {
+  animation: sandeshFadeIn 0.25s ease-out;
+}
+
+@keyframes sandeshFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sandesh-flow-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 122, 89, 0.12);
+  color: var(--sandesh-coral-accent);
+  padding: 4px 10px;
+  border-radius: var(--sandesh-radius-full);
+  font-size: 11.5px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.sandesh-qr-box {
+  background: #ffffff;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(255, 122, 89, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  width: fit-content;
+  margin: 12px auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sandesh-qr-img {
+  width: 170px;
+  height: 170px;
+  display: block;
+  border-radius: 8px;
+}
+
+.sandesh-secret-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px dashed rgba(255, 122, 89, 0.4);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.sandesh-secret-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  color: #1e293b;
+  user-select: all;
+  word-break: break-all;
+}
+
+.sandesh-recommended-apps {
+  margin: 12px 0 16px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 10px;
+  border: 1px solid rgba(240, 205, 185, 0.6);
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.sandesh-apps-links {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.sandesh-app-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sandesh-coral-accent);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 122, 89, 0.1);
+  transition: background 0.15s ease;
+}
+
+.sandesh-app-link-btn:hover {
+  background: rgba(255, 122, 89, 0.2);
+}
+
+.sandesh-recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 16px 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.sandesh-recovery-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(230, 200, 185, 0.7);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: 0.5px;
+}
+
+.sandesh-recovery-index {
+  font-size: 10.5px;
+  color: var(--sandesh-text-subtle);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.sandesh-device-bar {
+  margin-top: 14px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--sandesh-text-subtle);
+}
+
+.sandesh-device-id-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10.5px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.sandesh-dev-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sandesh-dev-chip:hover {
+  background: rgba(16, 185, 129, 0.22);
+}
+
+.sandesh-pw-meter {
+  height: 4px;
+  border-radius: 2px;
+  background: #e2e8f0;
+  margin-top: 5px;
+  overflow: hidden;
+}
+
+.sandesh-pw-bar {
+  height: 100%;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.sandesh-actions-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sandesh-actions-group > * {
+  flex: 1;
+}
+
+.sandesh-subtext-muted {
+  font-size: 12px;
+  color: var(--sandesh-text-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+  text-align: left;
+}
+
 /* ==========================================================================
    SANDESH 3D GLASS CHAT WINDOW & SHELL
    ========================================================================== */
