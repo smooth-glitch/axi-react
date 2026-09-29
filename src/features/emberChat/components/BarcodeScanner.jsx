@@ -42,6 +42,13 @@ function ScannerOverlay({ onDetected, onClose }) {
     let cancelled = false;
     stoppedRef.current = false;
 
+    // Browsers expose the camera only on HTTPS or localhost; on plain http://<ip> there is no
+    // navigator.mediaDevices at all, so say so instead of a vague "could not start" error.
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setError("Camera access needs a secure (HTTPS) connection. Open this app over https:// to scan.");
+      return undefined;
+    }
+
     import("html5-qrcode")
       .then(({ Html5Qrcode }) => {
         if (cancelled) return;
