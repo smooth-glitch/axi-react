@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { listStructs } from '../core/api';
+import { useLiveChanges } from '../ui/hooks';
 
 const StructsContext = createContext({ structs: null, error: null, refresh: () => {} });
 export const useStructs = () => useContext(StructsContext);
@@ -22,6 +23,11 @@ export function StructsProvider({ children }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // any struct or record changing anywhere updates the sidebar, counts and definitions at once
+  useLiveChanges((c) => {
+    if (c.event === 'tstructs_changed' || c.event === 'submissions_changed' || c.event === 'resync') refresh();
+  });
 
   return <StructsContext.Provider value={{ structs, error, refresh }}>{children}</StructsContext.Provider>;
 }

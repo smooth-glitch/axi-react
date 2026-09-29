@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
+import { useLiveChanges } from "../../utils/useLiveChanges.js";
 
 // Admin: lite-tstruct form definitions (admin.tstruct.*). See docs/LITE_TSTRUCT.md.
 
@@ -152,6 +153,11 @@ export default function AdminFormsPanel({ pushToast }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // another admin (or a user-made change) altered the forms: refresh the list; an open editor is left alone
+  useLiveChanges((c) => {
+    if (c.event === "tstructs_changed" || c.event === "resync") load();
+  });
 
   const fail = (res) => pushToast({ type: "sd", ok: false, error: res.error });
 

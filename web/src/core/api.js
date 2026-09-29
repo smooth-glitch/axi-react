@@ -390,6 +390,22 @@ function toApiError(err) {
   return e;
 }
 
+// ─── Live changes ─────────────────────────────────────────────────────────────
+// The server pushes small "something changed" events over the shared socket (tstructs_changed, options_changed,
+// submissions_changed). Screens re-read what they show when one arrives, so a change made anywhere -- the chat, the
+// admin console, another user -- appears everywhere at once. `resync` is delivered after a reconnect, since events
+// sent while offline are lost.
+const LIVE_EVENTS = new Set(['tstructs_changed', 'options_changed', 'submissions_changed']);
+
+export function subscribeChanges(handler) {
+  const shared = _client._shared;
+  if (!shared || typeof shared.subscribe !== 'function') return () => {};
+  return shared.subscribe((ev) => {
+    if (ev?.type === 'sd_event' && LIVE_EVENTS.has(ev.event)) handler({ event: ev.event, ...(ev.data || {}) });
+    else if (ev?.type === 'status_change' && ev.status === 'connected') handler({ event: 'resync' });
+  });
+}
+
 // ─── Structs API ──────────────────────────────────────────────────────────────
 // Two kinds of form can be opened: structures users created (tstruct.user.*, open to everyone) and forms an
 // administrator defined (tstruct.get / tstruct.submit, only for users an option offers them to). `scopeByName`

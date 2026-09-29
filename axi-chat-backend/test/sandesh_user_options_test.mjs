@@ -57,9 +57,11 @@ async function connect(username, token) {
     const ws = new WebSocket(WS_URL);
     const waiters = new Map();
     let seq = 0;
+    const events = [];
     ws.onmessage = (e) => {
         let m; try { m = JSON.parse(e.data); } catch { return; }
         if (m.type === "sd" && waiters.has(m.reqId)) { waiters.get(m.reqId)(m); waiters.delete(m.reqId); }
+        if (m.type === "sd_event") events.push(m);
     };
     await new Promise((res) => { ws.onopen = res; });
     ws.send(JSON.stringify({ username, token }));
@@ -72,6 +74,10 @@ async function connect(username, token) {
             ws.send(`/sd ${action} ${JSON.stringify({ ...args, reqId: id })}`);
         }),
         close: () => { try { ws.close(); } catch { /* */ } },
+        events,
+        // live change events of one kind, since the last clear
+        got: (event, pred = () => true) => events.filter((m) => m.event === event && pred(m.data)),
+        clear: () => { events.length = 0; },
     };
 }
 
@@ -112,7 +118,8 @@ async function main() {
         const m = await AD.sd("users.invite", args);
         if (!m.ok) console.log("invite failed", u, m.error);
         const e = await enroll(u, `Sandesh${u}`);
-        return { name: u, token: e.token, sd: (await connect(u, e.token)).sd };
+        const c = await connect(u, e.token);
+        return { name: u, token: e.token, sd: c.sd, got: c.got, clear: c.clear, events: c.events };
     };
     const ann = await mk(`ann${sfx}`);            // employee, creator of things
     const bob = await mk(`bob${sfx}`);            // employee, someone else
@@ -273,6 +280,88 @@ async function main() {
     m = await AD.sd("admin.option.delete", { id: dlOpt });
     res = await http("GET", "/api/sd/files/" + fileId, undefined, AD && adminTok);
     ok("an administrator can always read any file", res.status === 200, res.status);
+
+    console.log("\n=== Live change events: every change reaches the others without a refresh ===");
+    const everyone = [ann, bob, cit, AD];
+    const clearAll = () => everyone.forEach((u) => u.clear());
+    const settle = () => sleep(500);
+    const only = (users, event, pred) => users.every((u) => u.got(event, pred).length === 1);
+    const none = (users, event, pred) => users.every((u) => u.got(event, pred).length === 0);
+
+    clearAll();
+    m = await ann.sd("tstruct.user.save", { name: "live1", caption: "Live", fields: [{ name: "a", type: "text", caption: "A" }] });
+    await settle();
+    ok("creating a structure -> tstructs_changed(created, scope user) reaches EVERYONE online (incl. the actor)",
+        only(everyone, "tstructs_changed", (d) => d.name === "live1" && d.action === "created" && d.scope === "user" && d.by === ann.name), everyone.map((u) => u.events));
+    clearAll();
+    m = await ann.sd("tstruct.user.update", { name: "live1", caption: "Live 2", fields: [{ name: "a", type: "text", caption: "A" }] });
+    await settle();
+    ok("editing it -> tstructs_changed(updated) reaches everyone", only(everyone, "tstructs_changed", (d) => d.name === "live1" && d.action === "updated"));
+    clearAll();
+    m = await bob.sd("tstruct.user.update", { name: "live1", caption: "nope", fields: [{ name: "a", type: "text" }] });
+    await settle();
+    ok("a REFUSED edit sends nothing to anyone", !m.ok && everyone.every((u) => u.events.filter((x) => x.event === "tstructs_changed").length === 0), everyone.map((u) => u.events));
+    m = await bob.sd("tstruct.user.save", { name: "live1", fields: [{ name: "a", type: "text" }] });
+    ok("a duplicate name (rejected) sends nothing either", !m.ok && everyone.every((u) => u.events.filter((x) => x.event === "tstructs_changed").length === 0));
+
+    clearAll();
+    m = await ann.sd("option.user.save", { caption: "Live opt", type: "data_input", target: "live1", applicable: { categories: ["Employee"] } });
+    const liveOpt = m.data.option.id;
+    await settle();
+    ok("saving an option -> options_changed(saved) reaches everyone (each client re-asks options.list; the server applies applicable-to)",
+        only(everyone, "options_changed", (d) => d.id === liveOpt && d.action === "saved"), everyone.map((u) => u.events));
+    m = await bob.sd("options.list");
+    ok("...and bob's re-read shows it at once", m.ok && m.data.options.some((o) => o.id === liveOpt), m);
+    m = await cit.sd("options.list");
+    ok("...while the citizen's re-read does NOT (applicable-to still in force)", m.ok && !m.data.options.some((o) => o.id === liveOpt), m);
+    clearAll();
+    m = await bob.sd("option.user.delete", { id: liveOpt });
+    await settle();
+    ok("a refused option delete sends nothing", !m.ok && everyone.every((u) => u.events.filter((x) => x.event === "options_changed").length === 0));
+    m = await ann.sd("option.user.delete", { id: liveOpt });
+    await settle();
+    ok("deleting an option -> options_changed(deleted) reaches everyone", only(everyone, "options_changed", (d) => d.id === liveOpt && d.action === "deleted"));
+
+    // submissions: only the people who can see them (submitter, host, admins)
+    clearAll();
+    m = await bob.sd("tstruct.user.submit", { name: "live1", values: { a: "hello" } });
+    const liveSub = m.data.submission.id;
+    await settle();
+    ok("a submission -> submissions_changed(created) reaches its submitter (bob) and admins (his host is the admin)",
+        only([bob, AD], "submissions_changed", (d) => d.id === liveSub && d.action === "created" && d.tstruct === "live1" && d.by === bob.name), [bob, AD].map((u) => u.events));
+    ok("...and NOT unrelated users (ann, the citizen)", none([ann, cit], "submissions_changed"), [ann, cit].map((u) => u.events));
+    clearAll();
+    m = await bob.sd("submissions.update", { id: liveSub, values: { a: "hello 2" } });
+    await settle();
+    ok("editing it -> submissions_changed(updated) to bob and the admin", only([bob, AD], "submissions_changed", (d) => d.id === liveSub && d.action === "updated") && none([ann, cit], "submissions_changed"));
+    clearAll();
+    m = await ann.sd("submissions.delete", { id: liveSub });
+    await settle();
+    ok("someone else's delete is refused and sends nothing", !m.ok && everyone.every((u) => u.events.filter((x) => x.event === "submissions_changed").length === 0));
+    m = await bob.sd("submissions.delete", { id: liveSub });
+    await settle();
+    ok("deleting it -> submissions_changed(deleted) to bob and the admin (host read BEFORE it vanished)", only([bob, AD], "submissions_changed", (d) => d.id === liveSub && d.action === "deleted") && none([ann, cit], "submissions_changed"));
+
+    // admin-defined forms and options
+    clearAll();
+    m = await AD.sd("admin.tstruct.save", { name: "livepay", caption: "Pay", fields: [{ name: "amt", type: "number", caption: "Amt" }] });
+    await settle();
+    ok("admin saves a form -> tstructs_changed(saved, scope admin) to everyone", only(everyone, "tstructs_changed", (d) => d.name === "livepay" && d.scope === "admin" && d.action === "saved"), everyone.map((u) => u.events));
+    clearAll();
+    m = await AD.sd("admin.option.save", { id: "livepay-opt", caption: "Pay", type: "data_input", target: "livepay" });
+    await settle();
+    ok("admin saves an option -> options_changed to everyone", only(everyone, "options_changed", (d) => d.id === "livepay-opt" && d.action === "saved"));
+    clearAll();
+    m = await AD.sd("admin.option.delete", { id: "livepay-opt" });
+    m = await AD.sd("admin.tstruct.delete", { name: "livepay" });
+    await settle();
+    ok("admin deletes the option and the form -> both are announced to everyone",
+        only(everyone, "options_changed", (d) => d.id === "livepay-opt" && d.action === "deleted") && only(everyone, "tstructs_changed", (d) => d.name === "livepay" && d.action === "deleted"), everyone.map((u) => u.events));
+    clearAll();
+    m = await ann.sd("tstruct.user.delete", { name: "live1" });
+    await settle();
+    ok("deleting a user-made structure -> tstructs_changed(deleted) to everyone", only(everyone, "tstructs_changed", (d) => d.name === "live1" && d.action === "deleted"));
+    ok("events carry no field data (only what changed)", everyone.every((u) => u.events.every((x) => !("fields" in (x.data || {})) && !("values" in (x.data || {})))));
 
     console.log("\n=== Adversarial ===");
     // hostile file names must not break out of the header or the directory
