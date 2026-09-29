@@ -14,7 +14,7 @@
          rand_token/0, rand_digits/1, jenc/1, jdec/1,
          seal/1, unseal/1,
          get/2, get/3, put_if/3, is_true/1, take/2, uniq/1,
-         mode/0, strict/0]).
+         mode/0, strict/0, require_session/0]).
 -include_lib("kernel/include/logger.hrl").
 
 %% ---- coercion --------------------------------------------------------------
@@ -167,5 +167,11 @@ mode() ->
         "strict" -> strict;
         _ -> open
     end.
+
+%% SANDESH_REQUIRE_SESSION=1 (or strict mode): every WebSocket connection must present a real, live Sandesh
+%% session for exactly the username it claims. Without it, open mode accepts ANY username with ANY token, so
+%% anyone who can reach the socket could connect as an existing user and read their private history.
+require_session() ->
+    strict() orelse os:getenv("SANDESH_REQUIRE_SESSION") =:= "1".
 
 strict() -> mode() =:= strict.
