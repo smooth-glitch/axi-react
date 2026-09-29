@@ -749,6 +749,8 @@ ws_loop(Socket, Name, Buf) ->
             ws_loop(Socket, Name, Buf);
         sd_disconnect ->
             sd_end_connection(Socket, Name, "disconnected", "account_deactivated");
+        sd_replaced ->
+            sd_end_connection(Socket, Name, "session_replaced", "signed_in_elsewhere");
         {chat_message, Id, Ts, From, Text, ReplyTo} ->
             ws_send_chat(Socket, "chat", Id, Ts, From, Text, ReplyTo),
             ws_loop(Socket, Name, Buf);

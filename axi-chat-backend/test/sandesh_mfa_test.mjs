@@ -177,7 +177,7 @@ async function main() {
     r = await post("/api/sd/login", { identifier: adminName, password: defaultPw, emailOtp: enrollCode, deviceId: "device-email" });
     ok("correct enrollment code -> enrolled + logged in + recovery codes", r.status === 200 && !!data(r).token && data(r).totpJustEnabled === true && Array.isArray(data(r).recoveryCodes) && data(r).recoveryCodes.length === 10, r);
     const emailRecoveryCodes = data(r).recoveryCodes;
-    const emailToken = data(r).token;
+    let emailToken = data(r).token; // reassigned below: each later login supersedes the previous session
 
     r = await get("/api/sd/2fa/totp", emailToken);
     ok("GET status reports method:email", r.status === 200 && data(r).enabled === true && data(r).method === "email", r);
@@ -198,6 +198,7 @@ async function main() {
     console.log("=== A recovery code still works for an email-method account ===");
     r = await post("/api/sd/login", { identifier: adminName, password: defaultPw, recoveryCode: emailRecoveryCodes[0], deviceId: "device-recovery" });
     ok("recovery code logs in from a brand-new device", r.status === 200 && !!data(r).token, r);
+    emailToken = data(r).token;
     r = await post("/api/sd/login", { identifier: adminName, password: defaultPw, recoveryCode: emailRecoveryCodes[0], deviceId: "device-recovery-2" });
     ok("reusing the same recovery code from another device -> rejected", r.status === 401 && code(r) === "otp_invalid", r);
 

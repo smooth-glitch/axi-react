@@ -511,12 +511,26 @@ start_session(User, DeviceKey) ->
     sd_db:setex_json(["sd:sess:", Token], Ttl,
                      #{<<"username">> => Username, <<"createdTs">> => Now, <<"expiresTs">> => Expires,
                        <<"deviceKey">> => DeviceKey}),
+    revoke_previous_session(Username, Token, Ttl),
     State = password_state(Username),
     #{<<"token">> => Token,
       <<"expiresTs">> => Expires,
       <<"user">> => sd_users:full(User),
       <<"mustChangePassword">> => maps:get(<<"mustChange">>, State),
       <<"totpDue">> => not device_trusted(Username, DeviceKey)}.
+
+%% One active session per account: signing in ends the previous session, so any
+%% other tab/browser/device holding it is signed out (its live connection is
+%% told `session_replaced`; an offline client finds out on its next request).
+revoke_previous_session(Username, NewToken, Ttl) ->
+    Key = ["sd:usersess:", Username],
+    case sd_db:get(Key) of
+        Old when is_binary(Old), Old =/= NewToken ->
+            sd_db:del(["sd:sess:", Old]),
+            catch sd_notify:replaced(Username);
+        _ -> ok
+    end,
+    sd_db:setex(Key, Ttl, NewToken).
 
 %% Session info without side effects: {ok, User, #{mustChange}} | error.
 session(Token) when is_binary(Token), Token =/= <<>> ->

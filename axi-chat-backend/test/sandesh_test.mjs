@@ -198,6 +198,7 @@ async function main() {
     admin.token = data(r).token;
     r = await post("/api/sd/login", { identifier: "+91 98860 12345", password: "Str0ngPass99" });
     ok("login by MOBILE (formatted differently) works", r.status === 200, r);
+    admin.token = data(r).token; // one active session per account: this login superseded the email one
     r = await http("GET", "/api/sd/session", undefined, admin.token);
     ok("GET /session returns the user", r.status === 200 && data(r).user.username === adminName);
     r = await http("GET", "/api/sd/session", undefined, "garbage-token");
@@ -210,7 +211,7 @@ async function main() {
     c = await connectAs("someoneelse", admin.token);
     ok("strict: a valid token for a DIFFERENT username is refused", c.first.type === "error" && /different username/i.test(c.first.text), c.first);
     c.close();
-    const A = await connectAs(adminName, admin.token);
+    let A = await connectAs(adminName, admin.token);
     ok("valid session + matching username connects", A.first.type === "welcome");
     let m = await A.sd("me");
     ok("/sd me identifies the admin", m.ok && m.data.authenticated && m.data.permissions.isAdmin && m.data.mode === "strict", m);
@@ -280,7 +281,9 @@ async function main() {
     const P = await enrollAndLogin(priya);
     ok("invited user's first login (default password) hands back a QR to enroll", P.start.status === 200 && !!P.secret && !data(P.start).token, P.start);
     ok("password + that secret's code finishes enrollment and logs in", P.login.status === 200 && !!P.token && data(P.login).totpJustEnabled === true, P.login);
-    ok("password-only login is now accepted (fresh TOTP window)", (await post("/api/sd/login", { identifier: priya, password: "NewPass99" })).status === 200);
+    const priyaPwOnly = await post("/api/sd/login", { identifier: priya, password: "NewPass99" });
+    ok("password-only login is now accepted (fresh TOTP window)", priyaPwOnly.status === 200);
+    P.token = data(priyaPwOnly).token; // that login superseded the enrollment session (one active session per account)
     const S = await enrollAndLogin(sam);
     ok("second invited user enrolls + logs in", !!S.token, S.login);
     // A password is checked only for admin accounts now (see sd_auth's
@@ -296,6 +299,16 @@ async function main() {
     // original throwaway-user version of this test.
     r = await post("/api/sd/login", { identifier: adminName, password: "Str0ngPass99" });
     ok("(reset) admin's device is still trusted -- password-only login still works", r.status === 200 && !!data(r).token, r);
+    // One active session per account: that login ended the session A was opened with
+    // (its connection got session_replaced and was closed). Adopt the new session.
+    admin.token = data(r).token;
+    try { A.close(); } catch { /* already closed by the server */ }
+    A = await connectAs(adminName, admin.token);
+    ok("admin's client reconnects on the new session", A.first.type === "welcome", A.first);
+    // The admin-console unlock belongs to the session it was done on, so the new session must unlock again.
+    m = await A.sd("admin.unlock.start");
+    m = await A.sd("admin.unlock", { password: "Str0ngPass99", otp: m.data.devOtp });
+    ok("the new session unlocks the admin console again (unlock is per session)", m.ok, m);
     let last;
     for (let i = 0; i < 5; i++) last = await post("/api/sd/login", { identifier: adminName, password: "totally-wrong-1" });
     ok("wrong passwords are rejected (admin accounts only)", last.status === 401 && code(last) === "invalid_credentials", last);

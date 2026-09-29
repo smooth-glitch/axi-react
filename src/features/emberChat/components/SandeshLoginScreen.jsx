@@ -81,7 +81,7 @@ function RefSelect({ label, icon: Icon, value, onChange, options, required, empt
   );
 }
 
-export default function SandeshLoginScreen({ onLoginSuccess }) {
+export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
   const [activeTab, setActiveTab] = useState("signin"); // "signin" | "first_admin" | "self_reg"
 
   // Public backend config & status
@@ -147,6 +147,11 @@ export default function SandeshLoginScreen({ onLoginSuccess }) {
 
   // Countdown timers for email OTP resend
   const [emailCooldown, setEmailCooldown] = useState(0);
+
+  // Why the user is back here (signed in elsewhere, session expired, ...)
+  useEffect(() => {
+    if (notice) setErrorMsg(notice);
+  }, [notice]);
 
   // Listen to device ID rotation
   useEffect(() => {

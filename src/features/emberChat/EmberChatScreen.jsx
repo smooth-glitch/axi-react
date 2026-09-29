@@ -131,6 +131,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const [forwardTargetMsg, setForwardTargetMsg] = useState(null);
   const [selectedPrompt, setSelectedPrompt] = useState(null);
   const [editingSubmission, setEditingSubmission] = useState(null);
+  // Shown on the sign-in screen after the session was ended by the server / another sign-in.
+  const [loginNotice, setLoginNotice] = useState("");
   const [composerPrefill, setComposerPrefill] = useState("");
   const [mediaPanelConfig, setMediaPanelConfig] = useState(null);
   const [toasts, setToasts] = useState([]);
@@ -801,6 +803,16 @@ export function EmberChatScreen({ onOpenAiChat }) {
         (event.event === "request_created" || event.event === "request_resolved")
       ) {
         refreshApprovals();
+      } else if (event.type === "sd_event" && event.event === "session_replaced") {
+        forceSignOut("You were signed out because this account signed in on another tab or device.");
+      } else if (event.type === "sd_event" && event.event === "session_expired") {
+        forceSignOut("Your session has ended. Please sign in again.");
+      } else if (
+        event.type === "sd_event" &&
+        event.event === "disconnected" &&
+        event.reason === "account_deactivated"
+      ) {
+        forceSignOut("This account has been deactivated. Please contact your administrator.");
       } else if (event.type === "cmd_catalog" && Array.isArray(event.commands)) {
         setCatalog(event.commands);
       } else if (event.type === "cmd_help" && event.command) {
@@ -1837,6 +1849,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
     sandeshSocket.disconnect();
     setCurrentUser(null);
+    setLoginNotice("");
     try {
       localStorage.removeItem("sandesh_session_user");
     } catch {
@@ -1845,94 +1858,54 @@ export function EmberChatScreen({ onOpenAiChat }) {
     pushToast("Signed out of Sandesh");
   };
 
+  // The server ended this session (signed in elsewhere, expired, deactivated).
+  // Nothing to log out server-side; just drop local state and say why on the sign-in screen.
+  const forceSignOut = (message) => {
+    sandeshSocket.disconnect();
+    try {
+      // Another tab of this browser may have just signed in and stored a NEW session;
+      // only clear storage if it still holds the one that was ended.
+      const saved = JSON.parse(localStorage.getItem("sandesh_session_user") || "null");
+      if (!saved || saved.token === currentUser?.token) localStorage.removeItem("sandesh_session_user");
+    } catch {
+      // ignore
+    }
+    setLoginNotice(message);
+    setCurrentUser(null);
+  };
+
   useEffect(() => {
-    if (!currentUser?.token) return;
+    if (!currentUser?.token) return undefined;
     let isMounted = true;
-    sandeshApi.getSession(currentUser.token).then((res) => {
-      if (!isMounted) return;
-      if (!res.ok) {
-        if (res.error?.code === "unauthenticated" || res.error?.status === 401) {
-          pushToast("Session expired. Please sign in again.");
-          handleSignOut();
+    const check = () =>
+      sandeshApi.getSession(currentUser.token).then((res) => {
+        if (!isMounted) return;
+        if (!res.ok) {
+          if (res.error?.code === "unauthenticated" || res.error?.status === 401) {
+            forceSignOut("You were signed out because this session ended. Please sign in again.");
+          }
+        } else if (res.data?.user) {
+          // Backend `status` is the account state ("active"), not the UI presence
+          // status ("Available"/"Away"), so keep the local one.
+          const { status: _accountStatus, ...serverUser } = res.data.user;
+          setCurrentUser((prev) => ({
+            ...prev,
+            ...serverUser,
+            mustChangePassword: !!res.data.password?.mustChange,
+          }));
         }
-      } else if (res.data?.user) {
-        // Backend `status` is the account state ("active"), not the UI presence
-        // status ("Available"/"Away"), so keep the local one.
-        const { status: _accountStatus, ...serverUser } = res.data.user;
-        setCurrentUser((prev) => ({
-          ...prev,
-          ...serverUser,
-          mustChangePassword: !!res.data.password?.mustChange,
-        }));
-      }
-    });
+      });
+    check();
+    // Fallback for a missed live event (socket down/asleep): notice a revoked session within a minute.
+    const timer = setInterval(check, 60000);
     return () => {
       isMounted = false;
+      clearInterval(timer);
     };
-  }, [currentUser?.token]);
-
-  const refreshApprovals = useCallback(async () => {
-    const res = await sandeshSocket.sd("req.list", { status: "all" });
-    if (!res.ok) return;
-    const requests = res.data?.requests || [];
-    // Onboarding requests only carry the applicant's username; admins can look
-    // up the rest of their profile so the approver sees who they're approving.
-    let profiles = {};
-    if (requests.some((r) => r.type === "onboarding")) {
-      const list = await sandeshSocket.sd("admin.users.list", { status: "all", pageSize: 200 });
-      if (list.ok) {
-        profiles = Object.fromEntries((list.data?.users || []).map((u) => [u.username, u]));
-      }
-    }
-    setApprovals(mapServerRequests(requests, profiles));
-  }, []);
-
-  const respondToApproval = async (reqId, action, reqItem) => {
-    const res = await sandeshSocket.sd("req.respond", { id: Number(reqId), action });
-    if (!res.ok) {
-      pushToast({ type: "sd", ok: false, error: res.error });
-      await refreshApprovals();
-      return;
-    }
-    const target = reqItem || approvals.find((r) => r.id === reqId);
-    const who = target?.username ? `@${target.username}` : `request #${reqId}`;
-    if (action === "accept") pushToast(`✓ Approved ${who}.`);
-    else if (action === "reject") pushToast(`✕ Rejected ${who}.`);
-    else pushToast(`Request #${reqId} dismissed`);
-    await refreshApprovals();
-    if (action === "accept") sandeshSocket.send("#associates");
-  };
-
-  const handleAcceptApproval = (reqId, reqItem) => respondToApproval(reqId, "accept", reqItem);
-  const handleRejectApproval = (reqId, reqItem) => respondToApproval(reqId, "reject", reqItem);
-  const handleIgnoreApproval = (reqId) => respondToApproval(reqId, "ignore");
-
-  const handleStartChatWithUser = (userReq) => {
-    const uName = userReq.username || userReq.fromUser || userReq.name;
-    const chatId = `user-${String(uName).toLowerCase()}`;
-    const existing = chats.find((c) => c.id === chatId);
-    if (!existing) {
-      const newChat = {
-        id: chatId,
-        name: userReq.name || uName,
-        username: uName,
-        isGroup: false,
-        category: "associate",
-        designation: userReq.designation || "Enterprise Associate",
-        preview: "Chat initiated",
-        time: "now",
-        unread: 0,
-        initials: String(userReq.name || uName).slice(0, 2).toUpperCase(),
-        color: "#34c759",
-      };
-      setChats((prev) => [newChat, ...prev]);
-    }
-    setActiveChatId(chatId);
-    setModal(null);
-  };
+  }, [currentUser?.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!currentUser) {
-    return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} />;
+    return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} notice={loginNotice} />;
   }
 
   const currentGroupMembersRaw =
