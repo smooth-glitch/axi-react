@@ -156,6 +156,7 @@ export default function DynamicForm({ struct, onSubmit, onCancel, submitLabel = 
   const [errorVersion, setErrorVersion] = useState(0); // bumps on every failed submit, re-opens collapsed sections
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [fieldBanner, setFieldBanner] = useState(false);
   const [bubbleRef, bubbleWidth] = useElementWidth();
   const gridWidth = Math.max(0, bubbleWidth - t.spacing.lg * 2); // inner width decides the number of columns
 
@@ -188,6 +189,10 @@ export default function DynamicForm({ struct, onSubmit, onCancel, submitLabel = 
     setErrors((e) => ({ ...e, [field.id]: undefined }));
   };
 
+  // The "please fix N fields" banner only describes the highlighted fields, so it disappears once none are left.
+  // (A server message with no field attached stays until the next submit.)
+  const showFormError = formError && !(fieldBanner && !Object.values(errors).some(Boolean));
+
   const fail = (errs) => {
     setErrors(errs);
     setErrorVersion((n) => n + 1);
@@ -195,6 +200,7 @@ export default function DynamicForm({ struct, onSubmit, onCancel, submitLabel = 
 
   const submit = async () => {
     setFormError(null);
+    setFieldBanner(false);
     const errs = {};
     for (const f of visibleFields) {
       if (f.type === 'fill') continue;
@@ -205,6 +211,7 @@ export default function DynamicForm({ struct, onSubmit, onCancel, submitLabel = 
       log.warn('client validation failed', errs);
       fail(errs);
       setFormError(`Please fix ${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} highlighted below.`);
+      setFieldBanner(true);
       return;
     }
 
@@ -224,7 +231,10 @@ export default function DynamicForm({ struct, onSubmit, onCancel, submitLabel = 
       await onSubmit(data);
     } catch (e) {
       setFormError(e.message);
-      if (e.details) fail(Object.fromEntries(e.details.map((d) => [d.fieldId, d.message])));
+      if (e.details) {
+        fail(Object.fromEntries(e.details.map((d) => [d.fieldId, d.message])));
+        setFieldBanner(true);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -281,7 +291,7 @@ export default function DynamicForm({ struct, onSubmit, onCancel, submitLabel = 
           ) : null}
 
           <div style={{ marginTop: t.spacing.sm }}>
-            <Alert>{formError}</Alert>
+            <Alert>{showFormError ? formError : null}</Alert>
           </div>
 
           <FieldGrid width={gridWidth} items={toItems(unsectioned)} />
