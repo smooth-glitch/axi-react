@@ -16,15 +16,15 @@ and read them back correctly."
 
 ## 1. The three concepts
 
-| Term | What it is | Example |
-|---|---|---|
-| **TStruct** | A form *definition*: a name + a list of fields | `leave_request` = from_date, to_date, kind, days... |
-| **Option** | A button the user sees ("Options section" above chat) that points at *something* — a TStruct, an upload, a download, etc. | "Apply for leave" → type `data_input`, target `leave_request` |
-| **Submission** | One filled-in form, submitted by a user | Ravi's leave request for Oct 1–3 |
+| Term           | What it is                                                                                                                | Example                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **TStruct**    | A form _definition_: a name + a list of fields                                                                            | `leave_request` = from_date, to_date, kind, days...           |
+| **Option**     | A button the user sees ("Options section" above chat) that points at _something_ — a TStruct, an upload, a download, etc. | "Apply for leave" → type `data_input`, target `leave_request` |
+| **Submission** | One filled-in form, submitted by a user                                                                                   | Ravi's leave request for Oct 1–3                              |
 
 The reason these are separate: a TStruct only becomes visible to a user if
-some **Option** points at it *and* that Option's "Applicable to" rule
-includes them. A form existing isn't enough — someone has to be *offered*
+some **Option** points at it _and_ that Option's "Applicable to" rule
+includes them. A form existing isn't enough — someone has to be _offered_
 it. This is deliberate (see §4) and is enforced server-side, not just hidden
 in the UI.
 
@@ -60,20 +60,20 @@ Everything is a Redis **hash**, one field per record, value = JSON. No SQL,
 no separate tables — this is intentional, matches how the rest of `sd_*`
 stores things.
 
-| Redis key | What's in it | Field → Value |
-|---|---|---|
-| `sd:tstructs` | every form definition | `<lowercased name>` → `{name, caption, description, fields[], sections[]}` |
-| `sd:options` | every option (button) | `<lowercased id>` → `{id, caption, type, target, applicable, active, order}` |
-| `sd:subs` | every submission ever made | `<numeric id>` → `{id, tstruct, by, host, values, ts}` |
-| `sd:subs:u:<username>` | a sorted set (by submit time) of submission ids this user can see | member = submission id |
-| `sd:seq:sub` | a plain Redis counter (`INCR`) | next submission id |
-| `sd:appconns` | external system credentials (for options not yet wired up) | sealed/encrypted, never sent to clients |
+| Redis key              | What's in it                                                      | Field → Value                                                                |
+| ---------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `sd:tstructs`          | every form definition                                             | `<lowercased name>` → `{name, caption, description, fields[], sections[]}`   |
+| `sd:options`           | every option (button)                                             | `<lowercased id>` → `{id, caption, type, target, applicable, active, order}` |
+| `sd:subs`              | every submission ever made                                        | `<numeric id>` → `{id, tstruct, by, host, values, ts}`                       |
+| `sd:subs:u:<username>` | a sorted set (by submit time) of submission ids this user can see | member = submission id                                                       |
+| `sd:seq:sub`           | a plain Redis counter (`INCR`)                                    | next submission id                                                           |
+| `sd:appconns`          | external system credentials (for options not yet wired up)        | sealed/encrypted, never sent to clients                                      |
 
 Why `sd:subs:u:<username>` exists as its own key, separate from `sd:subs`:
-when someone asks "show me my submissions," we need *their own* submissions
+when someone asks "show me my submissions," we need _their own_ submissions
 **plus** their host's users' submissions, sorted by time, without scanning
 every submission that's ever been made. So on submit, the backend writes the
-id into a sorted set for the submitter *and* their host (see `submit/3` in
+id into a sorted set for the submitter _and_ their host (see `submit/3` in
 `sd_config.erl`) — that's the fan-out. Reading is then one `ZREVRANGE`
 instead of a table scan.
 
@@ -98,7 +98,7 @@ Two separate gates, both server-side:
    `sd:options` by the option's `applicable` rule (category, department,
    branch, designation, or affiliate). This is what `options.list` returns.
 2. **Can you fetch the form itself?** `tstruct_for_user(User, Name)` checks
-   that *one of the user's own visible options* is a `data_input` pointing
+   that _one of the user's own visible options_ is a `data_input` pointing
    at that exact TStruct name. Admins bypass this (they can preview any
    form). Everyone else gets `forbidden` if they try to fetch a form no
    option of theirs points at — even if they know the exact name.
@@ -112,7 +112,7 @@ allowed to fetch this" — it falls straight out of who can see the option.
 Twelve field types: `text`, `date`, `time`, `wholenumber`, `number`,
 `email`, `url`, `mobile`, `location`, `list`, `selection`, `fill`. Each has
 its own `check_type/3` clause in `sd_config.erl` — e.g. `date` checks both
-the `YYYY-MM-DD` shape *and* that the date actually exists
+the `YYYY-MM-DD` shape _and_ that the date actually exists
 (`calendar:valid_date/3`), then an optional min/max range; `mobile` can
 require a country code; `list` can be single or multi-select and only
 accepts values from its own `options[]`.
@@ -120,6 +120,7 @@ accepts values from its own `options[]`.
 **Conditions** — a field or section can say "only show me if `kind` equals
 `Sick`" (`{field, op, value}`, or `{all:[...]}` / `{any:[...]}` to combine
 several). This does three things at once when a form is submitted:
+
 - A hidden field is **not required**, even if it's marked required.
 - A hidden field's value, if one was sent anyway, is **silently dropped**
   — it never reaches storage. (Tested: `doctor_note` sent while `kind` was
@@ -136,13 +137,13 @@ on failure.
 
 ## 6. The five actions
 
-| Action | Who | Does |
-|---|---|---|
-| `options.list` | any user | the buttons *this* user is allowed to see |
-| `tstruct.get` | any user (if their options allow it) / any admin | fetch one form's definition |
-| `tstruct.submit` | any user (if their options allow it) | validate + store a submission |
-| `submissions.list` | any user | their own submissions + their hosted users' |
-| `admin.tstruct.list/get/save/delete` | admin only | manage form definitions |
+| Action                               | Who                                              | Does                                        |
+| ------------------------------------ | ------------------------------------------------ | ------------------------------------------- |
+| `options.list`                       | any user                                         | the buttons _this_ user is allowed to see   |
+| `tstruct.get`                        | any user (if their options allow it) / any admin | fetch one form's definition                 |
+| `tstruct.submit`                     | any user (if their options allow it)             | validate + store a submission               |
+| `submissions.list`                   | any user                                         | their own submissions + their hosted users' |
+| `admin.tstruct.list/get/save/delete` | admin only                                       | manage form definitions                     |
 
 `admin.option.*` and `admin.appconn.*` are the same pattern, for the
 buttons and the (not-yet-executed) external-system connections — not
@@ -153,12 +154,12 @@ option still targets that form. You have to remove/repoint the option
 first. Stops a form disappearing out from under an option that still
 advertises it.
 
-## 7. What this does *not* do
+## 7. What this does _not_ do
 
 - It doesn't execute anything against an external system. `data_input` (a
   TStruct form) is fully live; `get_data`, `download`, `upload`, `pay`, and
   the `axpert_*` option types are defined, stored, and filtered the same
-  way, but actually *running* them needs the Axpert/ARM contract and a
+  way, but actually _running_ them needs the Axpert/ARM contract and a
   payment provider, neither of which is fixed yet. Not a gap in this
   feature — a documented "not built" boundary (see `SANDESH_API.md` §9).
 - It doesn't render anything. That's the frontend's job entirely — this
