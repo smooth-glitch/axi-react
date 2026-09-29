@@ -84,7 +84,7 @@ safely(Fun) ->
 
 %% Called while a WebSocket connection is being accepted.
 %%   {ok, #{token, username}}  a valid Sandesh session for exactly this username
-%%   legacy                    open mode, no (valid) session: plain chat only
+%%   legacy                    open mode without SANDESH_REQUIRE_SESSION, no (valid) session: plain chat only
 %%   {error, Message}          strict mode and the session isn't good enough
 handshake(Name, Token) ->
     Bin = list_to_binary(Token),
@@ -96,7 +96,7 @@ handshake(Name, Token) ->
                      end;
                  error -> none
              end,
-    case {Result, sd_util:strict()} of
+    case {Result, sd_util:require_session()} of
         {{ok, _} = Ok, _} -> Ok;
         {mismatch, true} -> {error, "That session belongs to a different username."};
         {none, true} -> {error, "Sign in to Sandesh first (POST /api/sd/login) and pass the returned token."};

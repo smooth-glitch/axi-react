@@ -67,7 +67,9 @@
 -define(UNLOCK_TTL, 1800).
 -define(LOGIN_FAIL_MAX, 5).
 -define(LOGIN_FAIL_WINDOW, 900).
--define(PW_ITER, 100000).
+%% PBKDF2-HMAC-SHA256 work factor for NEW hashes (current OWASP guidance). Each stored hash records its own
+%% iteration count, so older 100k hashes still verify and are upgraded in place on the next good login.
+-define(PW_ITER, 600000).
 
 %% =============================================================================
 %% First-run setup
@@ -595,13 +597,28 @@ logout(_) -> ok.
 
 password_ok(Username, Password) ->
     case sd_db:hget_json("sd:cred", sd_util:norm_user(Username)) of
-        #{<<"salt">> := S, <<"hash">> := H, <<"iter">> := Iter} ->
+        #{<<"salt">> := S, <<"hash">> := H, <<"iter">> := Iter} = Cred ->
             Calc = crypto:pbkdf2_hmac(sha256, Password, base64:decode(S), Iter, 32),
             Stored = base64:decode(H),
-            byte_size(Calc) =:= byte_size(Stored) andalso crypto:hash_equals(Calc, Stored);
+            Ok = byte_size(Calc) =:= byte_size(Stored) andalso crypto:hash_equals(Calc, Stored),
+            Ok andalso Iter < ?PW_ITER andalso upgrade_hash(Username, Password, Cred),
+            Ok;
         _ ->
             burn_time(),
             false
+    end.
+
+%% We just proved the password, so re-hash it at the current work factor. Keeps setTs / mustChange.
+%% Never lets a failure here affect the login itself.
+upgrade_hash(Username, Password, Cred) ->
+    try
+        Salt = crypto:strong_rand_bytes(16),
+        Hash = crypto:pbkdf2_hmac(sha256, Password, Salt, ?PW_ITER, 32),
+        sd_db:hset_json("sd:cred", sd_util:norm_user(Username),
+                        Cred#{<<"salt">> => base64:encode(Salt), <<"hash">> => base64:encode(Hash),
+                              <<"iter">> => ?PW_ITER}),
+        true
+    catch _:_ -> false
     end.
 
 store_password(Username, Password, MustChange) ->
