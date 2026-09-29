@@ -122,7 +122,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   const getWorkspaceWelcomeText = (user) => {
     const userName = user?.name || user?.username || "User";
-    return `Welcome to My Workspace, ${userName}. This is your personal workspace for direct tasks, enterprise updates, and automation commands. You can type hash commands in the composer below to trigger actions, or use the sliders on the left and right to navigate conversations and priority notifications.`;
+    return `Welcome ${userName}. This is your personal workspace for direct tasks, enterprise updates, and automation commands. You can type hash commands in the composer below to trigger actions, or use the sliders on the left and right to navigate conversations and priority notifications.`;
   };
 
   const [messagesByChat, setMessagesByChat] = useState(() => ({
@@ -442,14 +442,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
           prevChats.map((c) =>
             c.id === "room-general"
               ? {
-                  ...c,
-                  preview: `${event.from || "Associate"}: ${event.text}`,
-                  time: timeStr,
-                  unread:
-                    activeChatIdRef.current === "room-general"
-                      ? 0
-                      : (c.unread || 0) + (isMine ? 0 : 1),
-                }
+                ...c,
+                preview: `${event.from || "Associate"}: ${event.text}`,
+                time: timeStr,
+                unread:
+                  activeChatIdRef.current === "room-general"
+                    ? 0
+                    : (c.unread || 0) + (isMine ? 0 : 1),
+              }
               : c
           )
         );
@@ -1399,7 +1399,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         setCurrentUser((u) => ({ ...u, status: rest }));
         try {
           localStorage.setItem("sandesh_session_user", JSON.stringify({ ...currentUser, status: rest }));
-        } catch {}
+        } catch { }
         sandeshSocket.send(`/setstatus ${rest}`);
         pushToast(`Status updated to: "${rest}"`);
       } else {
@@ -1413,7 +1413,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         setCurrentUser((u) => ({ ...u, avatar: rest }));
         try {
           localStorage.setItem("sandesh_session_user", JSON.stringify({ ...currentUser, avatar: rest }));
-        } catch {}
+        } catch { }
         pushToast("Avatar updated");
       } else {
         setModal("profile");
@@ -1662,10 +1662,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
       prevChats.map((c) =>
         c.id === activeChatId
           ? {
-              ...c,
-              preview: `You: ${text}`,
-              time: "now",
-            }
+            ...c,
+            preview: `You: ${text}`,
+            time: "now",
+          }
           : c
       )
     );
@@ -1702,10 +1702,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
       filePayload.kind === "image"
         ? `📷 Photo: ${filePayload.fileName || "image"}`
         : filePayload.kind === "video"
-        ? `🎥 Video: ${filePayload.fileName || "video"}`
-        : filePayload.kind === "audio"
-        ? `🎙️ Voice Note (${filePayload.duration || "0:05"})`
-        : `📎 Document: ${filePayload.fileName || "file"}`;
+          ? `🎥 Video: ${filePayload.fileName || "video"}`
+          : filePayload.kind === "audio"
+            ? `🎙️ Voice Note (${filePayload.duration || "0:05"})`
+            : `📎 Document: ${filePayload.fileName || "file"}`;
 
     if (socketStatus === "connected") {
       if (activeChat.isGroup) {
@@ -1727,10 +1727,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
       prevChats.map((c) =>
         c.id === activeChatId
           ? {
-              ...c,
-              preview: `You: ${descriptor}`,
-              time: "now",
-            }
+            ...c,
+            preview: `You: ${descriptor}`,
+            time: "now",
+          }
           : c
       )
     );
@@ -1837,10 +1837,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           return prevChats.map((c) =>
             c.id === target.id
               ? {
-                  ...c,
-                  preview: `You (Forwarded): ${forwardPayload}`,
-                  time: "now",
-                }
+                ...c,
+                preview: `You (Forwarded): ${forwardPayload}`,
+                time: "now",
+              }
               : c
           );
         }
@@ -1966,7 +1966,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   const handleSignOut = () => {
     if (currentUser?.token) {
-      sandeshApi.logout(currentUser.token).catch(() => {});
+      sandeshApi.logout(currentUser.token).catch(() => { });
     }
     sandeshSocket.disconnect();
     setCurrentUser(null);
@@ -2529,7 +2529,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                       "sandesh_session_user",
                       JSON.stringify({ ...currentUser, status })
                     );
-                  } catch {}
+                  } catch { }
                   sandeshSocket.send(`/setstatus ${status}`);
                   setModal(null);
                   pushToast("Profile status updated");
