@@ -7,7 +7,7 @@ const DEFAULT_HOSTS = [
     hostKey: "hr",
     name: "HR Operations Desk",
     category: "department_host",
-    spoc: "Nageshwari (HR Manager)",
+    spoc: "HR Operations Desk",
     description: "Central HR & People Ops. Leave requests, payroll inquiries, onboarding support.",
     initials: "HR",
     color: "#ff9f0a",
