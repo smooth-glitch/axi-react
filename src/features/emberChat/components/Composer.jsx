@@ -553,7 +553,6 @@ export default function Composer({
           </button>
         </div>
       </div>
-
       {/* 2. Replying-to Banner */}
       {replyingTo && (
         <div className="sandesh-reply-banner-3d">

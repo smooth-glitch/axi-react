@@ -16,6 +16,7 @@ export default function Sidebar({
   onOpenAiChat,
   onOpenAdminConsole,
   onOpenCommandsHelp,
+  onOpenWorkspace,
   onSignOut,
   socketStatus,
   onReconnectSocket,
@@ -87,6 +88,11 @@ export default function Sidebar({
   }, [chats, onlineUsers]);
 
   const filteredChats = allConversations.filter((c) => {
+    // Exclude General Broadcast from conversation list
+    if (c.id === "room-general" || c.name === "General Broadcast") {
+      return false;
+    }
+
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.preview && c.preview.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!matchesSearch) return false;
@@ -273,14 +279,19 @@ export default function Sidebar({
               >
                 <div className="avatar-wrapper">
                   <Avatar
-                    initials={chat.initials || chat.name[0]}
-                    color={chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
+                    initials={chat.id === "workspace" ? "WS" : chat.initials || chat.name[0]}
+                    color={chat.id === "workspace" ? "#ff7a59" : chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
                     group={chat.isGroup}
                   />
                   {isOnline && (
                     <span className="online-presence-dot" title="Online now" />
                   )}
-                  {chat.isHost && (
+                  {chat.id === "workspace" && (
+                    <span className="host-seal-icon" title="My Workspace">
+                      <span className="material-icons">dashboard</span>
+                    </span>
+                  )}
+                  {chat.id !== "workspace" && chat.isHost && (
                     <span className="host-seal-icon" title="Certified Sandesh Host">
                       <span className="material-icons">verified</span>
                     </span>
@@ -302,9 +313,7 @@ export default function Sidebar({
                   title="Delete conversation"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (window.confirm(`Delete conversation "${chat.name}"?`)) {
-                      onDeleteChat?.(chat.id);
-                    }
+                    onDeleteChat?.(chat.id, chat.name);
                   }}
                 >
                   <span className="material-icons">delete_outline</span>

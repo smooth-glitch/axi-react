@@ -24,6 +24,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "framer-motion": "^13.4.4",
+    "html5-qrcode": "^2.3.8",
     "leaflet": "^1.9.4",
     "libphonenumber-js": "^1.13.14",
     "lucide-react": "^1.48.0",

@@ -24,6 +24,21 @@ export const authorizedUsers = [];
 
 export const chats = [
   {
+    id: "workspace",
+    name: "My Workspace",
+    isWorkspace: true,
+    isGroup: false,
+    isHost: true,
+    category: "workspace",
+    designation: "Enterprise Workspace & Automation",
+    preview: "Type '#' for commands, automated tasks & alerts",
+    time: "now",
+    unread: 0,
+    initials: "WS",
+    color: "#ff7a59",
+    topic: "Unified Enterprise Workspace",
+  },
+  {
     id: "room-general",
     name: "General Broadcast",
     isGroup: true,
@@ -67,6 +82,18 @@ export const smartPromptsByCategory = {
 export const sampleEpisodes = [];
 
 export const messagesByChat = {
+  "workspace": [
+    {
+      id: "ws-msg-1",
+      sender: "Workspace Assistant",
+      senderName: "Sandesh Workspace",
+      time: "now",
+      dir: "in",
+      avatar: "WS",
+      avatarColor: "#ff7a59",
+      text: "Welcome to My Workspace. This is your personal workspace for direct tasks, enterprise updates, and automation commands. You can type hash commands in the composer below to trigger actions, or use the sliders on the left and right to navigate conversations and priority notifications.",
+    },
+  ],
   "room-general": [],
 };
 

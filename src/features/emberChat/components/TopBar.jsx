@@ -15,6 +15,10 @@ export default function TopBar({
   onlineUsers = [],
   onOpenApprovals,
   pendingApprovalsCount = 0,
+  onToggleNotifications,
+  notificationsOpen = false,
+  priorityCounts = null,
+  onSignOut,
 }) {
   const isOnline = !chat.isGroup && (chat.isOnline || (onlineUsers || []).some((u) => {
     const target = (
@@ -34,6 +38,8 @@ export default function TopBar({
     );
   }));
 
+  const isWorkspace = chat.id === "workspace" || chat.isWorkspace;
+
   return (
     <header className="sandesh-topbar-3d">
       <div className="topbar-left">
@@ -47,8 +53,8 @@ export default function TopBar({
 
         <div className="topbar-avatar-wrap">
           <Avatar
-            initials={chat.initials || chat.name?.[0]}
-            color={chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
+            initials={isWorkspace ? "WS" : chat.initials || chat.name?.[0]}
+            color={isWorkspace ? "#ff7a59" : chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
             group={chat.isGroup}
             size={40}
           />
@@ -63,7 +69,8 @@ export default function TopBar({
         <div className="chat-title-info">
           <div className="title-row">
             <h2 className="chat-title">{chat.name}</h2>
-            {chat.isHost && <span className="host-pill">HOST</span>}
+            {isWorkspace && <span className="workspace-pill">WORKSPACE</span>}
+            {!isWorkspace && chat.isHost && <span className="host-pill">HOST</span>}
             {chat.isGroup && <span className="group-pill">GROUP</span>}
             {isOnline && (
               <span className="online-status-pill">
@@ -72,21 +79,23 @@ export default function TopBar({
             )}
           </div>
           <span className="chat-subtitle">
-            {chat.designation ||
-              (chat.isGroup
-                ? chat.members?.length
-                  ? `${chat.members.length} members`
-                  : chat.id === "room-general"
-                    ? "Enterprise Global Channel"
-                    : "Group Channel"
-                : isOnline
-                  ? "Active Now on Sandesh"
-                  : "Active Now")}
+            {isWorkspace
+              ? "Enterprise Workspace • Type '#' for commands"
+              : chat.designation ||
+                (chat.isGroup
+                  ? chat.members?.length
+                    ? `${chat.members.length} members`
+                    : chat.id === "room-general"
+                      ? "Enterprise Global Channel"
+                      : "Group Channel"
+                  : isOnline
+                    ? "Active Now on Sandesh"
+                    : "Active Now")}
           </span>
         </div>
       </div>
 
-      {/* Center: View Switcher (Messages vs Topics/Episodes vs Timeline) */}
+      {/* Center: View Switcher (Messages vs Topics/Episodes) */}
       <div className="topbar-center-switcher">
         <button
           type="button"
@@ -131,7 +140,6 @@ export default function TopBar({
           <span className="material-icons">table_chart</span>
           <span>Org Structs</span>
         </button>
-
         {/* Group Actions: Add Member & View Members */}
         {chat.isGroup && (
           <>
@@ -159,11 +167,7 @@ export default function TopBar({
         <button
           type="button"
           className="sandesh-icon-btn-3d danger-btn"
-          onClick={() => {
-            if (window.confirm(`Are you sure you want to delete / clear the conversation "${chat.name}"?`)) {
-              onDeleteChat?.(chat.id);
-            }
-          }}
+          onClick={() => onDeleteChat?.(chat.id, chat.name)}
           title="Delete or clear this conversation"
           aria-label="Delete conversation"
         >
@@ -208,6 +212,17 @@ export default function TopBar({
           title="Switch to AXI AI Workspace"
         >
           <span className="material-icons">auto_awesome</span>
+        </button>
+
+        {/* Logout Button */}
+        <button
+          type="button"
+          className="sandesh-icon-btn-3d logout-shortcut-btn"
+          onClick={onSignOut}
+          title="Sign Out / Log Out"
+          aria-label="Log Out"
+        >
+          <span className="material-icons">logout</span>
         </button>
       </div>
     </header>

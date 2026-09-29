@@ -601,6 +601,64 @@ export const DEFAULT_COMMANDS_CATALOG = [
     requires: "admin",
   },
 
+  // 7b. Lite T-Struct viewer
+  {
+    name: "tstruct",
+    aliases: ["ts", "struct"],
+    category: "lookup",
+    summary: "Open a lite T-Struct in the viewer (definition + your records)",
+    usage: "#tstruct <name>",
+    args: [{ name: "name", type: "word", required: true }],
+    available: true,
+    requires: "none",
+  },
+  {
+    name: "tstruct-add",
+    aliases: ["ts-add", "struct-add"],
+    category: "lookup",
+    summary: "Open a lite T-Struct to add a new record",
+    usage: "#tstruct-add <name>",
+    args: [{ name: "name", type: "word", required: true }],
+    available: true,
+    requires: "none",
+  },
+  {
+    name: "tstruct-edit",
+    aliases: ["ts-edit", "struct-edit"],
+    category: "lookup",
+    summary: "Edit your own record in a lite T-Struct",
+    usage: "#tstruct-edit <name> <submissionId>",
+    args: [
+      { name: "name", type: "word", required: true },
+      { name: "submissionId", type: "msgid", required: true },
+    ],
+    available: true,
+    requires: "none",
+  },
+  {
+    name: "tstruct-delete",
+    aliases: ["ts-delete", "struct-delete"],
+    category: "lookup",
+    summary: "Delete your own record from a lite T-Struct",
+    usage: "#tstruct-delete <name> <submissionId>",
+    args: [
+      { name: "name", type: "word", required: true },
+      { name: "submissionId", type: "msgid", required: true },
+    ],
+    available: true,
+    requires: "none",
+  },
+  {
+    name: "lookups",
+    aliases: ["cfg-lookups"],
+    category: "lookup",
+    summary: "Org config lists for Option Builder dropdowns (branches, departments, etc.)",
+    usage: "#lookups",
+    args: [],
+    available: true,
+    requires: "none",
+  },
+
   // 8. Help
   {
     name: "help",

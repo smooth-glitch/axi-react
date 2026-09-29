@@ -6,7 +6,7 @@ import { useLiveChanges } from "../../utils/useLiveChanges.js";
 
 const FIELD_TYPES = [
   ["text", "Text"], ["date", "Date"], ["time", "Time"], ["wholenumber", "Whole number"], ["number", "Number"],
-  ["email", "Email"], ["url", "URL"], ["mobile", "Mobile"], ["location", "Location"],
+  ["email", "Email"], ["url", "URL"], ["mobile", "Mobile"], ["location", "Location"], ["barcode", "Barcode / QR"],
   ["list", "List (choose from options)"], ["selection", "Selection (from a data source)"], ["fill", "Fill (from profile)"],
 ];
 const OPS = [
