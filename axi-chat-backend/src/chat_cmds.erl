@@ -197,7 +197,7 @@ commands() ->
 categories() ->
     [{messaging, "Messaging"}, {lookup, "Look things up"}, {groups, "Groups"}, {profile, "Your profile"},
      {people, "People and approvals"}, {inbox, "Notifications and cards"}, {forms, "Forms"},
-     {admin, "Administration"}, {help, "Help"}].
+     {admin, "Administration"}, {custom, "Custom"}, {help, "Help"}].
 
 cmd(Name, Aliases, Category, Summary, Args, Target, Reply) ->
     #{name => Name, aliases => Aliases, category => Category, summary => Summary,
@@ -234,9 +234,24 @@ do_run([$# | Body], Name) ->
         true ->
             {Token, Rest} = take_token(Body),
             case find(ascii_lower(Token)) of
-                undefined -> {reply, unknown_json(Token)};
+                undefined ->
+                    %% A custom command? Answered from an in-memory list of names (no I/O on the connection);
+                    %% it runs as `/sd cmd.custom`, off the connection, in sd_lane.
+                    case is_plain(Token) andalso sd_cmdx:is_cached(ascii_lower(Token)) of
+                        true -> run_custom(ascii_lower(Token), Rest);
+                        false -> {reply, unknown_json(Token)}
+                    end;
                 Cmd -> exec(Cmd, Rest, Name)
             end
+    end.
+
+run_custom(Token, Rest) ->
+    Input = skip_spaces(Rest),
+    case length(Input) > 200 of
+        true -> {reply, error_json("usage", "Usage: #" ++ Token ++ " [input] (input up to 200 characters).", #{})};
+        false ->
+            Args = #{<<"name">> => list_to_binary(Token), <<"input">> => ub(Input), <<"reqId">> => list_to_binary("#" ++ Token)},
+            {line, "/sd cmd.custom " ++ binary_to_list(jenc(Args))}
     end.
 
 exec(#{name := CName, args := Specs, target := Target} = Cmd, Rest, Name) ->
@@ -255,6 +270,20 @@ exec(#{name := CName, args := Specs, target := Target} = Cmd, Rest, Name) ->
                     [Q] = Vals,
                     {reply, help_json(Q, Name)}
             end
+    end.
+
+%% The built-in commands plus the caller's own custom ones (reads Redis: only from a worker, never the connection).
+all_commands() ->
+    commands() ++ try sd_cmdx:catalog_for(sd_cmds:caller()) catch _:_ -> [] end.
+
+find_any(Token) ->
+    case find(Token) of
+        undefined ->
+            case lists:search(fun(#{name := N}) -> N =:= Token end, all_commands()) of
+                {value, C} -> C;
+                false -> undefined
+            end;
+        C -> C
     end.
 
 %% Exact name or alias only -- a prefix is never enough to EXECUTE ("#de"
@@ -522,9 +551,9 @@ catalog_json(Query) ->
         Q = ascii_lower(Query),
         Ctx = sd_cmds:caller(),
         Cmds = case Q of
-                   "" -> commands();
+                   "" -> all_commands();
                    _ -> case is_plain(Q) of
-                            true -> [C || #{name := N, aliases := A} = C <- commands(),
+                            true -> [C || #{name := N, aliases := A} = C <- all_commands(),
                                           lists:any(fun(X) -> lists:prefix(Q, X) end, [N | A])];
                             false -> []
                         end
@@ -543,7 +572,7 @@ help_json("", _Name) ->
     catalog_json("");
 help_json(Q0, _Name) ->
     Q = ascii_lower(case Q0 of [$# | T] -> T; T -> T end),
-    case find(Q) of
+    case find_any(Q) of
         undefined -> unknown_json(Q);
         Cmd -> jenc(#{<<"type">> => <<"cmd_help">>, <<"command">> => command_json(Cmd, sd_cmds:caller())})
     end.
@@ -596,7 +625,7 @@ complete(Input, ReqId, Name, Page, Size) ->
             Ctx = sd_cmds:caller(),
             Q = ascii_lower(Tok),
             Hits = case is_plain(Q) orelse Q =:= "" of
-                       true -> [C || #{name := N, aliases := A} = C <- commands(),
+                       true -> [C || #{name := N, aliases := A} = C <- all_commands(),
                                      lists:any(fun(X) -> lists:prefix(Q, X) end, [N | A])];
                        false -> []
                    end,
@@ -609,7 +638,7 @@ complete(Input, ReqId, Name, Page, Size) ->
                      end || C <- PageHits],
             jenc(maps:merge(Base#{<<"kind">> => <<"command">>, <<"token">> => safe_or_empty(Tok), <<"items">> => Items}, PageInfo));
         {Tok, [$\s | After]} ->
-            case find(ascii_lower(Tok)) of
+            case find_any(ascii_lower(Tok)) of
                 undefined -> jenc(Base#{<<"kind">> => <<"none">>, <<"items">> => []});
                 #{name := CName, args := Specs} -> complete_arg(Base, CName, Specs, After, Name, Page, Size)
             end

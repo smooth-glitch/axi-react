@@ -22,7 +22,7 @@
 %%% a bare chat connection with an invented token never gets Sandesh powers,
 %%% even in open mode.
 -module(sd_cmds).
--export([handle/2, rate_limited/1, caller/0, availability/2]).
+-export([handle/2, rate_limited/1, caller/0, availability/2, run/3]).
 -include_lib("kernel/include/logger.hrl").
 
 %% For the #command catalog (chat_cmds): who is this connection, and may they
@@ -161,7 +161,7 @@ user_actions() ->
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
      <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
      <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
-     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"option.run">>, <<"pay.create">>, <<"pay.confirm">>, <<"pay.status">>, <<"pay.cancel">>, <<"pay.list">>, <<"wizard.list">>, <<"wizard.get">>, <<"wizard.start">>, <<"wizard.current">>, <<"wizard.step">>, <<"wizard.cancel">>, <<"wizard.runs">>, <<"wizard.run">>, <<"onboarding.get">>, <<"catalog.get">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"cmd.custom">>, <<"cmd.list">>, <<"cmd.save">>, <<"cmd.delete">>, <<"option.run">>, <<"pay.create">>, <<"pay.confirm">>, <<"pay.status">>, <<"pay.cancel">>, <<"pay.list">>, <<"wizard.list">>, <<"wizard.get">>, <<"wizard.start">>, <<"wizard.current">>, <<"wizard.step">>, <<"wizard.cancel">>, <<"wizard.runs">>, <<"wizard.run">>, <<"onboarding.get">>, <<"catalog.get">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -884,6 +884,15 @@ do(<<"pay.cancel">>, Args, #{user := User}) -> sd_pay:cancel(User, sd_util:get(<
 do(<<"pay.list">>, Args, #{user := User}) -> {ok, sd_pay:list(User, Args)};
 do(<<"admin.pay.mark">>, Args, _Ctx) ->
     sd_pay:mark(sd_util:get(<<"id">>, Args), sd_util:get(<<"status">>, Args), sd_util:get(<<"reference">>, Args));
+
+do(<<"cmd.custom">>, Args, #{user := User} = Ctx) ->
+    sd_cmdx:execute(User, sd_util:get(<<"name">>, Args, <<>>), sd_util:get(<<"input">>, Args, <<>>), Ctx);
+do(<<"cmd.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"commands">> => sd_cmdx:list_for(User), <<"kinds">> => sd_cmdx:kinds()}};
+do(<<"cmd.save">>, Args, #{user := User}) ->
+    case sd_cmdx:save(User, Args) of {ok, C} -> {ok, #{<<"command">> => C}}; Err -> Err end;
+do(<<"cmd.delete">>, Args, #{user := User}) ->
+    case sd_cmdx:delete(User, sd_util:get(<<"name">>, Args, <<>>)) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end;
 
 do(Action, _, _) ->
     {error, unknown_action, <<"Unknown sd action: ", Action/binary>>}.

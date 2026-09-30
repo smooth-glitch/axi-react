@@ -34,7 +34,7 @@ slow_limit() ->
 %% Actions that talk to the outside world (or may run long). Everything else is a short read/write in our own store.
 slow_actions() ->
     [<<"datasource.run">>, <<"datasource.test">>, <<"option.run">>, <<"appconn.test">>, <<"pay.create">>,
-     <<"pay.status">>, <<"pay.confirm">>, <<"wizard.step">>, <<"wizard.current">>, <<"wizard.start">>, <<"admin.appconn.test">>, <<"admin.datasource.test">>,
+     <<"pay.status">>, <<"pay.confirm">>, <<"wizard.step">>, <<"cmd.custom">>, <<"wizard.current">>, <<"wizard.start">>, <<"admin.appconn.test">>, <<"admin.datasource.test">>,
      <<"applications.commands">>, <<"globals.resolve">>, <<"admin.appconn.commands">>, <<"test.slow_sleep">>].
 
 is_slow(Action) -> lists:member(Action, slow_actions()).
