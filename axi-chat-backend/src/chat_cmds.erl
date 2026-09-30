@@ -628,7 +628,7 @@ complete_arg(Base, CName, Specs, After, Name, Page, Size) ->
                                  <<"arg">> => (arg_json(Spec))#{<<"index">> => min(Idx, length(Specs) - 1)},
                                  <<"items">> => []});
                 false ->
-                    All = [C || C <- match(Partial, candidates(Type, Name)), safe(element(1, C)) =/= skip],
+                    All = [C || C <- match(Partial, candidates_for(CName, Spec, Type, Name)), safe(element(1, C)) =/= skip],
                     {Slice, PageInfo} = paginate(All, Page, Size, ?MAX_ARG_SUGGESTIONS),
                     Items = [item_json(C) || C <- Slice],
                     jenc(maps:merge(Common#{<<"kind">> => <<"arg">>, <<"token">> => safe_or_empty(Partial),
@@ -676,6 +676,32 @@ item_json({V, H}) -> item_json(V, H).
 item_json(Value, Hint) ->
     V = safe(Value),
     #{<<"value">> => V, <<"label">> => V, <<"hint">> => tb(Hint)}.
+
+%% Candidates for one argument of one command. #accept / #reject take a request id,
+%% which nobody can guess: offer the user's pending requests instead, as
+%% {"12", "Priya wants to connect"} (searchable by the sender's name).
+candidates_for(CName, {requestId, _, _}, _Type, Self) when CName =:= "accept"; CName =:= "reject" ->
+    try
+        [{integer_to_list(maps:get(<<"id">>, R)),
+          request_hint(R),
+          binary_to_list(maps:get(<<"fromName">>, R, <<>>))}
+         || R <- sd_reqs:list_for(list_to_binary(Self), <<"pending">>),
+            lists:member(sd_util:norm_user(Self), maps:get(<<"approvers">>, R, []))]
+    catch _:_ -> []
+    end;
+candidates_for(_CName, _Spec, Type, Self) ->
+    candidates(Type, Self).
+
+request_hint(R) ->
+    From = binary_to_list(maps:get(<<"fromName">>, R, <<>>)),
+    Subject = binary_to_list(maps:get(<<"subjectName">>, R, <<>>)),
+    case maps:get(<<"type">>, R, <<>>) of
+        <<"associate">> -> From ++ " wants to connect";
+        <<"group_invite">> -> From ++ " invites " ++ Subject ++ " to a group";
+        <<"onboarding">> -> Subject ++ " is waiting for approval";
+        <<"host_transfer">> -> From ++ " asks to transfer " ++ Subject;
+        T -> From ++ " · " ++ binary_to_list(T)
+    end.
 
 %% What the argument could be, as {Value, Hint}. Only data this connection may
 %% already see through /list, /groups and /hosts -- no directory browsing.
