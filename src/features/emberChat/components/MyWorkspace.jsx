@@ -446,6 +446,7 @@ export default function MyWorkspace({
                 initials={currentUser?.initials || "U"}
                 color={currentUser?.color || "#ff7a59"}
                 size={34}
+                imageUrl={currentUser?.avatar || currentUser?.imageUrl}
               />
               <button
                 type="button"
@@ -749,6 +750,7 @@ export default function MyWorkspace({
                           color={c.color || (c.isHost ? "#ff7a59" : "#ff9472")}
                           group={c.isGroup}
                           size={36}
+                          imageUrl={c.avatar || c.imageUrl}
                         />
                         <div className="quick-chat-info">
                           <span className="quick-chat-name">{c.name}</span>

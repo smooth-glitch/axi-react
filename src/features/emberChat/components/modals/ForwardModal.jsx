@@ -228,7 +228,7 @@ export default function ForwardModal({
                     }
                   }}
                 >
-                  <Avatar initials={dest.initials} color={dest.color} />
+                  <Avatar initials={dest.initials} color={dest.color} imageUrl={dest.avatar || dest.imageUrl} />
 
                   <div className="forward-dest-info">
                     <div className="dest-name-row">
