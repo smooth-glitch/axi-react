@@ -1047,6 +1047,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           if (activeChatIdRef.current === chatId) {
             setActiveChatId("room-general");
           }
+          if (event.type === "left_group") pushToast(`Left group "${leftName}"`);
         }
       } else if (
         event.type === "sd_event" &&
@@ -1355,12 +1356,20 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   // Hash Commands Path Routing & UI Controller
   const handleRouteHashCommand = (rawLine, parsed, replyTo) => {
-    // 1. Dispatch raw command line over WebSocket to backend
-    sandeshSocket.send(rawLine);
-
     const cmd = parsed.cmdWord;
     const rest = (parsed.rest || "").trim();
     const parts = rest.split(/\s+/).filter(Boolean);
+
+    // 1. Forward the typed line to the backend ONCE: the server understands every # command and
+    //    answers with the normal events. The branches below only add local UI (open a screen, switch
+    //    chat) and must not send the same thing again -- that produced duplicate replies and errors
+    //    such as "group already exists". These few commands are sent explicitly by their own branch
+    //    (they check something locally first, or need the active chat), so the raw line is skipped.
+    const sendsItself =
+      cmd === "addmember" || cmd === "invitegroup" ||
+      cmd === "leavegroup" || cmd === "leave" ||
+      ((cmd === "creategroup" || cmd === "newgroup") && !rest);
+    if (!sendsItself) sandeshSocket.send(rawLine);
 
     // Group / host names can contain spaces ("design team"): match the line against the ones we
     // know (longest wins), else fall back to the first word. Returns [name, remainder].
@@ -1529,32 +1538,27 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
     // 3. Look Things Up
     if (cmd === "users" || cmd === "online" || cmd === "who") {
-      sandeshSocket.sendList();
       setModal("online_users");
       return;
     }
 
     if (cmd === "hosts") {
-      sandeshSocket.send("/hosts");
       setModal("hosts_directory");
       return;
     }
 
     if (cmd === "groups") {
-      sandeshSocket.send("/groups");
       setModal("groups_directory");
       return;
     }
 
     if (cmd === "inbox" || cmd === "conversations") {
-      sandeshSocket.send("/conversations");
       setModal("inbox");
       return;
     }
 
     if (cmd === "history") {
       handleSelectChat("room-general");
-      sandeshSocket.sendHistory("global");
       pushToast("Reloaded global broadcast history");
       return;
     }
@@ -1564,7 +1568,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
       if (user) {
         const chatId = `user-${user.toLowerCase().trim()}`;
         handleSelectChat(chatId);
-        sandeshSocket.sendHistory("dm", user);
         pushToast(`Reloaded direct message history with @${user}`);
       }
       return;
@@ -1575,7 +1578,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
       if (grp) {
         const chatId = `room-${grp.toLowerCase().trim()}`;
         handleSelectChat(chatId);
-        sandeshSocket.sendHistory("group", grp);
         pushToast(`Reloaded history for group "${grp}"`);
       }
       return;
@@ -1586,7 +1588,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
       if (host) {
         const chatId = `host-${host.toLowerCase().trim()}`;
         handleSelectChat(chatId);
-        sandeshSocket.sendHistory("host", host);
         pushToast(`Reloaded history for host #${host}`);
       }
       return;
@@ -1621,10 +1622,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
     if (cmd === "creategroup" || cmd === "newgroup") {
       const gName = parts.join(" ").slice(0, 32);
       if (gName) {
-        // Do not add the group locally: wait for the server's group_created event (or its error,
-        // e.g. "Only hosts can create groups" in strict mode) so the list never shows a group
-        // that does not exist.
-        sandeshSocket.sendCreateGroup(gName);
+        // The raw line (sent above) creates it. Do not add the group locally: wait for the server's
+        // group_created event (or its error, e.g. "Only hosts can create groups" in strict mode)
+        // so the list never shows a group that does not exist.
       } else {
         setModal("new-group");
       }
@@ -1657,10 +1657,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
     if (cmd === "leavegroup" || cmd === "leave") {
       const grp = rest || (activeChat.isGroup ? activeChat.name : "");
       if (grp) {
+        // sent here (not as the raw line) so a bare #leavegroup works inside a group; the chat is
+        // removed when the server confirms with left_group
         sandeshSocket.sendLeaveGroup(grp);
-        setChats((prev) => prev.filter((c) => c.id !== `room-${grp}`));
-        setActiveChatId("room-general");
-        pushToast(`Left group "${grp}"`);
       }
       return;
     }
