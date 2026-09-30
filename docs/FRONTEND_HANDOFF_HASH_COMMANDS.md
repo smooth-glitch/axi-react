@@ -27,10 +27,8 @@ The menu and the help modal show only the commands in `FRIENDLY_COMMAND_NAMES`
 | Profile | `#me` |
 | People | `#associates` · `#find <query>` · `#connect <user>` · `#disconnect <user>` · `#requests [status]` · `#accept <id>` · `#reject <id>` |
 | Cards | `#remind <text>` |
+| T-Struct | `#tstruct <name>` (aliases `#ts`, `#struct`) · `#tstruct-add <name>` · `#tstruct-edit <name> <id>` · `#tstruct-delete <name> <id>` |
 | Help | `#help [command]` |
-
-`#tstruct <name>` (aliases `#ts`, `#struct`) and `#tstruct-add / -edit / -delete` are
-deliberately not in the menu list but must keep working (section 3).
 
 **Removed everywhere (backend + catalog): `#gif`, `#sticker`, `#status`, `#avatar`,
 `#cards`, `#delete*`, `#react*`, `#read`, `#markread`, `#dismiss`, `#ignore`,

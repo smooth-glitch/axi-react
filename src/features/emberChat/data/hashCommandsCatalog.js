@@ -509,6 +509,7 @@ export const FRIENDLY_COMMAND_NAMES = new Set([
   "me",
   "associates", "find", "connect", "disconnect", "requests", "accept", "reject",
   "notifications", "remind",
+  "tstruct", "tstruct-add", "tstruct-edit", "tstruct-delete",
   "help",
 ]);
 
