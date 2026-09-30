@@ -161,7 +161,7 @@ user_actions() ->
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
      <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
      <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
-     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"wizard.list">>, <<"wizard.get">>, <<"wizard.start">>, <<"wizard.current">>, <<"wizard.step">>, <<"wizard.cancel">>, <<"wizard.runs">>, <<"wizard.run">>, <<"onboarding.get">>, <<"catalog.get">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"option.run">>, <<"pay.create">>, <<"pay.confirm">>, <<"pay.status">>, <<"pay.cancel">>, <<"pay.list">>, <<"wizard.list">>, <<"wizard.get">>, <<"wizard.start">>, <<"wizard.current">>, <<"wizard.step">>, <<"wizard.cancel">>, <<"wizard.runs">>, <<"wizard.run">>, <<"onboarding.get">>, <<"catalog.get">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -872,6 +872,18 @@ do(<<"admin.wizard.save">>, Args, _Ctx) ->
     case sd_wizard:save_def(Args) of {ok, W} -> {ok, #{<<"wizard">> => W}}; Err -> Err end;
 do(<<"admin.wizard.delete">>, Args, _Ctx) ->
     case sd_wizard:delete_def(sd_util:get(<<"name">>, Args, <<>>)) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end;
+
+do(<<"option.run">>, Args, #{user := User}) ->
+    sd_config:run_option(User, sd_util:get(<<"id">>, Args, <<>>), Args);
+do(<<"pay.create">>, Args, #{user := User}) ->
+    sd_config:run_option(User, sd_util:get(<<"option">>, Args, <<>>), Args);
+do(<<"pay.confirm">>, Args, #{user := User}) ->
+    sd_pay:confirm(User, sd_util:get(<<"id">>, Args), sd_util:get(<<"reference">>, Args));
+do(<<"pay.status">>, Args, #{user := User}) -> sd_pay:status(User, sd_util:get(<<"id">>, Args));
+do(<<"pay.cancel">>, Args, #{user := User}) -> sd_pay:cancel(User, sd_util:get(<<"id">>, Args));
+do(<<"pay.list">>, Args, #{user := User}) -> {ok, sd_pay:list(User, Args)};
+do(<<"admin.pay.mark">>, Args, _Ctx) ->
+    sd_pay:mark(sd_util:get(<<"id">>, Args), sd_util:get(<<"status">>, Args), sd_util:get(<<"reference">>, Args));
 
 do(Action, _, _) ->
     {error, unknown_action, <<"Unknown sd action: ", Action/binary>>}.

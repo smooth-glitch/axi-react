@@ -23,7 +23,7 @@
 -export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_categories/0, option_categories_for/2, options_page/2, option_types/0,
          list_appconns/0, save_appconn/1, delete_appconn/1, appconn_raw/1, safe_path/1,
-         tstruct_for_user/2, submit/4, list_submissions/2, search_records/2, check_values/2, validate_fields/1, get_tstruct/1,
+         tstruct_for_user/2, submit/4, list_submissions/2, search_records/2, check_values/2, validate_fields/1, get_option/1, run_option/3,
          update_submission/3, delete_submission/2,
          list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
          delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2, validate_applicable/1,
@@ -257,7 +257,10 @@ do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
                             case {validate_applicable(sd_util:get(<<"applicable">>, Raw, #{})), option_condition(sd_util:get(<<"condition">>, Raw, null))} of
                                 {_, {error, _, _} = CErr} -> CErr;
                                 {{ok, Ap}, {ok, Cond}} ->
-                                    Opt = #{<<"id">> => Id, <<"caption">> => Caption, <<"type">> => Type,
+                                    case sd_pay:config(Type, Raw) of
+                                    {error, _, _} = PErr -> PErr;
+                                    {ok, PayCfg} ->
+                                    Opt = PayCfg#{<<"id">> => Id, <<"caption">> => Caption, <<"type">> => Type,
                                             <<"target">> => Target, <<"targetScope">> => Scope,
                                             <<"owner">> => Owner,
                                             <<"createdTs">> => case Existing of
@@ -274,7 +277,8 @@ do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
                                                                _ -> 0
                                                            end},
                                     sd_db:hset_json(?OPTIONS, sd_util:s(string:lowercase(Id)), Opt),
-                                    {ok, Opt};
+                                    {ok, Opt}
+                                    end;
                                 {{error, _, _} = AErr, _} -> AErr
                             end;
                         Err -> Err
@@ -345,6 +349,59 @@ check_target(_, _, _) -> {ok, null}.
 display(<<"get_data">>, D) when D =:= <<"table">>; D =:= <<"name_value">>; D =:= <<"text">> -> D;
 display(<<"get_data">>, _) -> <<"table">>;
 display(_, _) -> null.
+
+get_option(Id) -> sd_db:hget_json(?OPTIONS, sd_util:s(string:lowercase(sd_util:b(Id)))).
+
+%% Runs an option the person can see. Input = the request arguments (values, amount, ...).
+%%   get_data   asks the data source named in `target`, shaped per `display` (table | name_value | text)
+%%   pay        starts a payment (sd_pay)
+%%   data_input / download / upload   nothing to run: says which existing call to use
+%%   axpert_*   not supported on this deployment
+%% Slow (data sources, payments): sd_lane runs it off the connection.
+run_option(User, Id, Input) ->
+    case get_option(Id) of
+        #{<<"active">> := false} -> {error, not_found, <<"No such option.">>};
+        undefined -> {error, not_found, <<"No such option.">>};
+        Opt ->
+            case applies(Opt, User) of
+                false -> {error, not_found, <<"No such option.">>};
+                true -> do_run_option(maps:get(<<"type">>, Opt), Opt, User, Input)
+            end
+    end.
+
+do_run_option(<<"get_data">>, Opt, User, Input) ->
+    case sd_datasource:run_for(User, maps:get(<<"target">>, Opt, <<>>), Input) of
+        {ok, Data} -> {ok, #{<<"option">> => maps:get(<<"id">>, Opt), <<"display">> => maps:get(<<"display">>, Opt, <<"table">>),
+                             <<"result">> => shape(maps:get(<<"display">>, Opt, <<"table">>), Data)}};
+        {error, not_found, _} -> {error, not_configured, <<"This option isn't connected to a data source yet.">>};
+        Err -> Err
+    end;
+do_run_option(<<"pay">>, Opt, User, Input) ->
+    sd_pay:create(User, #{option => Opt, input => Input});
+do_run_option(<<"data_input">>, Opt, _User, _) ->
+    {ok, #{<<"option">> => maps:get(<<"id">>, Opt), <<"open">> => <<"tstruct">>, <<"target">> => maps:get(<<"target">>, Opt)}};
+do_run_option(Type, Opt, _User, _) when Type =:= <<"download">>; Type =:= <<"upload">> ->
+    {ok, #{<<"option">> => maps:get(<<"id">>, Opt), <<"open">> => Type, <<"target">> => maps:get(<<"target">>, Opt, <<>>)}};
+do_run_option(_Axpert, _Opt, _User, _) ->
+    {error, not_supported, <<"Axpert options need the Axpert connection, which isn't set up on this deployment.">>}.
+
+%% table: as returned. name_value: the first row as [{name,value}]. text: one "column: value" line per cell.
+shape(<<"name_value">>, #{<<"rows">> := [Row | _]} = D) when is_map(Row) ->
+    Cols = maps:get(<<"columns">>, D, maps:keys(Row)),
+    #{<<"pairs">> => [#{<<"name">> => C, <<"value">> => maps:get(C, Row, null)} || C <- Cols]};
+shape(<<"name_value">>, _) -> #{<<"pairs">> => []};
+shape(<<"text">>, #{<<"rows">> := Rows} = D) ->
+    Cols = maps:get(<<"columns">>, D, []),
+    Lines = [iolist_to_binary(lists:join(<<"\n">>, [<<C/binary, ": ", (cell(maps:get(C, R, null)))/binary>> || C <- Cols])) || R <- Rows, is_map(R)],
+    #{<<"text">> => iolist_to_binary(lists:join(<<"\n\n">>, Lines))};
+shape(_, Data) -> Data.
+
+cell(V) when is_binary(V) -> V;
+cell(V) when is_integer(V) -> integer_to_binary(V);
+cell(V) when is_float(V) -> float_to_binary(V, [{decimals, 6}, compact]);
+cell(true) -> <<"true">>;
+cell(false) -> <<"false">>;
+cell(_) -> <<>>.
 
 delete_option(Id) ->
     K = sd_util:s(string:lowercase(sd_util:b(Id))),

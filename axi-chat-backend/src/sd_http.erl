@@ -123,6 +123,9 @@ post(Socket, "/api/sd/setup/start", Body, H) ->
     respond(Socket, sd_auth:setup_start(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/setup/verify", Body, H) ->
     respond(Socket, sd_auth:setup_verify(Body, client_ip(Socket, H)));
+post(Socket, "/api/sd/pay/webhook", Body, H) ->
+    Given = case maps:get("x-webhook-secret", H, undefined) of undefined -> undefined; V -> list_to_binary(V) end,
+    respond(Socket, sd_pay:webhook(Given, Body));
 post(Socket, "/api/sd/register", Body, H) ->
     respond(Socket, self_register(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/login", Body, H) ->
