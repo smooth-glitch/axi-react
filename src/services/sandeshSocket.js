@@ -315,6 +315,32 @@ class SandeshSocketService {
     return this.send('/conversations');
   }
 
+  // ── My Workspace Notification Feed Actions ───────────────────────────────
+
+  feedList(params = {}) {
+    return this.sd('feed.list', params);
+  }
+
+  feedSummary() {
+    return this.sd('feed.summary');
+  }
+
+  feedRead(args = {}) {
+    return this.sd('feed.read', args);
+  }
+
+  feedResolve(id) {
+    return this.sd('feed.resolve', { id });
+  }
+
+  feedDismiss(id) {
+    return this.sd('feed.dismiss', { id });
+  }
+
+  feedClear() {
+    return this.sd('feed.clear');
+  }
+
   disconnect() {
     this.pendingSd.forEach(({ resolve, timer }) => {
       clearTimeout(timer);

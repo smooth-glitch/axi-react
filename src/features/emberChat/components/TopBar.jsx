@@ -204,6 +204,42 @@ export default function TopBar({
           </button>
         )}
 
+        {/* Priority Notifications Bell Trigger */}
+        <button
+          type="button"
+          className={`sandesh-icon-btn-3d notif-bell-btn ${notificationsOpen ? "active" : ""}`}
+          onClick={onToggleNotifications}
+          title={`Priority Notifications ${priorityCounts?.unread > 0 ? `(${priorityCounts.unread} unread)` : ""}`}
+          aria-label="Notifications"
+          style={{ position: "relative" }}
+        >
+          <span className="material-icons">notifications</span>
+          {priorityCounts?.unread > 0 && (
+            <span
+              className="topbar-approval-badge"
+              style={{
+                position: "absolute",
+                top: "-4px",
+                right: "-4px",
+                background: priorityCounts.high > 0 ? "#ef4444" : "#f59e0b",
+                color: "#fff",
+                fontSize: "10px",
+                fontWeight: 700,
+                minWidth: "16px",
+                height: "16px",
+                borderRadius: "10px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 4px",
+                boxShadow: "0 0 8px rgba(0,0,0,0.3)",
+              }}
+            >
+              {priorityCounts.unread}
+            </span>
+          )}
+        </button>
+
         {/* AXI AI Assistant Trigger */}
         <button
           type="button"

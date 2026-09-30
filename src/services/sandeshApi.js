@@ -361,6 +361,71 @@ class SandeshApiService {
       token,
     });
   }
+
+  // ── My Workspace Notification Feed (/api/sd/feed) ───────────────────────
+
+  /**
+   * GET /api/sd/feed (Bearer)
+   * { priority?, category?, unreadOnly?, limit?, before? }
+   * Returns { notifications: [item], counts: { high, medium, low, resolved, unread, total }, hasMore }
+   */
+  async getFeed(params = {}, token) {
+    const qs = new URLSearchParams();
+    if (params.priority && params.priority !== 'all') qs.set('priority', params.priority);
+    if (params.category) qs.set('category', params.category);
+    if (params.unreadOnly !== undefined) qs.set('unreadOnly', String(params.unreadOnly));
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.before !== undefined) qs.set('before', String(params.before));
+
+    const queryStr = qs.toString();
+    const endpoint = queryStr ? `feed?${queryStr}` : 'feed';
+    return this.request(endpoint, { token });
+  }
+
+  /**
+   * GET /api/sd/feed/summary (Bearer)
+   * Returns { high, medium, low, resolved, unread, total }
+   */
+  async getFeedSummary(token) {
+    return this.request('feed/summary', { token });
+  }
+
+  /**
+   * POST /api/sd/feed/read (Bearer)
+   * { ids?: string[], all?: boolean, read?: boolean }
+   * Returns { updated: number, counts }
+   */
+  async feedRead({ ids, all, read = true } = {}, token) {
+    const body = all ? { all: true } : { ids: Array.isArray(ids) ? ids : (ids ? [ids] : []) };
+    if (read === false) body.read = false;
+    return this.request('feed/read', { method: 'POST', body, token });
+  }
+
+  /**
+   * POST /api/sd/feed/resolve (Bearer)
+   * { id: string }
+   * Returns { notification, counts }
+   */
+  async feedResolve(id, token) {
+    return this.request('feed/resolve', { method: 'POST', body: { id }, token });
+  }
+
+  /**
+   * POST /api/sd/feed/dismiss (Bearer)
+   * { id: string }
+   * Returns { dismissed: true, counts }
+   */
+  async feedDismiss(id, token) {
+    return this.request('feed/dismiss', { method: 'POST', body: { id }, token });
+  }
+
+  /**
+   * POST /api/sd/feed/clear (Bearer)
+   * Returns { cleared: number, counts }
+   */
+  async feedClear(token) {
+    return this.request('feed/clear', { method: 'POST', body: {}, token });
+  }
 }
 
 export const sandeshApi = new SandeshApiService();

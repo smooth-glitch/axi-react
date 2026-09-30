@@ -29,7 +29,7 @@ import {
   chats as initialChats,
   messagesByChat as initialMessagesByChat,
 } from "./data/sampleData.js";
-import { buildInitialRoleNotifications } from "./utils/roleNotifications.js";
+import { formatTimeAgo } from "./utils/roleNotifications.js";
 import { sandeshSocket } from "../../services/sandeshSocket.js";
 import { sandeshApi } from "../../services/sandeshApi.js";
 import { formatServerMessage } from "./utils/serverMessageFormatter.js";
@@ -239,68 +239,95 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   // Priority Notifications for My Workspace (Red = High, Yellow = Medium, Grey = Low, Green = Resolved)
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [priorityNotifications, setPriorityNotifications] = useState(() =>
-    buildInitialRoleNotifications(currentUser, [], [])
-  );
+  const [priorityNotifications, setPriorityNotifications] = useState([]);
+  const [priorityCounts, setPriorityCounts] = useState({
+    high: 0,
+    medium: 0,
+    low: 0,
+    resolved: 0,
+    unread: 0,
+    total: 0,
+  });
 
   // Delete Conversation Confirmation Center Popup
   const [chatToDelete, setChatToDelete] = useState(null); // { id, name }
 
-  useEffect(() => {
-    if (!currentUser) return;
-    setPriorityNotifications((prev) => {
-      const generated = buildInitialRoleNotifications(currentUser, approvals, notifications);
-      return generated.map((gen) => {
-        const existing = prev.find((p) => p.id === gen.id);
-        if (existing) {
-          return {
-            ...gen,
-            priority: existing.priority,
-            read: existing.read,
-          };
+  // 1. Load: GET /api/sd/feed (Bearer token) or WS /sd feed.list
+  const loadFeed = useCallback(async () => {
+    try {
+      if (sandeshSocket?.ws?.readyState === WebSocket.OPEN) {
+        const res = await sandeshSocket.sd("feed.list");
+        if (res.ok && res.data) {
+          setPriorityNotifications(res.data.notifications || []);
+          if (res.data.counts) setPriorityCounts(res.data.counts);
+          return;
         }
-        return gen;
-      });
-    });
-  }, [currentUser, approvals, notifications]);
+      }
+      if (currentUser?.token) {
+        const res = await sandeshApi.getFeed({}, currentUser.token);
+        if (res.ok && res.data) {
+          setPriorityNotifications(res.data.notifications || []);
+          if (res.data.counts) setPriorityCounts(res.data.counts);
+        }
+      }
+    } catch (err) {
+      console.error("[EmberChatScreen] Failed to load notification feed:", err);
+    }
+  }, [currentUser?.token]);
 
-  const priorityCounts = useMemo(() => {
-    const counts = { high: 0, medium: 0, low: 0, resolved: 0, unread: 0 };
-    (priorityNotifications || []).forEach((n) => {
-      const p = n.priority || "low";
-      if (counts[p] !== undefined) counts[p] += 1;
-      if (!n.read) counts.unread += 1;
-    });
-    return counts;
-  }, [priorityNotifications]);
+  // Load feed after login
+  useEffect(() => {
+    if (currentUser?.token) {
+      loadFeed();
+    }
+  }, [currentUser?.token, loadFeed]);
 
   const handleResolveNotification = useCallback((notifId) => {
-    setPriorityNotifications((prev) =>
-      prev.map((n) => (n.id === notifId ? { ...n, priority: "resolved", read: true } : n))
-    );
+    if (sandeshSocket?.ws?.readyState === WebSocket.OPEN) {
+      sandeshSocket.sd("feed.resolve", { id: notifId });
+    } else if (currentUser?.token) {
+      sandeshApi.feedResolve(notifId, currentUser.token);
+    }
     pushToast("Notification marked as Resolved (Green)", false, { icon: "check_circle" });
-  }, [pushToast]);
+  }, [currentUser?.token, pushToast]);
 
-  const handleMarkReadNotification = useCallback((notifId) => {
-    setPriorityNotifications((prev) =>
-      prev.map((n) => (n.id === notifId ? { ...n, read: true } : n))
-    );
-  }, []);
+  const handleMarkReadNotification = useCallback((notifOrId) => {
+    const item = typeof notifOrId === "object" ? notifOrId : priorityNotifications.find((n) => n.id === notifOrId);
+    if (!item) return;
+    const newRead = !item.read;
+    if (sandeshSocket?.ws?.readyState === WebSocket.OPEN) {
+      sandeshSocket.sd("feed.read", { ids: [item.id], read: newRead });
+    } else if (currentUser?.token) {
+      sandeshApi.feedRead({ ids: [item.id], read: newRead }, currentUser.token);
+    }
+  }, [currentUser?.token, priorityNotifications]);
 
   const handleMarkAllReadNotifications = useCallback(() => {
-    setPriorityNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    if (sandeshSocket?.ws?.readyState === WebSocket.OPEN) {
+      sandeshSocket.sd("feed.read", { all: true });
+    } else if (currentUser?.token) {
+      sandeshApi.feedRead({ all: true }, currentUser.token);
+    }
     pushToast("All notifications marked as read");
-  }, [pushToast]);
+  }, [currentUser?.token, pushToast]);
 
   const handleClearResolvedNotifications = useCallback(() => {
-    setPriorityNotifications((prev) => prev.filter((n) => n.priority !== "resolved"));
+    if (sandeshSocket?.ws?.readyState === WebSocket.OPEN) {
+      sandeshSocket.sd("feed.clear");
+    } else if (currentUser?.token) {
+      sandeshApi.feedClear(currentUser.token);
+    }
     pushToast("Cleared resolved notifications");
-  }, [pushToast]);
+  }, [currentUser?.token, pushToast]);
 
   const handleDismissNotification = useCallback((notifId) => {
-    setPriorityNotifications((prev) => prev.filter((n) => n.id !== notifId));
+    if (sandeshSocket?.ws?.readyState === WebSocket.OPEN) {
+      sandeshSocket.sd("feed.dismiss", { id: notifId });
+    } else if (currentUser?.token) {
+      sandeshApi.feedDismiss(notifId, currentUser.token);
+    }
     pushToast("Notification dismissed");
-  }, [pushToast]);
+  }, [currentUser?.token, pushToast]);
 
   // Main Socket Connection & Event Handling
   useEffect(() => {
@@ -314,6 +341,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
         if (event.status === "connected") {
           refreshApprovals();
           refreshOptions();
+          loadFeed();
+          sandeshSocket.sd("me").then((res) => {
+            if (res.ok && res.data?.feed) {
+              setPriorityCounts(res.data.feed);
+            }
+          });
           // Re-fetch history for currently active chat on reconnect
           const currentId = activeChatIdRef.current;
           if (currentId.startsWith("user-")) {
@@ -906,6 +939,23 @@ export function EmberChatScreen({ onOpenAiChat }) {
         // an option was made/changed/removed (by anyone): re-ask what THIS user is offered -- the server applies
         // "applicable to", so we never guess from the event
         refreshOptions();
+      } else if (event.type === "sd_event" && event.event === "feed_item" && event.data?.notification) {
+        const item = event.data.notification;
+        setPriorityNotifications((prev) => [
+          item,
+          ...prev.filter((n) => n.id !== item.id),
+        ]);
+        if (event.data.counts) setPriorityCounts(event.data.counts);
+      } else if (event.type === "sd_event" && event.event === "feed_removed" && event.data?.ids) {
+        const ids = event.data.ids;
+        setPriorityNotifications((prev) => prev.filter((n) => !ids.includes(n.id)));
+        if (event.data.counts) setPriorityCounts(event.data.counts);
+      } else if (event.type === "sd_event" && event.event === "feed_changed" && event.data?.ids) {
+        const { ids, read } = event.data;
+        setPriorityNotifications((prev) =>
+          prev.map((n) => (ids.includes(n.id) ? { ...n, read } : n))
+        );
+        if (event.data.counts) setPriorityCounts(event.data.counts);
       } else if (event.type === "sd_event" && event.event === "session_replaced") {
         forceSignOut("You were signed out because this account signed in on another tab or device.");
       } else if (event.type === "sd_event" && event.event === "session_expired") {
@@ -975,7 +1025,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
       unsubscribe();
       sandeshSocket.disconnect();
     };
-  }, [currentUser, pushToast, setChatTyping]);
+  }, [currentUser, pushToast, setChatTyping, loadFeed]);
 
   // Periodic /list poll (every 5 seconds)
   useEffect(() => {
@@ -2073,6 +2123,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
             ...serverUser,
             mustChangePassword: !!res.data.password?.mustChange,
           }));
+          if (res.data?.feed) {
+            setPriorityCounts(res.data.feed);
+          }
         }
       });
     check();
@@ -2154,10 +2207,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
       refreshApprovals();
     } else if (notif.actionType === "open_chat" && notif.chatId) {
       handleSelectChat(notif.chatId);
+    } else if (notif.actionType === "submissions") {
+      setModal("submissions");
     } else if (notif.actionType === "smart_prompt" && notif.actionPrompt) {
       setSelectedPrompt({ id: notif.actionPrompt, label: notif.title || "Smart Prompt" });
       setModal("smart_structure");
-    } else {
+    } else if (notif.actionType !== "none") {
       pushToast(`Opened: ${notif.title}`);
     }
   }, [refreshApprovals, pushToast, handleSelectChat]);

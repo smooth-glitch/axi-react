@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { formatTimeAgo } from "../utils/roleNotifications.js";
 
 /**
  * WorkspaceNotificationsSlider
@@ -10,12 +11,13 @@ import React, { useState, useMemo } from "react";
  *   - Low Priority = Grey (#64748b)
  *   - Resolved = Green (#10b981)
  * 
- * Works for all users based on their roles.
+ * Synchronized with the real Sandesh notification feed (sd_feed).
  */
 export default function WorkspaceNotificationsSlider({
   isOpen,
   onClose,
   notifications = [],
+  counts: externalCounts = null,
   onResolve,
   onMarkRead,
   onMarkAllRead,
@@ -26,8 +28,25 @@ export default function WorkspaceNotificationsSlider({
 }) {
   const [priorityFilter, setPriorityFilter] = useState("all"); // "all" | "high" | "medium" | "low" | "resolved"
 
-  // Counts for each priority
+  // Re-render relative times ("15m ago") every minute
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Counts for each priority (mirrors server counts or computes locally)
   const counts = useMemo(() => {
+    if (externalCounts && typeof externalCounts.unread === "number") {
+      return {
+        all: externalCounts.total ?? notifications.length,
+        high: externalCounts.high ?? 0,
+        medium: externalCounts.medium ?? 0,
+        low: externalCounts.low ?? 0,
+        resolved: externalCounts.resolved ?? 0,
+        unread: externalCounts.unread ?? 0,
+      };
+    }
     const res = {
       all: notifications.length,
       high: 0,
@@ -46,7 +65,7 @@ export default function WorkspaceNotificationsSlider({
       if (!n.read) res.unread += 1;
     });
     return res;
-  }, [notifications]);
+  }, [notifications, externalCounts]);
 
   // Filtered notifications
   const filteredNotifs = useMemo(() => {
@@ -57,8 +76,15 @@ export default function WorkspaceNotificationsSlider({
     });
   }, [notifications, priorityFilter]);
 
-  // Color config helper
-  const getPriorityConfig = (priority) => {
+  // Color & icon config helper
+  const getPriorityConfig = (priority, category) => {
+    let catIcon = "info";
+    if (category === "messages") catIcon = "chat";
+    else if (category === "approvals") catIcon = "how_to_reg";
+    else if (category === "submissions") catIcon = "description";
+    else if (category === "reminders") catIcon = "alarm";
+    else if (category === "security") catIcon = "security";
+
     switch (priority) {
       case "high":
         return {
@@ -66,7 +92,7 @@ export default function WorkspaceNotificationsSlider({
           color: "#ef4444",
           badgeClass: "badge-high-red",
           cardClass: "card-priority-high",
-          icon: "error_outline",
+          icon: catIcon !== "info" ? catIcon : "error_outline",
           desc: "Urgent Action Required",
         };
       case "medium":
@@ -75,7 +101,7 @@ export default function WorkspaceNotificationsSlider({
           color: "#f59e0b",
           badgeClass: "badge-med-yellow",
           cardClass: "card-priority-med",
-          icon: "warning_amber",
+          icon: catIcon !== "info" ? catIcon : "warning_amber",
           desc: "Pending Review & Action",
         };
       case "resolved":
@@ -94,7 +120,7 @@ export default function WorkspaceNotificationsSlider({
           color: "#64748b",
           badgeClass: "badge-low-grey",
           cardClass: "card-priority-low",
-          icon: "info",
+          icon: catIcon,
           desc: "General Info & Updates",
         };
     }
@@ -239,7 +265,7 @@ export default function WorkspaceNotificationsSlider({
           <div className="wns-cards-stack">
             {filteredNotifs.map((n) => {
               const priority = (n.priority || "low").toLowerCase();
-              const cfg = getPriorityConfig(priority);
+              const cfg = getPriorityConfig(priority, n.category);
 
               return (
                 <div
@@ -252,7 +278,7 @@ export default function WorkspaceNotificationsSlider({
                       <span className="wns-badge-dot" />
                       {cfg.label}
                     </span>
-                    <span className="wns-card-time">{n.time || "Just now"}</span>
+                    <span className="wns-card-time">{formatTimeAgo(n.ts, n.time)}</span>
                   </div>
 
                   {/* Card Content Row */}
@@ -262,7 +288,10 @@ export default function WorkspaceNotificationsSlider({
                     </div>
 
                     <div className="wns-card-text-col">
-                      <h4 className="wns-card-title">{n.title}</h4>
+                      <h4 className="wns-card-title">
+                        {n.title}
+                        {n.count > 1 ? ` (${n.count})` : ""}
+                      </h4>
                       <p className="wns-card-desc">{n.message || n.text}</p>
                     </div>
                   </div>
@@ -270,8 +299,8 @@ export default function WorkspaceNotificationsSlider({
                   {/* Card Footer Actions */}
                   <div className="wns-card-footer">
                     <div className="wns-footer-left">
-                      {/* Optional Context Action (e.g. Review, Open Chat, View Slip) */}
-                      {n.actionLabel && (
+                      {/* Context Action (hidden if actionType is 'none') */}
+                      {n.actionType !== "none" && n.actionLabel && (
                         <button
                           type="button"
                           className="wns-action-btn"
@@ -301,7 +330,7 @@ export default function WorkspaceNotificationsSlider({
                       <button
                         type="button"
                         className="wns-icon-action-btn"
-                        onClick={() => onMarkRead?.(n.id)}
+                        onClick={() => onMarkRead?.(n)}
                         title={n.read ? "Mark unread" : "Mark as read"}
                       >
                         <span className="material-icons">
