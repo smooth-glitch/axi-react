@@ -482,7 +482,8 @@ export const FRIENDLY_COMMAND_NAMES = new Set([
   "creategroup", "addmember", "leavegroup",
   "me",
   "associates", "find", "connect", "disconnect", "requests", "accept", "reject",
-  "remind",
+  "notifications", "remind",
+  "tstruct", "tstruct-add",
   "help",
 ]);
 
