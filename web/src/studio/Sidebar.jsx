@@ -233,7 +233,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
           </Text>
         ) : null}
         {shown.map((s, i) => (
-          <NavLink key={s.id} index={i} testID={`nav-struct-${s.name}`} icon={Table2} label={s.name} active={isActive(s)} badge={s.recordCount || undefined} onPress={() => go(`/structs/${s.id}/records`)} />
+          <NavLink key={s.id} index={i} testID={`nav-struct-${s.name}`} icon={Table2} label={s.name} active={isActive(s)} badge={s.recordCount || undefined} onPress={() => go(`/structs/${encodeURIComponent(s.id)}/records`)} />
         ))}
       </div>
 

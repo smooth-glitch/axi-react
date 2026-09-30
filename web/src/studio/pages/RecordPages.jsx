@@ -62,8 +62,8 @@ export function Records() {
       });
   });
 
-  const add = () => navigate(`/structs/${id}/form`);
-  const edit = () => navigate(`/structs/${id}/edit`);
+  const add = () => navigate(`/structs/${encodeURIComponent(id)}/form`);
+  const edit = () => navigate(`/structs/${encodeURIComponent(id)}/edit`);
   const total = records?.length ?? 0;
 
   return (
@@ -104,7 +104,7 @@ export function Records() {
           struct={struct}
           records={records}
           onAdd={add}
-          onEdit={(rec) => navigate(`/structs/${id}/record/${rec.id}`)}
+          onEdit={(rec) => navigate(`/structs/${encodeURIComponent(id)}/record/${rec.id}`)}
           canEdit={(rec) => isMine(rec.createdBy)}
           onDelete={async (rec) => {
             await deleteRecord(id, rec.id);
@@ -136,7 +136,7 @@ export function NewRecord() {
   const toast = useToast();
   const { refresh } = useStructs();
   const [struct, setStruct] = useState(null);
-  const toRecords = () => navigate(`/structs/${id}/records`, { replace: true });
+  const toRecords = () => navigate(`/structs/${encodeURIComponent(id)}/records`, { replace: true });
 
   return (
     <Page title={struct ? `New ${struct.name} record` : 'New record'} subtitle={struct ? 'Fill in the form and submit' : undefined} onBack={toRecords} width="full">
@@ -162,7 +162,7 @@ export function EditRecord() {
   const { refresh } = useStructs();
   const [info, setInfo] = useState({});
   const [confirm, setConfirm] = useState(false);
-  const toRecords = () => navigate(`/structs/${id}/records`, { replace: true });
+  const toRecords = () => navigate(`/structs/${encodeURIComponent(id)}/records`, { replace: true });
   const mine = info.record && isMine(info.record.createdBy);
 
   return (

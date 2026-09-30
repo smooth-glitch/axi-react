@@ -938,10 +938,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           // SmartStructureModal is a fill-in form only, no list.
           setModalParam({ initialPath: `/structs/${encodeURIComponent(event.data.tstruct.name)}/records` });
           setModal("tstruct_user");
-        } else if ((event.reqId === "#tstruct-add" || event.reqId === "#tstruct-edit") && event.ok && event.data?.tstruct) {
-          // Adding/editing a single record fits the same lightweight form the chat's
+        } else if (event.reqId === "#tstruct-add" && event.ok && event.data?.tstruct) {
+          // Adding a single record fits the same lightweight form the chat's
           // Smart Prompts already use (SubmissionsModal's "Edit" does the same thing).
-          const { tstruct, scope, submissions, editRecordId } = event.data;
+          const { tstruct, scope } = event.data;
           const stubOption = {
             id: `#tstruct-${tstruct.name}`,
             caption: tstruct.caption || tstruct.name,
@@ -949,20 +949,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
             target: tstruct.name,
             targetScope: scope || "user",
           };
-          if (event.reqId === "#tstruct-edit") {
-            const record = (submissions || []).find((s) => s.id === editRecordId);
-            if (!record) {
-              pushToast(`Record #${editRecordId} not found.`, true);
-              return;
-            }
-            setEditingSubmission(record);
-          } else {
-            setEditingSubmission(null);
-          }
+          setEditingSubmission(null);
           setSelectedPrompt(stubOption);
           setModal("smart_structure");
-        } else if (event.reqId === "#tstruct-delete" && event.ok) {
-          pushToast("Record deleted.");
         } else if (!event.ok && event.error?.message) {
           pushToast(event);
         }

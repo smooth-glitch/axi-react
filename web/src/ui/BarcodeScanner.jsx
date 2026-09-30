@@ -66,12 +66,29 @@ function ScannerModal({ onDetected, onClose }) {
   const [error, setError] = useState(null);
   const scannerRef = useRef(null);
   const stoppedRef = useRef(false);
+  // The parent passes a fresh onDetected on every render. Keep the latest in a ref so it is NOT an effect dependency:
+  // otherwise each parent re-render restarts the camera and a second <video> gets stacked under the first.
+  const tracksRef = useRef([]);
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
 
   // Html5Qrcode.stop() THROWS SYNCHRONOUSLY (not a rejected promise) when called on a scanner
   // whose start() never actually got going (e.g. camera permission denied) - calling it
   // unconditionally from a useEffect cleanup crashes the whole app with no error boundary to
   // catch it. Only stop() a scanner that's actually running, and never let this throw.
+  // Privacy: the camera must be off the moment scanning ends. Stop the media tracks directly (synchronously) - Html5Qrcode.stop()
+  // is async and is skipped while start() is pending, which left the browser's "camera in use" indicator on.
+  const releaseCamera = () => {
+    try {
+      tracksRef.current.forEach((tr) => tr.stop());
+    } catch (_) {
+      /* already stopped */
+    }
+    tracksRef.current = [];
+  };
+
   const safeStop = (qr) => {
+    releaseCamera();
     try {
       if (qr?.isScanning) {
         qr.stop()
@@ -112,12 +129,19 @@ function ScannerModal({ onDetected, onClose }) {
               if (stoppedRef.current) return;
               stoppedRef.current = true;
               safeStop(qr);
-              onDetected(decodedText);
+              onDetectedRef.current(decodedText);
             },
             () => {
               // per-frame "no code found" — expected while aiming the camera, not an error
             }
           )
+          .then(() => {
+            // remember the live camera tracks so they can be shut off synchronously
+            const video = document.getElementById(domId)?.querySelector('video');
+            tracksRef.current = video?.srcObject?.getTracks?.() || [];
+            // closed / restarted while the camera was still starting: it just turned on, so turn it straight back off
+            if (cancelled || stoppedRef.current) safeStop(qr);
+          })
           .catch((err) => {
             if (cancelled) return;
             setError(err?.message?.includes('Permission') || String(err).includes('NotAllowed') ? 'Camera permission was denied. Allow it in the browser and try again.' : 'Could not start the camera on this device.');
@@ -131,8 +155,9 @@ function ScannerModal({ onDetected, onClose }) {
       cancelled = true;
       stoppedRef.current = true;
       safeStop(scannerRef.current);
+      releaseCamera();
     };
-  }, [domId, onDetected]);
+  }, [domId]);
 
   return (
     <Overlay initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
