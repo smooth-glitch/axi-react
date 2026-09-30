@@ -50,40 +50,6 @@ export default function TStructUserModal({ onClose, currentUser, initialPath }) 
           boxShadow: "0 24px 80px rgba(0,0,0,0.4)",
         }}
       >
-        {/* Header bar */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 20px",
-            background: "#1a1a2e",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="material-icons" style={{ color: "#7c6af7", fontSize: 22 }}>table_chart</span>
-            <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Org Structures</span>
-            <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, marginLeft: 4 }}>Lite TStruct Studio</span>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: "rgba(255,255,255,0.6)",
-              cursor: "pointer",
-              fontSize: 22,
-              lineHeight: 1,
-              padding: "2px 6px",
-            }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
         {/* Studio body — full tstruct React app rendered inline */}
         <div style={{ flex: 1, overflow: "hidden" }}>
           <AppThemeProvider>
@@ -92,7 +58,7 @@ export default function TStructUserModal({ onClose, currentUser, initialPath }) 
               <StructsProvider>
                 <ToastProvider>
                   <Routes>
-                    <Route element={<Shell />}>
+                    <Route element={<Shell onClose={onClose} />}>
                       <Route index element={<Home />} />
                       <Route path="options" element={<OptionsPage />} />
                       <Route path="options/new" element={<OptionBuilderPage mode="new" />} />

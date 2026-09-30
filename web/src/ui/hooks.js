@@ -28,20 +28,6 @@ export function useElementWidth() {
   return [ref, width];
 }
 
-// "System" theme preference: dark overnight, light during the day, by the device's local clock -
-// not the OS's prefers-color-scheme (which most people never touch). Re-checked every minute so an
-// open tab flips automatically at the 06:00 / 18:00 thresholds without a reload.
-const isNight = (d = new Date()) => d.getHours() < 6 || d.getHours() >= 18;
-
-export function useAutoDark() {
-  const [dark, setDark] = useState(isNight);
-  useEffect(() => {
-    const id = setInterval(() => setDark(isNight()), 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
-  return dark;
-}
-
 /**
  * useLiveChanges(handler): calls handler({ event, ...data }) for each server "something changed" push
  * (tstructs_changed / options_changed / submissions_changed) and for `resync` after a reconnect.

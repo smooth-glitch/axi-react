@@ -7,7 +7,7 @@ import { Ensure } from './Provider';
 import { useLiveChanges } from './hooks';
 import { createRecord, getRecord, getStruct, listRecords, updateRecord } from '../core/api';
 
-const providerProps = ({ apiUrl, getAuthToken, user, theme, colorMode }) => ({ apiUrl, getAuthToken, user, theme, colorMode });
+const providerProps = ({ apiUrl, getAuthToken, user, theme }) => ({ apiUrl, getAuthToken, user, theme });
 
 function StructFormInner({ struct: structRef, mode = 'new', recordId, initialValues, recordRef, meta, onSubmitted, onCancel, onError, onLoaded, submitLabel, intro, hideHeader }) {
   const t = useTheme();
@@ -98,7 +98,7 @@ function StructFormInner({ struct: structRef, mode = 'new', recordId, initialVal
  *   onError       (error) => void
  *   onLoaded      ({ struct, record }) => void
  *   submitLabel, intro, hideHeader   texts / hide the name header
- *   apiUrl, getAuthToken, user, theme, colorMode   used only when NOT inside <TstructProvider> (see Provider.jsx)
+ *   apiUrl, getAuthToken, user, theme   used only when NOT inside <TstructProvider> (see Provider.jsx)
  */
 export function StructForm(props) {
   return (

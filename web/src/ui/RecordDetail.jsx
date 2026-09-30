@@ -18,6 +18,7 @@ export default function RecordDetail({ struct, record, number, onClose, onEdit, 
       title={number ? `Record #${number}` : 'Record'}
       subtitle={record ? `${struct.name} · ${fullDate(record.createdAt)}${record.modifiedAt !== record.createdAt ? ` · edited ${fullDate(record.modifiedAt)}` : ''}` : undefined}
       testID="record-detail"
+      full
       footer={
         <>
           <Button title="Close" variant="secondary" onPress={onClose} />

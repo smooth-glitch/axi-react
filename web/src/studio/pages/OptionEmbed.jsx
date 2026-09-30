@@ -10,7 +10,7 @@ import { postToHost } from '../../core/embedBridge';
  *   /embed/options/new                   create an option
  *   /embed/options/:optionId/edit        edit an option
  *   /embed/options/:optionId/run         run an option (dataInput opens /embed/:struct/form inside the iframe)
- * Query: theme=light|dark, origin=<host origin for postMessage>, apiUrl=<override>
+ * Query: origin=<host origin for postMessage>, apiUrl=<override>
  * Messages to window.parent: tstruct:option-saved {option, isNew}, tstruct:option-deleted {option}, tstruct:option-run {optionId, type},
  *   tstruct:resize {height}
  */
@@ -36,7 +36,7 @@ export default function OptionEmbed({ view }) {
   const openStruct = useCallback((s) => navigate(`/embed/${encodeURIComponent(s.id)}/form${suffix}`, { replace: true }), [navigate, suffix]);
 
   return (
-    <TstructProvider apiUrl={q.get('apiUrl') || undefined} colorMode={q.get('theme') === 'dark' ? 'dark' : q.get('theme') === 'light' ? 'light' : undefined}>
+    <TstructProvider apiUrl={q.get('apiUrl') || undefined}>
       <div ref={rootRef} style={{ padding: 8 }}>
         {view === 'list' ? (
           <OptionsList

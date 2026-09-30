@@ -21,7 +21,6 @@ const parseJson = (s) => {
  *   values        URL-encoded JSON of pre-filled values            (form, new record)
  *   ref           saved on new/edited records as `ref`; on /records it filters the list
  *   meta          URL-encoded JSON stored as `meta`                (form)
- *   theme         light | dark
  *   hideHeader    1 = hide the struct name/intro header            (form)
  *   submitLabel   text of the submit button
  *   origin        origin of the host page: postMessage target (default: '*')
@@ -54,7 +53,7 @@ export default function Embed() {
   }, [origin]);
 
   return (
-    <TstructProvider apiUrl={q.get('apiUrl') || undefined} colorMode={q.get('theme') === 'dark' ? 'dark' : q.get('theme') === 'light' ? 'light' : undefined}>
+    <TstructProvider apiUrl={q.get('apiUrl') || undefined}>
       <div ref={rootRef} style={{ padding: 8 }}>
         {view === 'records' ? (
           <RecordList struct={structRef} recordRef={ref} />
