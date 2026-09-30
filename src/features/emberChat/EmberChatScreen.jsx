@@ -1006,8 +1006,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
             ...prevChats,
           ];
         });
-        setActiveChatId(chatId);
-        pushToast(`Group "${event.name}" created`);
+        // this event also answers every #addmember: only a brand-new group (just its creator) is announced
+        if ((event.members || []).length <= 1) {
+          setActiveChatId(chatId);
+          pushToast(`Group "${event.name}" created`);
+        }
       } else if (event.type === "added_to_group") {
         // P1: Handle added_to_group
         const chatId = `room-${event.name}`;
@@ -1618,23 +1621,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
     if (cmd === "creategroup" || cmd === "newgroup") {
       const gName = parts.join(" ").slice(0, 32);
       if (gName) {
-        const chatId = `room-${gName}`;
-        const newGroupChat = {
-          id: chatId,
-          name: gName,
-          isGroup: true,
-          category: "channel",
-          preview: "Group created via #creategroup",
-          time: "now",
-          unread: 0,
-          topic: gName,
-          members: [currentUser.username],
-        };
-        setChats((prev) => [newGroupChat, ...prev]);
-        setActiveChatId(chatId);
-        setGroupMembersByName((prev) => ({ ...prev, [gName]: [currentUser.username] }));
+        // Do not add the group locally: wait for the server's group_created event (or its error,
+        // e.g. "Only hosts can create groups" in strict mode) so the list never shows a group
+        // that does not exist.
         sandeshSocket.sendCreateGroup(gName);
-        pushToast(`Group "${gName}" created`);
       } else {
         setModal("new-group");
       }
@@ -2795,27 +2785,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
                   if (!groupName) return;
 
-                  // P1: Use consistent id room-<groupName> on both send and receive
-                  const chatId = `room-${groupName}`;
-                  const newChat = {
-                    id: chatId,
-                    name: groupName,
-                    isGroup: true,
-                    category: "channel",
-                    preview: "Group created",
-                    time: "now",
-                    unread: 0,
-                    topic: groupName,
-                    members: [currentUser.username, ...selectedMembers],
-                  };
-
-                  setChats((prev) => [newChat, ...prev]);
-                  setActiveChatId(chatId);
-                  setGroupMembersByName((prev) => ({
-                    ...prev,
-                    [groupName]: [currentUser.username, ...selectedMembers],
-                  }));
-
                   const safeBackendGroupName = groupName.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, 32) || "group";
                   sandeshSocket.sendCreateGroup(safeBackendGroupName);
 
@@ -2824,7 +2793,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                     sandeshSocket.sendAddMember(safeBackendGroupName, mem);
                   });
 
-                  pushToast(`Group "${groupName}" created successfully`);
+                  // the group appears (and is opened) when the server confirms with group_created
                   setModal(null);
                 }}
               />
