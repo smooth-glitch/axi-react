@@ -161,7 +161,7 @@ user_actions() ->
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
      <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
      <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
-     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"catalog.get">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -826,6 +826,21 @@ do(<<"admin.globals.delete">>, Args, _Ctx) ->
     with_bin(<<"name">>, Args, fun(N) ->
         case sd_globals:delete(N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
     end);
+
+do(<<"catalog.list">>, Args, #{user := User}) ->
+    {ok, sd_catalog:list(sd_users:is_admin(User), Args)};
+do(<<"catalog.get">>, Args, _Ctx) ->
+    case sd_catalog:get(sd_util:get(<<"kind">>, Args, <<>>), sd_util:get(<<"id">>, Args, <<>>)) of
+        #{<<"active">> := true} = I -> {ok, #{<<"item">> => I}};
+        _ -> {error, not_found, <<"No such item.">>}
+    end;
+do(<<"admin.catalog.save">>, Args, _Ctx) ->
+    case sd_catalog:save(Args) of {ok, I} -> {ok, #{<<"item">> => I}}; Err -> Err end;
+do(<<"admin.catalog.delete">>, Args, _Ctx) ->
+    case sd_catalog:delete(sd_util:get(<<"kind">>, Args, <<>>), sd_util:get(<<"id">>, Args, <<>>)) of
+        ok -> {ok, #{<<"deleted">> => true}};
+        Err -> Err
+    end;
 
 do(Action, _, _) ->
     {error, unknown_action, <<"Unknown sd action: ", Action/binary>>}.
