@@ -997,7 +997,9 @@ handle_line(Socket, Name, "/hostmsg " ++ Rest) ->
                         {"type", {str, "host_ack"}}, {"host", {str, HostKey}}, {"status", {str, "delivered"}},
                         {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
                 {error, not_found} ->
-                    ws_send_json(Socket, "error", "No such host, or it has no one assigned yet: " ++ HostKey)
+                    ws_send_json(Socket, "error", "No such host, or it has no one assigned yet: " ++ HostKey);
+                {error, unavailable} ->
+                    ws_send_json(Socket, "error", "Temporarily unavailable -- please try again in a moment")
             end;
         _ ->
             ws_send_json(Socket, "error", "Usage: /hostmsg <hostKey> <message>")
@@ -1017,7 +1019,9 @@ handle_line(Socket, Name, "/msg " ++ Rest) ->
                             ws_send(Socket, dm_ack_json(To, Status, Id, Ts)),
                             sd_policy:after_dm(Name, To, Id, Ts, Text);
                         {error, not_found} ->
-                            ws_send_json(Socket, "error", "No such user: " ++ To)
+                            ws_send_json(Socket, "error", "No such user: " ++ To);
+                        {error, unavailable} ->
+                            ws_send_json(Socket, "error", "Temporarily unavailable -- please try again in a moment")
                     end
             end;
         _ ->
@@ -1059,7 +1063,9 @@ handle_line(Socket, Name, "/replydm " ++ Rest) ->
                                             ws_send(Socket, dm_ack_json(To, Status, Id, Ts)),
                                             sd_policy:after_dm(Name, To, Id, Ts, Text);
                                         {error, not_found} ->
-                                            ws_send_json(Socket, "error", "No such user: " ++ To)
+                                            ws_send_json(Socket, "error", "No such user: " ++ To);
+                                        {error, unavailable} ->
+                                            ws_send_json(Socket, "error", "Temporarily unavailable -- please try again in a moment")
                                     end
                             end;
                         _ -> ws_send_json(Socket, "error", "Usage: /replydm <username> <messageId> <message>")
@@ -1261,7 +1267,8 @@ handle_line(Socket, Name, "/groupmsg " ++ Rest) ->
                         {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}])),
                     sd_policy:after_group(Name, GroupName, Id, Ts, Text);
                 {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
-                {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group")
+                {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group");
+                {error, unavailable} -> ws_send_json(Socket, "error", "Temporarily unavailable -- please try again in a moment")
             end;
         _ ->
             ws_send_json(Socket, "error", "Usage: /groupmsg <group> <message>")
@@ -1283,7 +1290,8 @@ handle_line(Socket, Name, "/replygroup " ++ Rest) ->
                                         {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}])),
                                     sd_policy:after_group(Name, GroupName, Id, Ts, Text);
                                 {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
-                                {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group")
+                                {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group");
+                                {error, unavailable} -> ws_send_json(Socket, "error", "Temporarily unavailable -- please try again in a moment")
                             end;
                         _ -> ws_send_json(Socket, "error", "Usage: /replygroup <group> <messageId> <message>")
                     end;

@@ -47,6 +47,8 @@ const SUITES = [
   { name: "sandesh_user_options_test", db: 12, arg: "url", timeoutMs: 180000, env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_MAX_FILE_MB: "1", SANDESH_FILES_DIR: path.join(os.tmpdir(), "sd-files-runall") } },
   // Open mode (the default). Two shared backends: the first two TEST the rate limiter so they need the default
   // limit; the other two send far more than it allows, so they need it raised.
+  // Freezes Redis for ~6.5 s: needs its own backend (and Redis port, which it reads from RUN_REDIS_PORT).
+  { name: "redis_stall_test", db: 2, arg: "port", timeoutMs: 60000, env: { CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "hash_commands_test", db: 7, arg: "port", group: "open-default", env: {} },
   { name: "integration_test", db: 7, arg: "port", group: "open-default", env: {} },
   { name: "hash_commands_edge_test", db: 6, arg: "port", group: "open-high", env: { CHAT_RATE_LIMIT_MAX: "1000" } },

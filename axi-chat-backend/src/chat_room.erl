@@ -44,7 +44,14 @@ send_private(From, To, Text) ->
     send_private(From, To, Text, []).
 
 send_private(From, To, Text, ReplyTo) ->
-    gen_server:call(?MODULE, {private, From, To, Text, ReplyTo}).
+    call_or_unavailable({private, From, To, Text, ReplyTo}).
+
+%% Waits longer than the worker can (Redis gives up after 5 s), and turns any failure or timeout into an
+%% error reply -- a slow store must not crash the sender's connection.
+call_or_unavailable(Req) ->
+    try gen_server:call(?MODULE, Req, 12000)
+    catch exit:_ -> {error, unavailable}
+    end.
 
 list_users() ->
     gen_server:call(?MODULE, list_users).
@@ -58,7 +65,7 @@ send_host_message(From, HostKey, Text) ->
     send_host_message(From, HostKey, Text, []).
 
 send_host_message(From, HostKey, Text, ReplyTo) ->
-    gen_server:call(?MODULE, {host_message, From, HostKey, Text, ReplyTo}).
+    call_or_unavailable({host_message, From, HostKey, Text, ReplyTo}).
 
 %% Threaded per (host, associate) rather than per (host, whoever's
 %% currently resolved to it) -- if a department host's assigned user
@@ -90,6 +97,23 @@ delete_dm(MessageId, User, Other) -> gen_server:cast(?MODULE, {delete_dm, Messag
 %% update made after that never reached anyone already connected).
 broadcast_profile(User) -> gen_server:cast(?MODULE, {broadcast_profile, User}).
 
+%% ---- keeping Redis out of this process ------------------------------------------------------------------
+%% This server holds the live registry ("who is online, which pid"). It must never wait on Redis: a stall
+%% longer than the driver's call timeout used to crash it and wipe the registry. Anything that needs Redis
+%% is either done by a short-lived worker that replies to the caller when finished (private/host messages,
+%% which run in parallel) or queued on chat_writer (global messages, reactions, deletes: in order, one at a
+%% time). A failure inside a job is logged and answered with {error, unavailable}; it never reaches here.
+offload_reply(From, Fun, ErrReply) ->
+    _ = spawn(fun() ->
+        Reply = try Fun()
+                catch Class:Reason:Stack ->
+                    ?LOG_ERROR("chat_room job failed: ~p:~p at ~p", [Class, Reason, hd(Stack ++ [none])]),
+                    ErrReply
+                end,
+        gen_server:reply(From, Reply)
+    end),
+    ok.
+
 init([]) ->
     {ok, #state{}}.
 
@@ -99,7 +123,7 @@ handle_call({register, Name, Pid}, _From, State = #state{users = Users, monitors
             ?LOG_DEBUG("registration rejected, username already taken: ~s", [Name]),
             {reply, {error, taken}, State};
         false ->
-            chat_store:register_user(Name),
+            chat_writer:run_async(fun() -> chat_store:register_user(Name) end),
             Ref = erlang:monitor(process, Pid),
             NewUsers = maps:put(Name, Pid, Users),
             NewMonitors = maps:put(Ref, Name, Monitors),
@@ -107,7 +131,120 @@ handle_call({register, Name, Pid}, _From, State = #state{users = Users, monitors
             notify_all(NewUsers, {system, io_lib:format("~s has joined", [Name])}),
             {reply, ok, State#state{users = NewUsers, monitors = NewMonitors}}
     end;
-handle_call({private, From, To, Text, ReplyTo}, _From, State = #state{users = Users}) ->
+handle_call({private, From, To, Text, ReplyTo}, From0, State = #state{users = Users}) ->
+    offload_reply(From0, fun() -> do_private(Users, From, To, Text, ReplyTo) end, {error, unavailable}),
+    {noreply, State};
+handle_call({host_message, From, HostKey, Text, ReplyTo}, From0, State = #state{users = Users}) ->
+    offload_reply(From0, fun() -> do_host_message(Users, From, HostKey, Text, ReplyTo) end, {error, unavailable}),
+    {noreply, State};
+handle_call(list_users, _From, State = #state{users = Users}) ->
+    {reply, maps:keys(Users), State};
+handle_call({get_pid, Name}, _From, State = #state{users = Users}) ->
+    {reply, maps:find(Name, Users), State}.
+
+handle_cast({unregister, Name}, State = #state{users = Users, monitors = Monitors}) ->
+    NewUsers = maps:remove(Name, Users),
+    NewMonitors = maps:filter(
+        fun(Ref, N) ->
+            case N =:= Name of
+                true -> erlang:demonitor(Ref, [flush]), false;
+                false -> true
+            end
+        end, Monitors),
+    ?LOG_INFO("~s disconnected cleanly (~p total online)", [Name, maps:size(NewUsers)]),
+    notify_all(NewUsers, {system, io_lib:format("~s has left", [Name])}),
+    {noreply, State#state{users = NewUsers, monitors = NewMonitors}};
+handle_cast({broadcast, From, Text, ReplyTo}, State = #state{users = Users}) ->
+    chat_writer:run_async(fun() ->
+        {Id, Ts} = chat_store:save_message("global", From, Text, chat, false, ReplyTo),
+        %% The sender already rendered their own message optimistically and
+        %% isn't in the broadcast recipient list below -- but they still need
+        %% to learn the assigned id/ts, so their own message becomes react-able
+        %% and can receive reaction pushes from others.
+        case maps:find(From, Users) of
+            {ok, SelfPid} -> SelfPid ! {own_message_id, Id, Ts};
+            error -> ok
+        end,
+        Others = maps:remove(From, Users),
+        notify_all(Others, {chat_message, Id, Ts, From, Text, ReplyTo}),
+        chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
+            notify_all(Users, {link_preview, "global", MsgId, Preview})
+        end)
+    end),
+    {noreply, State};
+handle_cast({typing, From}, State = #state{users = Users}) ->
+    notify_all(maps:remove(From, Users), {typing, From}),
+    {noreply, State};
+handle_cast({typing_dm, From, To}, State = #state{users = Users}) ->
+    case maps:find(To, Users) of
+        {ok, Pid} -> Pid ! {typing_dm, From};
+        error -> ok
+    end,
+    {noreply, State};
+handle_cast({mark_read, Reader, Other}, State = #state{users = Users}) ->
+    case maps:find(Other, Users) of
+        {ok, Pid} -> Pid ! {dm_read, Reader};
+        error -> ok
+    end,
+    {noreply, State};
+handle_cast({react_global, MessageId, User, Emoji}, State = #state{users = Users}) ->
+    chat_writer:run_async(fun() ->
+        case chat_store:toggle_reaction(MessageId, User, Emoji) of
+            {ok, Reactions} -> notify_all(Users, {reaction, "global", MessageId, Reactions});
+            {error, not_found} -> ok
+        end
+    end),
+    {noreply, State};
+handle_cast({react_dm, MessageId, User, Emoji, Other}, State = #state{users = Users}) ->
+    chat_writer:run_async(fun() ->
+        case chat_store:toggle_reaction(MessageId, User, Emoji) of
+            {ok, Reactions} ->
+                %% Push to both participants (including the reactor) so the UI
+                %% always renders from the server-confirmed reaction set rather
+                %% than predicting it optimistically.
+                lists:foreach(
+                    fun(N) ->
+                        case maps:find(N, Users) of
+                            {ok, Pid} -> Pid ! {dm_reaction, MessageId, Reactions, User, Other};
+                            error -> ok
+                        end
+                    end, [User, Other]);
+            {error, not_found} -> ok
+        end
+    end),
+    {noreply, State};
+handle_cast({delete_global, MessageId, User}, State = #state{users = Users}) ->
+    chat_writer:run_async(fun() ->
+        case chat_store:delete_message(MessageId, User) of
+            {ok, deleted} -> notify_all(Users, {deleted, MessageId});
+            {error, Reason} -> notify_delete_denied(Users, User, MessageId, Reason)
+        end
+    end),
+    {noreply, State};
+handle_cast({delete_dm, MessageId, User, Other}, State = #state{users = Users}) ->
+    chat_writer:run_async(fun() ->
+        case chat_store:delete_message(MessageId, User) of
+            {ok, deleted} ->
+                lists:foreach(
+                    fun(N) ->
+                        case maps:find(N, Users) of
+                            {ok, Pid} -> Pid ! {dm_deleted, MessageId, User, Other};
+                            error -> ok
+                        end
+                    end, [User, Other]);
+            {error, Reason} -> notify_delete_denied(Users, User, MessageId, Reason)
+        end
+    end),
+    {noreply, State};
+handle_cast({broadcast_profile, User}, State = #state{users = Users}) ->
+    chat_writer:run_async(fun() ->
+        {Avatar, Status} = chat_store:get_profile(User),
+        notify_all(Users, {profile_update, User, Avatar, Status})
+    end),
+    {noreply, State}.
+
+%% ---- job bodies (run in workers / chat_writer, never in this process) ----
+do_private(Users, From, To, Text, ReplyTo) ->
     %% Online recipient: save + push live. Offline but previously-seen
     %% recipient: save anyway ({queued, ...}) -- they find it via
     %% /conversations + /history dm after reconnecting. Never-seen name:
@@ -130,11 +267,12 @@ handle_call({private, From, To, Text, ReplyTo}, _From, State = #state{users = Us
                         end
                     end, [From, To])
             end),
-            {reply, {case Recipient of {ok, _} -> ok; error -> queued end, Id, Ts}, State};
+            {case Recipient of {ok, _} -> ok; error -> queued end, Id, Ts};
         false ->
-            {reply, {error, not_found}, State}
-    end;
-handle_call({host_message, From, HostKey, Text, ReplyTo}, _From, State = #state{users = Users}) ->
+            {error, not_found}
+    end.
+
+do_host_message(Users, From, HostKey, Text, ReplyTo) ->
     case chat_hosts:resolve_host(HostKey, From) of
         {ok, ResolvedTo} ->
             ConvKey = host_conv_key(HostKey, From),
@@ -143,103 +281,10 @@ handle_call({host_message, From, HostKey, Text, ReplyTo}, _From, State = #state{
                 {ok, Pid} -> Pid ! {host_message, HostKey, Id, Ts, From, Text, ReplyTo};
                 error -> ok
             end,
-            {reply, {ok, Id, Ts}, State};
+            {ok, Id, Ts};
         {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
-handle_call(list_users, _From, State = #state{users = Users}) ->
-    {reply, maps:keys(Users), State};
-handle_call({get_pid, Name}, _From, State = #state{users = Users}) ->
-    {reply, maps:find(Name, Users), State}.
-
-handle_cast({unregister, Name}, State = #state{users = Users, monitors = Monitors}) ->
-    NewUsers = maps:remove(Name, Users),
-    NewMonitors = maps:filter(
-        fun(Ref, N) ->
-            case N =:= Name of
-                true -> erlang:demonitor(Ref, [flush]), false;
-                false -> true
-            end
-        end, Monitors),
-    ?LOG_INFO("~s disconnected cleanly (~p total online)", [Name, maps:size(NewUsers)]),
-    notify_all(NewUsers, {system, io_lib:format("~s has left", [Name])}),
-    {noreply, State#state{users = NewUsers, monitors = NewMonitors}};
-handle_cast({broadcast, From, Text, ReplyTo}, State = #state{users = Users}) ->
-    {Id, Ts} = chat_store:save_message("global", From, Text, chat, false, ReplyTo),
-    %% The sender already rendered their own message optimistically and
-    %% isn't in the broadcast recipient list below -- but they still need
-    %% to learn the assigned id/ts, so their own message becomes react-able
-    %% and can receive reaction pushes from others.
-    case maps:find(From, Users) of
-        {ok, SelfPid} -> SelfPid ! {own_message_id, Id, Ts};
-        error -> ok
-    end,
-    Others = maps:remove(From, Users),
-    notify_all(Others, {chat_message, Id, Ts, From, Text, ReplyTo}),
-    chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
-        notify_all(Users, {link_preview, "global", MsgId, Preview})
-    end),
-    {noreply, State};
-handle_cast({typing, From}, State = #state{users = Users}) ->
-    notify_all(maps:remove(From, Users), {typing, From}),
-    {noreply, State};
-handle_cast({typing_dm, From, To}, State = #state{users = Users}) ->
-    case maps:find(To, Users) of
-        {ok, Pid} -> Pid ! {typing_dm, From};
-        error -> ok
-    end,
-    {noreply, State};
-handle_cast({mark_read, Reader, Other}, State = #state{users = Users}) ->
-    case maps:find(Other, Users) of
-        {ok, Pid} -> Pid ! {dm_read, Reader};
-        error -> ok
-    end,
-    {noreply, State};
-handle_cast({react_global, MessageId, User, Emoji}, State = #state{users = Users}) ->
-    case chat_store:toggle_reaction(MessageId, User, Emoji) of
-        {ok, Reactions} -> notify_all(Users, {reaction, "global", MessageId, Reactions});
-        {error, not_found} -> ok
-    end,
-    {noreply, State};
-handle_cast({react_dm, MessageId, User, Emoji, Other}, State = #state{users = Users}) ->
-    case chat_store:toggle_reaction(MessageId, User, Emoji) of
-        {ok, Reactions} ->
-            %% Push to both participants (including the reactor) so the UI
-            %% always renders from the server-confirmed reaction set rather
-            %% than predicting it optimistically.
-            lists:foreach(
-                fun(N) ->
-                    case maps:find(N, Users) of
-                        {ok, Pid} -> Pid ! {dm_reaction, MessageId, Reactions, User, Other};
-                        error -> ok
-                    end
-                end, [User, Other]);
-        {error, not_found} -> ok
-    end,
-    {noreply, State};
-handle_cast({delete_global, MessageId, User}, State = #state{users = Users}) ->
-    case chat_store:delete_message(MessageId, User) of
-        {ok, deleted} -> notify_all(Users, {deleted, MessageId});
-        {error, Reason} -> notify_delete_denied(Users, User, MessageId, Reason)
-    end,
-    {noreply, State};
-handle_cast({delete_dm, MessageId, User, Other}, State = #state{users = Users}) ->
-    case chat_store:delete_message(MessageId, User) of
-        {ok, deleted} ->
-            lists:foreach(
-                fun(N) ->
-                    case maps:find(N, Users) of
-                        {ok, Pid} -> Pid ! {dm_deleted, MessageId, User, Other};
-                        error -> ok
-                    end
-                end, [User, Other]);
-        {error, Reason} -> notify_delete_denied(Users, User, MessageId, Reason)
-    end,
-    {noreply, State};
-handle_cast({broadcast_profile, User}, State = #state{users = Users}) ->
-    {Avatar, Status} = chat_store:get_profile(User),
-    notify_all(Users, {profile_update, User, Avatar, Status}),
-    {noreply, State}.
+            {error, Reason}
+    end.
 
 handle_info({'DOWN', Ref, process, _Pid, Reason}, State = #state{users = Users, monitors = Monitors}) ->
     case maps:find(Ref, Monitors) of

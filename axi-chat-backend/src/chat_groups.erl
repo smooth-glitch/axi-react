@@ -62,11 +62,26 @@ group_message(GroupName, From, Text) ->
     group_message(GroupName, From, Text, []).
 
 group_message(GroupName, From, Text, ReplyTo) ->
-    gen_server:call(?MODULE, {message, GroupName, From, Text, ReplyTo}).
+    %% waits longer than the worker (Redis gives up after 5 s); any failure is an error reply, never a crash
+    try gen_server:call(?MODULE, {message, GroupName, From, Text, ReplyTo}, 12000)
+    catch exit:_ -> {error, unavailable}
+    end.
 
 typing(GroupName, From) -> gen_server:cast(?MODULE, {typing, GroupName, From}).
 react(GroupName, MessageId, User, Emoji) -> gen_server:cast(?MODULE, {react, GroupName, MessageId, User, Emoji}).
 delete(GroupName, MessageId, User) -> gen_server:cast(?MODULE, {delete, GroupName, MessageId, User}).
+
+%% A short-lived worker does the slow (Redis) part and answers the caller; a failure becomes ErrReply.
+offload_reply(From, Fun, ErrReply) ->
+    _ = spawn(fun() ->
+        Reply = try Fun()
+                catch Class:Reason:Stack ->
+                    logger:error("chat_groups job failed: ~p:~p at ~p", [Class, Reason, hd(Stack ++ [none])]),
+                    ErrReply
+                end,
+        gen_server:reply(From, Reply)
+    end),
+    ok.
 
 init([]) ->
     Groups = maps:from_list(
@@ -80,7 +95,7 @@ handle_call({create, Name, Owner}, _From, State = #state{groups = Groups}) ->
             {reply, {error, exists}, State};
         false ->
             Group = #group{owner = Owner, members = [Owner]},
-            chat_store:save_group(Name, Owner, [Owner]),
+            chat_writer:run_async(fun() -> chat_store:save_group(Name, Owner, [Owner]) end),
             {reply, {ok, [Owner]}, State#state{groups = maps:put(Name, Group, Groups)}}
     end;
 handle_call(all_names, _From, State = #state{groups = Groups}) ->
@@ -110,7 +125,7 @@ handle_call({add_member, GroupName, Requester, NewMember}, _From, State = #state
                             NewMembers = lists:usort([NewMember | Members]),
                             NewGroup = Group#group{members = NewMembers},
                             NewGroups = maps:put(GroupName, NewGroup, Groups),
-                            chat_store:save_group(GroupName, Group#group.owner, NewMembers),
+                            chat_writer:run_async(fun() -> chat_store:save_group(GroupName, Group#group.owner, NewMembers) end),
                             NewMemberPid ! {added_to_group, GroupName, NewMembers, Requester},
                             SystemText = io_lib:format("~s added ~s to the group", [Requester, NewMember]),
                             notify_members(Members, [], {group_system, GroupName, SystemText}),
@@ -128,7 +143,7 @@ handle_call({force_add, GroupName, Requester, NewMember}, _From, State = #state{
                     {reply, {error, already_member}, State};
                 false ->
                     NewMembers = lists:usort([NewMember | Members]),
-                    chat_store:save_group(GroupName, Group#group.owner, NewMembers),
+                    chat_writer:run_async(fun() -> chat_store:save_group(GroupName, Group#group.owner, NewMembers) end),
                     case chat_room:get_pid(NewMember) of
                         {ok, Pid} -> Pid ! {added_to_group, GroupName, NewMembers, Requester};
                         error -> ok
@@ -153,10 +168,10 @@ handle_call({leave, GroupName, Username}, _From, State = #state{groups = Groups}
                     notify_members(NewMembers, [], {group_system, GroupName, SystemText}),
                     NewGroups = case NewMembers of
                         [] ->
-                            chat_store:delete_group(GroupName),
+                            chat_writer:run_async(fun() -> chat_store:delete_group(GroupName) end),
                             maps:remove(GroupName, Groups);
                         _ ->
-                            chat_store:save_group(GroupName, Group#group.owner, NewMembers),
+                            chat_writer:run_async(fun() -> chat_store:save_group(GroupName, Group#group.owner, NewMembers) end),
                             maps:put(GroupName, Group#group{members = NewMembers}, Groups)
                     end,
                     {reply, ok, State#state{groups = NewGroups}}
@@ -185,7 +200,7 @@ handle_call({members, GroupName}, _From, State = #state{groups = Groups}) ->
         {ok, #group{members = Members}} -> {reply, {ok, Members}, State};
         error -> {reply, {error, not_found}, State}
     end;
-handle_call({message, GroupName, From, Text, ReplyTo}, _From, State = #state{groups = Groups}) ->
+handle_call({message, GroupName, From, Text, ReplyTo}, From0, State = #state{groups = Groups}) ->
     case maps:find(GroupName, Groups) of
         error ->
             {reply, {error, not_found}, State};
@@ -194,12 +209,16 @@ handle_call({message, GroupName, From, Text, ReplyTo}, _From, State = #state{gro
                 false ->
                     {reply, {error, not_member}, State};
                 true ->
-                    {Id, Ts} = chat_store:save_message("group:" ++ GroupName, From, Text, group_message, false, ReplyTo),
-                    notify_members(Members, [From], {group_message, GroupName, Id, Ts, From, Text, ReplyTo}),
-                    chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
-                        notify_members(Members, [], {group_link_preview, GroupName, MsgId, Preview})
-                    end),
-                    {reply, {ok, Id, Ts}, State}
+                    %% Redis (message id) is awaited by a worker, never by this process
+                    offload_reply(From0, fun() ->
+                        {Id, Ts} = chat_store:save_message("group:" ++ GroupName, From, Text, group_message, false, ReplyTo),
+                        notify_members(Members, [From], {group_message, GroupName, Id, Ts, From, Text, ReplyTo}),
+                        chat_link_preview:maybe_fetch_and_notify(Id, Text, fun(MsgId, Preview) ->
+                            notify_members(Members, [], {group_link_preview, GroupName, MsgId, Preview})
+                        end),
+                        {ok, Id, Ts}
+                    end, {error, unavailable}),
+                    {noreply, State}
             end
     end.
 
@@ -212,30 +231,34 @@ handle_cast({typing, GroupName, From}, State = #state{groups = Groups}) ->
     end,
     {noreply, State};
 handle_cast({react, GroupName, MessageId, User, Emoji}, State = #state{groups = Groups}) ->
-    case maps:find(GroupName, Groups) of
-        {ok, #group{members = Members}} ->
-            case chat_store:toggle_reaction(MessageId, User, Emoji) of
-                {ok, Reactions} -> notify_members(Members, [], {group_reaction, GroupName, MessageId, Reactions});
-                {error, not_found} -> ok
-            end;
-        error ->
-            ok
-    end,
+    chat_writer:run_async(fun() ->
+        case maps:find(GroupName, Groups) of
+            {ok, #group{members = Members}} ->
+                case chat_store:toggle_reaction(MessageId, User, Emoji) of
+                    {ok, Reactions} -> notify_members(Members, [], {group_reaction, GroupName, MessageId, Reactions});
+                    {error, not_found} -> ok
+                end;
+            error ->
+                ok
+        end
+    end),
     {noreply, State};
 handle_cast({delete, GroupName, MessageId, User}, State = #state{groups = Groups}) ->
-    case maps:find(GroupName, Groups) of
-        {ok, #group{members = Members}} ->
-            case chat_store:delete_message(MessageId, User) of
-                {ok, deleted} -> notify_members(Members, [], {group_deleted, GroupName, MessageId});
-                {error, Reason} ->
-                    case chat_room:get_pid(User) of
-                        {ok, Pid} -> Pid ! {delete_denied, MessageId, Reason};
-                        error -> ok
-                    end
-            end;
-        error ->
-            ok
-    end,
+    chat_writer:run_async(fun() ->
+        case maps:find(GroupName, Groups) of
+            {ok, #group{members = Members}} ->
+                case chat_store:delete_message(MessageId, User) of
+                    {ok, deleted} -> notify_members(Members, [], {group_deleted, GroupName, MessageId});
+                    {error, Reason} ->
+                        case chat_room:get_pid(User) of
+                            {ok, Pid} -> Pid ! {delete_denied, MessageId, Reason};
+                            error -> ok
+                        end
+                end;
+            error ->
+                ok
+        end
+    end),
     {noreply, State};
 handle_cast(_Msg, State) -> {noreply, State}.
 handle_info(_Msg, State) -> {noreply, State}.
