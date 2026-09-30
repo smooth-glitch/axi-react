@@ -480,7 +480,9 @@ do(<<"tstruct.user.get">>, Args, #{user := _User}) ->
 %% (gated by the normal tstruct_for_user/2 options check) so one command
 %% covers both collections.
 do(<<"tstruct.user.open">>, Args, #{user := User}) ->
-    with_bin(<<"name">>, Args, fun(N) ->
+    with_bin(<<"name">>, Args, fun(Given) ->
+        %% The user may type the caption ("Leave Request") instead of the name (leave_request).
+        N = case sd_config:find_tstruct_name(User, Given) of {ok, Real} -> Real; error -> Given end,
         %% Try user-created collection first; fall back to admin-managed.
         {Def, Scope} = case sd_config:get_user_tstruct(N) of
             D when is_map(D) -> {D, <<"user">>};

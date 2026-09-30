@@ -18,7 +18,7 @@
 
 -export([start_link/0]).
 -export([create_group/2, add_member/3, force_add/3, leave_group/2, list_groups_for/1,
-         list_members/1, group_message/3, group_message/4, typing/2, react/4, delete/3]).
+         list_members/1, all_names/0, owner/1, group_message/3, group_message/4, typing/2, react/4, delete/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(group, {owner :: string(), members :: [string()]}).
@@ -30,9 +30,11 @@ start_link() ->
 create_group(Name, Owner) ->
     gen_server:call(?MODULE, {create, Name, Owner}).
 
-%% Any current member can add another online user (simple permission
-%% model -- no admin/owner distinction, matching the rest of the app's
-%% "no accounts" simplicity).
+all_names() -> gen_server:call(?MODULE, all_names).
+
+owner(GroupName) -> gen_server:call(?MODULE, {owner, GroupName}).
+
+%% Only the group's creator (its admin) can add members.
 add_member(GroupName, Requester, NewMember) ->
     gen_server:call(?MODULE, {add_member, GroupName, Requester, NewMember}).
 
@@ -77,6 +79,13 @@ handle_call({create, Name, Owner}, _From, State = #state{groups = Groups}) ->
             chat_store:save_group(Name, Owner, [Owner]),
             {reply, {ok, [Owner]}, State#state{groups = maps:put(Name, Group, Groups)}}
     end;
+handle_call(all_names, _From, State = #state{groups = Groups}) ->
+    {reply, maps:keys(Groups), State};
+handle_call({owner, GroupName}, _From, State = #state{groups = Groups}) ->
+    case maps:find(GroupName, Groups) of
+        {ok, #group{owner = Owner}} -> {reply, {ok, Owner}, State};
+        error -> {reply, {error, not_found}, State}
+    end;
 handle_call({add_member, GroupName, Requester, NewMember}, _From, State = #state{groups = Groups}) ->
     case maps:find(GroupName, Groups) of
         error ->
@@ -85,6 +94,8 @@ handle_call({add_member, GroupName, Requester, NewMember}, _From, State = #state
             case {lists:member(Requester, Members), lists:member(NewMember, Members)} of
                 {false, _} ->
                     {reply, {error, not_member}, State};
+                _ when Requester =/= Group#group.owner ->
+                    {reply, {error, not_owner}, State};
                 {true, true} ->
                     {reply, {error, already_member}, State};
                 {true, false} ->
