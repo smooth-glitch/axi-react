@@ -159,7 +159,7 @@ user_actions() ->
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
      <<"feed.list">>, <<"feed.summary">>, <<"feed.read">>, <<"feed.resolve">>, <<"feed.dismiss">>, <<"feed.clear">>,
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
-     <<"connect.rotate">>, <<"connect.lookup">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
+     <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -599,6 +599,17 @@ do(<<"admin.org.set">>, Args, _Ctx) ->
             end
     end;
 
+%% ---- a person's own details ----
+%% profile.get     -> {profile:{...everything about me, incl. address / gender / dob / education / skills / roles}}
+%% profile.update  {address, gender, dob, education, skills, city, country, pin}  (any of them; nothing else can be changed here)
+do(<<"profile.get">>, _Args, #{user := User}) ->
+    {ok, #{<<"profile">> => sd_users:full(User)}};
+do(<<"profile.update">>, Args, #{user := User}) ->
+    case sd_users:update_person(maps:get(<<"username">>, User), Args) of
+        {ok, New} -> {ok, #{<<"profile">> => sd_users:full(New)}};
+        Err -> Err
+    end;
+
 %% ---- Connectum codes (QR) ----
 %% connect.my      -> {person:{code,display,payload,url,name,username}, enterprise:{...card...}}
 %% connect.scan    {code}  a personal code makes the two of you associates at once; an enterprise code returns its card
@@ -829,7 +840,8 @@ with_kind(Args, Fun) ->
         <<"designations">> -> Fun(designations);
         <<"categories">> -> Fun(categories);
         <<"affiliates">> -> Fun(affiliates);
-        _ -> {error, invalid, <<"kind must be one of: branches, departments, designations, categories, affiliates">>}
+        <<"roles">> -> Fun(roles);
+        _ -> {error, invalid, <<"kind must be one of: branches, departments, designations, categories, affiliates, roles">>}
     end.
 
 %% "Other users can be invited by providing ...": an administrator or a host
@@ -851,7 +863,9 @@ invite_user(Args, Actor) ->
                                true -> Opts0;
                                false -> Opts0#{scope_host => HostUser}
                            end,
-                    case sd_users:create(Args, Opts) of
+                    %% Only an administrator may give someone roles (they decide who may approve what).
+                    ArgsOk = case IsAdmin of true -> Args; false -> maps:remove(<<"roles">>, Args) end,
+                    case sd_users:create(ArgsOk, Opts) of
                         {ok, User} ->
                             Username = maps:get(<<"username">>, User),
                             %% Every account needs a password now (mandatory TOTP

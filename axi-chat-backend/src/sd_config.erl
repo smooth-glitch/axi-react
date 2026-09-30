@@ -26,7 +26,7 @@
          tstruct_for_user/2, submit/4, list_submissions/2,
          update_submission/3, delete_submission/2,
          list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
-         delete_user_tstruct/2, submit_user_tstruct/4, applies/2,
+         delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2,
          list_user_options/1, save_user_option/2, delete_user_option/2, option_targets_file/2]).
 
 -define(TSTRUCTS, "sd:tstructs").
@@ -200,7 +200,7 @@ valid_cond(undefined, _) -> true;
 valid_cond(#{<<"all">> := L}, Names) when is_list(L) -> lists:all(fun(C) -> valid_cond(C, Names) end, L);
 valid_cond(#{<<"any">> := L}, Names) when is_list(L) -> lists:all(fun(C) -> valid_cond(C, Names) end, L);
 valid_cond(#{<<"field">> := F, <<"op">> := Op} = C, Names) ->
-    lists:member(F, Names) andalso lists:member(Op, ?OPS) andalso
+    (Names =:= any orelse lists:member(F, Names)) andalso lists:member(Op, ?OPS) andalso
         (Op =:= <<"notempty">> orelse maps:is_key(<<"value">>, C)) andalso
         (Op =/= <<"in">> orelse is_list(maps:get(<<"value">>, C)));
 valid_cond(_, _) -> false.
@@ -254,8 +254,9 @@ do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
                     Target = text(sd_util:get(<<"target">>, Raw), <<>>),
                     case check_target(Type, Target, Actor) of
                         {ok, Scope} ->
-                            case validate_applicable(sd_util:get(<<"applicable">>, Raw, #{})) of
-                                {ok, Ap} ->
+                            case {validate_applicable(sd_util:get(<<"applicable">>, Raw, #{})), option_condition(sd_util:get(<<"condition">>, Raw, null))} of
+                                {_, {error, _, _} = CErr} -> CErr;
+                                {{ok, Ap}, {ok, Cond}} ->
                                     Opt = #{<<"id">> => Id, <<"caption">> => Caption, <<"type">> => Type,
                                             <<"target">> => Target, <<"targetScope">> => Scope,
                                             <<"owner">> => Owner,
@@ -266,6 +267,7 @@ do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
                                             <<"modifiedTs">> => case Existing of undefined -> null; _ -> sd_util:now_ms() end,
                                             <<"display">> => display(Type, sd_util:get(<<"display">>, Raw)),
                                             <<"applicable">> => Ap,
+                                            <<"condition">> => Cond,
                                             <<"active">> => sd_util:get(<<"active">>, Raw, true) =/= false,
                                             <<"order">> => case sd_util:get(<<"order">>, Raw, 0) of
                                                                Ord when is_integer(Ord) -> Ord;
@@ -273,13 +275,29 @@ do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
                                                            end},
                                     sd_db:hset_json(?OPTIONS, sd_util:s(string:lowercase(Id)), Opt),
                                     {ok, Opt};
-                                Err -> Err
+                                {{error, _, _} = AErr, _} -> AErr
                             end;
                         Err -> Err
                     end
             end
     end;
 do_save_option(_, _, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
+
+%% An option's own rule: null (always shown) or a condition over the global variables, e.g.
+%% {"all":[{"field":"city","op":"eq","value":"Pune"},{"field":"isHost","op":"eq","value":true}]}.
+option_condition(null) -> {ok, null};
+option_condition(C) when is_map(C) ->
+    Refs = sd_globals:referenced(C),
+    case valid_cond(C, any) andalso length(Refs) =< 50 of
+        false -> {error, invalid, <<"condition is malformed (or too large).">>};
+        true ->
+            Known = sd_globals:known(),
+            case [F || F <- Refs, not lists:member(F, Known)] of
+                [] -> {ok, C};
+                [Bad | _] -> {error, invalid, <<"condition refers to an unknown variable: ", Bad/binary>>}
+            end
+    end;
+option_condition(_) -> {error, invalid, <<"condition must be an object or null.">>}.
 
 %% New id, an administrator, or the option's own creator may save it.
 may_change_option(undefined, _) -> ok;
@@ -373,7 +391,8 @@ validate_applicable(Ap) when is_map(Ap) ->
               {<<"affiliates">>, fun(V) -> sd_org:exists(affiliates, V) end},
               {<<"departments">>, fun(V) -> sd_org:exists(departments, V) end},
               {<<"branches">>, fun(V) -> sd_org:exists(branches, V) end},
-              {<<"designations">>, fun(V) -> sd_org:exists(designations, V) end}],
+              {<<"designations">>, fun(V) -> sd_org:exists(designations, V) end},
+              {<<"roles">>, fun(V) -> sd_org:exists(roles, V) end}],
     Res = [check_applicable(K, sd_util:get(K, Ap, <<"all">>), Ok) || {K, Ok} <- Checks],
     case [E || {error, _, _} = E <- Res] of
         [] -> {ok, maps:from_list([R || {K, _} = R <- Res, is_binary(K)])};
@@ -391,7 +410,8 @@ check_applicable(K, _, _) -> {error, invalid, <<"applicable.", K/binary, " must 
 
 %% Options this user should see, in configured order.
 options_for(User) ->
-    [strip(O) || O <- list_options(), maps:get(<<"active">>, O, true) =/= false, applies(O, User)].
+    Vars = sd_globals:values(User),
+    [strip(O) || O <- list_options(), maps:get(<<"active">>, O, true) =/= false, applies(O, User, Vars)].
 
 strip(O) ->
     S = maps:with([<<"id">>, <<"caption">>, <<"type">>, <<"target">>, <<"targetScope">>, <<"owner">>, <<"display">>, <<"order">>], O),
@@ -480,7 +500,11 @@ sort_key(O) ->
 clamp_int(V, _Default, Min, Max) when is_integer(V) -> max(Min, min(Max, V));
 clamp_int(_, Default, Min, Max) -> max(Min, min(Max, Default)).
 
-applies(Option, User) ->
+applies(Option, User) -> applies(Option, User, sd_globals:values(User)).
+
+%% "Applicable to" (category / affiliate / department / branch / designation / roles) and then the option's own
+%% condition, evaluated over the user's global variables (e.g. {"field":"city","op":"eq","value":"Pune"}).
+applies(Option, User, Vars) ->
     Ap = maps:get(<<"applicable">>, Option, #{}),
     Cat = sd_users:effective_category(User),
     In = fun(Key, Value) ->
@@ -492,16 +516,24 @@ applies(Option, User) ->
                  _ -> false
              end
          end,
+    RoleOk = case maps:get(<<"roles">>, Ap, <<"all">>) of
+                 <<"all">> -> true;
+                 Wanted when is_list(Wanted) ->
+                     Have = [string:lowercase(R) || R <- sd_users:roles_of(User)],
+                     lists:any(fun(W) -> is_binary(W) andalso lists:member(string:lowercase(W), Have) end, Wanted);
+                 _ -> false
+             end,
     In(<<"categories">>, Cat) andalso
-    case Cat of
+    (case Cat of
         <<"Employee">> ->
             In(<<"departments">>, sd_util:get(<<"department">>, User)) andalso
             In(<<"branches">>, sd_util:get(<<"branch">>, User)) andalso
-            In(<<"designations">>, sd_util:get(<<"designation">>, User));
+            In(<<"designations">>, sd_util:get(<<"designation">>, User)) andalso RoleOk;
         <<"Affiliate">> ->
-            In(<<"affiliates">>, sd_util:get(<<"affiliate">>, User));
-        _ -> true
-    end.
+            In(<<"affiliates">>, sd_util:get(<<"affiliate">>, User)) andalso RoleOk;
+        _ -> RoleOk
+    end) andalso
+    eval(maps:get(<<"condition">>, Option, null), Vars).
 
 %% =============================================================================
 %% Application connections

@@ -23,7 +23,8 @@
          set_host/2, mark_login/1, mark_totp/1, replace/1,
          public/1, full/1, is_admin/1, is_host/1, is_active/1, effective_category/1,
          admins/0, users_of_host/1, hosts_covering/1, host_covers/2, count_using/2,
-         search/2, unique_username/1, valid_host_scope/1,
+         search/2, unique_username/1, valid_host_scope/1, has_role/2, roles_of/1, users_with_role/1,
+         update_person/2, person_fields/0,
          assoc_list/1, assoc_add/3, assoc_remove/2, associated/2, assoc_relation/2]).
 
 -compile({no_auto_import, [get/1]}).
@@ -142,7 +143,7 @@ create_checked(Attrs, Opts, Profile, Email, Mobile) ->
                 {ok, Username} ->
                     Now = sd_util:now_ms(),
                     Host = maps:get(host, Opts, undefined),
-                    User = Profile#{
+                    User = (maps:merge(person_defaults(), Profile))#{
                         <<"username">> => Username,
                         <<"role">> => maps:get(role, Opts, <<"user">>),
                         <<"host">> => case Host of undefined -> null; H -> H end,
@@ -189,7 +190,8 @@ update(Username, Attrs, _Actor) when is_map(Attrs) ->
             Editable = [<<"name">>, <<"email">>, <<"mobile">>, <<"isEmployee">>, <<"branch">>,
                         <<"department">>, <<"designation">>, <<"reportingManager">>,
                         <<"affiliate">>, <<"affiliateBranch">>, <<"category">>, <<"country">>,
-                        <<"city">>, <<"pin">>, <<"isHost">>, <<"hostScope">>, <<"canManageUsers">>],
+                        <<"city">>, <<"pin">>, <<"isHost">>, <<"hostScope">>, <<"canManageUsers">>,
+                        <<"roles">>, <<"address">>, <<"gender">>, <<"dob">>, <<"education">>, <<"skills">>],
             Merged = maps:merge(Old, maps:with(Editable, Attrs)),
             case validate_profile(Merged, update, Old) of
                 {ok, Profile} ->
@@ -357,7 +359,13 @@ clean_char(_) -> $..
 
 %% ---- validation of the profile fields ---------------------------------------------------------------
 
-validate_profile(A, Mode, _Existing) ->
+validate_profile(A, Mode, Existing) ->
+    case validate_core(A, Mode, Existing) of
+        {ok, U} -> extras(A, Mode, U);
+        Err -> Err
+    end.
+
+validate_core(A, Mode, _Existing) ->
     Name = str(A, <<"name">>),
     Email = sd_util:norm_email(str(A, <<"email">>)),
     Mobile = case str(A, <<"mobile">>) of <<>> -> <<>>; M -> sd_util:norm_mobile(M) end,
@@ -634,6 +642,9 @@ hosts_covering(User) ->
     [H || H <- list(), is_active(H), is_host(H), host_covers(H, User),
           maps:get(<<"username">>, H) =/= maps:get(<<"username">>, User, <<>>)].
 
+count_using(roles, Name) ->
+    Lower = string:lowercase(Name),
+    length([U || U <- list(), lists:member(Lower, [string:lowercase(R) || R <- roles_of(U)])]);
 count_using(Kind, Name) ->
     Field = case Kind of
                 branches -> <<"branch">>;
@@ -657,6 +668,174 @@ search(Query, Limit) ->
                  binary:match(string:lowercase(maps:get(<<"name">>, U)), Q) =/= nomatch orelse
                  binary:match(maps:get(<<"username">>, U), Q) =/= nomatch],
     lists:sublist(Hits, Limit).
+
+%% ---- roles and the person's own details --------------------------------------------------------------------
+%% roles: names from the enterprise's role list (admin: Admin console -> roles); employees only. They drive who
+%% an option applies to and who may approve a step in a wizard.
+%% person details (all optional, private to the person and the administrators -- never in public/1):
+%%   address, gender, dob (YYYY-MM-DD), education, skills (a list of short texts)
+person_fields() -> [<<"address">>, <<"gender">>, <<"dob">>, <<"education">>, <<"skills">>].
+
+person_defaults() ->
+    #{<<"roles">> => [], <<"address">> => null, <<"gender">> => null, <<"dob">> => null,
+      <<"education">> => null, <<"skills">> => []}.
+
+roles_of(U) ->
+    case maps:get(<<"roles">>, U, []) of
+        L when is_list(L) -> [R || R <- L, is_binary(R)];
+        _ -> []
+    end.
+
+has_role(U, Role) ->
+    lists:member(string:lowercase(Role), [string:lowercase(R) || R <- roles_of(U)]).
+
+users_with_role(Role) ->
+    [U || U <- list(), is_active(U), has_role(U, Role)].
+
+%% Adds the validated roles / person details to a profile built by validate_core/3. A key that isn't in A is left
+%% out (an update keeps what is stored); on create the defaults are filled in by create_checked/5.
+extras(A, Mode, U) ->
+    chain_extras([fun() -> roles_field(A, Mode, U) end,
+                  fun() -> text_field(A, <<"address">>, 200) end,
+                  fun() -> gender_field(A) end,
+                  fun() -> dob_field(A) end,
+                  fun() -> text_field(A, <<"education">>, 120) end,
+                  fun() -> skills_field(A) end], U).
+
+chain_extras([], U) -> {ok, U};
+chain_extras([F | Rest], U) ->
+    case F() of
+        skip -> chain_extras(Rest, U);
+        {ok, K, V} -> chain_extras(Rest, U#{K => V});
+        {error, _, _} = E -> E
+    end.
+
+roles_field(_A, register, _U) -> skip;      %% someone registering themselves can never give themselves roles
+roles_field(A, Mode, U) ->
+    case maps:is_key(<<"roles">>, A) of
+        false -> skip;
+        true ->
+            case sd_util:get(<<"roles">>, A) of
+                L when L =:= null; L =:= [] -> {ok, <<"roles">>, []};
+                L when is_list(L), length(L) =< 20 ->
+                    IsEmp = maps:get(<<"isEmployee">>, U, false) =:= true,
+                    case IsEmp orelse Mode =:= setup of
+                        false -> {error, invalid, <<"Roles apply only to employees.">>};
+                        true -> canonical_roles(L, [])
+                    end;
+                _ -> {error, invalid, <<"roles must be a list of at most 20 role names.">>}
+            end
+    end.
+
+canonical_roles([], Acc) -> {ok, <<"roles">>, lists:reverse(Acc)};
+canonical_roles([R | Rest], Acc) when is_binary(R) ->
+    case sd_org:get(roles, R) of
+        undefined -> {error, invalid, <<"Unknown role: ", R/binary>>};
+        Item ->
+            Name = maps:get(<<"name">>, Item),
+            case lists:member(Name, Acc) of
+                true -> canonical_roles(Rest, Acc);
+                false -> canonical_roles(Rest, [Name | Acc])
+            end
+    end;
+canonical_roles(_, _) -> {error, invalid, <<"roles must be a list of role names.">>}.
+
+text_field(A, Key, Max) ->
+    case maps:is_key(Key, A) of
+        false -> skip;
+        true ->
+            case sd_util:get(Key, A) of
+                null -> {ok, Key, null};
+                V when is_binary(V) ->
+                    Clean = string:trim(<< <<C>> || <<C>> <= V, C >= 32, C =/= 127 >>),
+                    case {byte_size(Clean) =< Max, unicode:characters_to_binary(Clean, utf8, utf8)} of
+                        {true, Clean} -> {ok, Key, case Clean of <<>> -> null; _ -> Clean end};
+                        {false, _} -> {error, invalid, <<Key/binary, " is too long (max ", (integer_to_binary(Max))/binary, ").">>};
+                        _ -> {error, invalid, <<Key/binary, " is not valid text.">>}
+                    end;
+                _ -> {error, invalid, <<Key/binary, " must be text.">>}
+            end
+    end.
+
+gender_field(A) ->
+    case maps:is_key(<<"gender">>, A) of
+        false -> skip;
+        true ->
+            case sd_util:get(<<"gender">>, A) of
+                null -> {ok, <<"gender">>, null};
+                <<>> -> {ok, <<"gender">>, null};
+                V when is_binary(V) ->
+                    L = string:lowercase(string:trim(V)),
+                    Norm = binary:replace(binary:replace(L, <<" ">>, <<"_">>, [global]), <<"-">>, <<"_">>, [global]),
+                    case lists:member(Norm, [<<"male">>, <<"female">>, <<"other">>, <<"prefer_not_to_say">>]) of
+                        true -> {ok, <<"gender">>, Norm};
+                        false -> {error, invalid, <<"gender must be one of: male, female, other, prefer_not_to_say.">>}
+                    end;
+                _ -> {error, invalid, <<"gender must be text.">>}
+            end
+    end.
+
+dob_field(A) ->
+    case maps:is_key(<<"dob">>, A) of
+        false -> skip;
+        true ->
+            case sd_util:get(<<"dob">>, A) of
+                V when V =:= null; V =:= <<>> -> {ok, <<"dob">>, null};
+                V when is_binary(V) ->
+                    case re:run(V, "^(\\d{4})-(\\d{2})-(\\d{2})$", [{capture, all_but_first, list}]) of
+                        {match, [Y, M, D]} ->
+                            Date = {list_to_integer(Y), list_to_integer(M), list_to_integer(D)},
+                            {Today, _} = calendar:universal_time(),
+                            case calendar:valid_date(Date) andalso element(1, Date) >= 1900 andalso Date =< Today of
+                                true -> {ok, <<"dob">>, V};
+                                false -> {error, invalid, <<"dob must be a real date between 1900 and today.">>}
+                            end;
+                        _ -> {error, invalid, <<"dob must look like 2001-04-23.">>}
+                    end;
+                _ -> {error, invalid, <<"dob must be text like 2001-04-23.">>}
+            end
+    end.
+
+skills_field(A) ->
+    case maps:is_key(<<"skills">>, A) of
+        false -> skip;
+        true ->
+            Raw = case sd_util:get(<<"skills">>, A) of
+                      null -> [];
+                      B when is_binary(B) -> binary:split(B, <<",">>, [global]);
+                      L -> L
+                  end,
+            case is_list(Raw) andalso length(Raw) =< 60 of
+                false -> {error, invalid, <<"skills must be a list (or comma separated text).">>};
+                true -> clean_skills(Raw, [])
+            end
+    end.
+
+clean_skills([], Acc) ->
+    case length(Acc) =< 30 of
+        true -> {ok, <<"skills">>, lists:reverse(Acc)};
+        false -> {error, invalid, <<"At most 30 skills.">>}
+    end;
+clean_skills([S | Rest], Acc) when is_binary(S) ->
+    T = string:trim(<< <<C>> || <<C>> <= S, C >= 32, C =/= 127 >>),
+    case T of
+        <<>> -> clean_skills(Rest, Acc);
+        _ when byte_size(T) > 40 -> {error, invalid, <<"Each skill must be 40 characters or fewer.">>};
+        _ ->
+            case lists:member(string:lowercase(T), [string:lowercase(X) || X <- Acc]) of
+                true -> clean_skills(Rest, Acc);
+                false -> clean_skills(Rest, [T | Acc])
+            end
+    end;
+clean_skills(_, _) -> {error, invalid, <<"Each skill must be text.">>}.
+
+%% A person editing their own details (nothing else about their record): the person fields plus city / country / pin.
+update_person(Username, Attrs) when is_map(Attrs) ->
+    Allowed = person_fields() ++ [<<"city">>, <<"country">>, <<"pin">>],
+    case maps:with(Allowed, Attrs) of
+        Given when map_size(Given) =:= 0 -> {error, invalid, <<"Nothing to change. Send any of: address, gender, dob, education, skills, city, country, pin.">>};
+        Given -> update(Username, Given, Username)
+    end.
 
 %% ---- associations -------------------------------------------------------------------------------------------
 

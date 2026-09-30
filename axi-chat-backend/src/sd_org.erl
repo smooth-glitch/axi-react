@@ -14,7 +14,7 @@
          public/0, list/1, get/2, exists/2, active/2, save/2, delete/2, kinds/0]).
 
 -define(ORG, "sd:org").
--define(KINDS, [branches, departments, designations, categories, affiliates]).
+-define(KINDS, [branches, departments, designations, categories, affiliates, roles]).
 
 %% From the spec: "User categories - Customer, Vendor, Consultant, Patient,
 %% Student, Citizen, Shareholder, Doctor, Professional. New categories can
@@ -237,6 +237,11 @@ validate(branches, R) ->
 validate(Kind, R) when Kind =:= departments; Kind =:= designations ->
     chain([fun() -> req_str(R, <<"name">>, 80) end,
            fun() -> opt_str(R, <<"description">>, 500) end],
+          fun([N, D]) -> #{<<"name">> => N, <<"description">> => D} end);
+%% Roles (employees only): used to decide who an option applies to and who may approve a wizard step.
+validate(roles, R) ->
+    chain([fun() -> req_str(R, <<"name">>, 60) end,
+           fun() -> opt_str(R, <<"description">>, 300) end],
           fun([N, D]) -> #{<<"name">> => N, <<"description">> => D} end);
 validate(categories, R) ->
     chain([fun() -> req_str(R, <<"name">>, 60) end],

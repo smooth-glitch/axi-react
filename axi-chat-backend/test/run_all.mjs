@@ -46,6 +46,8 @@ const SUITES = [
   { name: "connectum_codes_test", db: 3, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_PUBLIC_URL: "https://ent.example" } },
   // the /sd lane: test-only sleeping actions prove the connection is never blocked (SANDESH_TEST_ACTIONS is ignored in production)
   { name: "sd_lane_test", db: 1, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "100000", SANDESH_TEST_ACTIONS: "1", SANDESH_SLOW_LIMIT_MS: "1500" } },
+  { name: "connectum_require_code_test", db: 16, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_REQUIRE_CODE: "1" } },
+  { name: "connectum_people_test", db: 17, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "sec_impersonation_test", db: 5, arg: "url", env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_REQUIRE_SESSION: "1" } },
   { name: "sandesh_user_options_test", db: 12, arg: "url", timeoutMs: 180000, env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_MAX_FILE_MB: "1", SANDESH_FILES_DIR: path.join(os.tmpdir(), "sd-files-runall") } },
   // Open mode (the default). Two shared backends: the first two TEST the rate limiter so they need the default
