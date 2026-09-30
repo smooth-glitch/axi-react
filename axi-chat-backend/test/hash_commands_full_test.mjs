@@ -98,20 +98,20 @@ async function main() {
     ok("#reply gives the sender its own_message_id", typeof (await ownB).id === "number");
 
     let rx = A.next(m => m.type === "reaction" && m.messageId === g1.id);
-    B.send(`#react ${g1.id} :fire:`);
+    B.send(`/react global ${g1.id} :fire:`);
     let re = await rx;
     ok("#react adds a reaction", re.reactions.some(r => r.user === B.name && r.emoji === ":fire:"), re);
     rx = A.next(m => m.type === "reaction" && m.messageId === g1.id);
-    B.send(`#react ${g1.id} :fire:`);
+    B.send(`/react global ${g1.id} :fire:`);
     re = await rx;
     ok("#react again toggles it off", !re.reactions.some(r => r.user === B.name), re);
 
-    const denied = await B.ask(`#delete ${g1.id}`, m => m.type === "delete_denied" && m.messageId === g1.id);
+    const denied = await B.ask(`/delete global ${g1.id}`, m => m.type === "delete_denied" && m.messageId === g1.id);
     ok("#delete by a non-author is refused (forbidden)", denied.reason === "forbidden", denied);
-    const notFound = await B.ask("#delete 999999999", m => m.type === "delete_denied");
+    const notFound = await B.ask("/delete global 999999999", m => m.type === "delete_denied");
     ok("#delete of a nonexistent id -> not_found", notFound.reason === "not_found" || notFound.reason === "forbidden", notFound);
     const del = B.next(m => m.type === "deleted" && m.messageId === g1.id);
-    A.send(`#delete ${g1.id}`);
+    A.send(`/delete global ${g1.id}`);
     ok("#delete by the author deletes for everyone", !!(await del));
 
     console.log("=== Direct messages: send, reply, react, read, delete, history ===");
@@ -132,7 +132,7 @@ async function main() {
     ok("#replydm delivers with replyTo", got.replyTo === dm1.id && rAck.status === "delivered", got);
 
     const rd = A.next(m => m.type === "dm_read" && m.from === B.name);
-    B.send(`#read ${A.name}`);
+    B.send(`/read dm ${A.name}`);
     ok("#read notifies the other party (dm_read)", !!(await rd));
 
     const offline = await A.ask(`#dm nobody_${sfx} hi`, m => m.type === "error");
@@ -144,11 +144,11 @@ async function main() {
     ok("#conversations alias lists the thread", inbox.list.some(x => x.with === B.name), inbox);
 
     const dmR = A.next(m => m.type === "dm_reaction" && m.messageId === dm1.id);
-    B.send(`#reactdm ${A.name} ${dm1.id} :ok:`);
+    B.send(`/react dm ${A.name} ${dm1.id} :ok:`);
     ok("#reactdm reaction reaches the other side", (await dmR).reactions.length === 1);
 
     const dmDel = B.next(m => m.type === "dm_deleted" && m.messageId === dm1.id);
-    A.send(`#deletedm ${B.name} ${dm1.id}`);
+    A.send(`/delete dm ${B.name} ${dm1.id}`);
     ok("#deletedm by the author", !!(await dmDel));
 
     console.log("=== Groups: create, add, message, reply, react, delete, history, leave ===");
@@ -156,8 +156,8 @@ async function main() {
     ok("#newgroup alias creates", cr.name === group && cr.members.includes(A.name));
     const dup = await A.ask(`#creategroup ${group}`, m => m.type === "error");
     ok("#creategroup on an existing name is refused", /already exists/.test(dup.text), dup);
-    const spaced = await A.ask("#creategroup bad name", m => m.type === "error");
-    ok("#creategroup rejects a spaced name (usage error)", spaced.code === "usage", spaced);
+    const noName = await A.ask("#creategroup", m => m.type === "error");
+    ok("#creategroup with no name -> usage error", noName.code === "usage", noName);
 
     const invited = B.next(m => m.type === "added_to_group" && m.name === group);
     await A.ask(`#invitegroup ${group} ${B.name}`, m => m.type === "group_created");
@@ -167,7 +167,7 @@ async function main() {
     const ghost = await A.ask(`#addmember ${group} ghost_${sfx}`, m => m.type === "error");
     ok("#addmember of an offline/unknown user is refused", /isn't online/.test(ghost.text), ghost);
     const notMember = await C.ask(`#addmember ${group} ${C.name}`, m => m.type === "error");
-    ok("#addmember by a non-member is refused", /not in that group/.test(notMember.text), notMember);
+    ok("#addmember by a non-member is refused", /group admin|not in that group/.test(notMember.text), notMember);
 
     let gmsg = B.next(m => m.type === "group_message" && m.text === "via gm alias");
     const gAck = await A.ask(`#gm ${group} via gm alias`, m => m.type === "group_msg_ack");
@@ -182,21 +182,21 @@ async function main() {
     ok("#groupmsg to a missing group -> No such group", /No such group/.test(nog.text), nog);
 
     const gr = A.next(m => m.type === "group_reaction" && m.messageId === gm1.id);
-    B.send(`#reactgroup ${group} ${gm1.id} :star:`);
+    B.send(`/react group ${group} ${gm1.id} :star:`);
     ok("#reactgroup", (await gr).reactions.some(r => r.user === B.name));
 
     const gh = await A.ask(`#historygroup ${group}`, m => m.type === "history" && m.scope === "group");
     ok("#historygroup returns the group's messages", gh.list.length >= 2 && gh.group === group, gh.list.length);
 
-    const gdd = await A.ask(`#deletegroup ${group} ${gm1.id}`, m => m.type === "group_deleted" || m.type === "delete_denied");
+    const gdd = await A.ask(`/delete group ${group} ${gm1.id}`, m => m.type === "group_deleted" || m.type === "delete_denied");
     ok("#deletegroup by the author deletes", gdd.type === "group_deleted", gdd);
     const bogus = gm1.id + 1000000;
-    const gdd2 = await B.ask(`#deletegroup ${group} ${bogus}`, m => m.messageId === bogus && (m.type === "delete_denied" || m.type === "group_deleted"));
+    const gdd2 = await B.ask(`/delete group ${group} ${bogus}`, m => m.messageId === bogus && (m.type === "delete_denied" || m.type === "group_deleted"));
     ok("#deletegroup of a missing message is refused", gdd2.type === "delete_denied", gdd2);
     const gm2 = B.next(m => m.type === "group_message" && m.text === "A's second");
     await A.ask(`#groupmsg ${group} A's second`, m => m.type === "group_msg_ack");
     const theirs = (await gm2).id;
-    const gdd3 = await B.ask(`#deletegroup ${group} ${theirs}`, m => m.messageId === theirs && (m.type === "delete_denied" || m.type === "group_deleted"));
+    const gdd3 = await B.ask(`/delete group ${group} ${theirs}`, m => m.messageId === theirs && (m.type === "delete_denied" || m.type === "group_deleted"));
     ok("#deletegroup of someone else's message is refused (forbidden)", gdd3.type === "delete_denied" && gdd3.reason === "forbidden", gdd3);
 
     const groups = await B.ask("#groups", m => m.type === "groups");
@@ -229,15 +229,15 @@ async function main() {
     console.log("=== Profile ===");
     const p1 = B.next(m => m.type === "profile" && m.user === A.name && m.status === "on a call");
     // B must be a contact of A to be pushed the update; DM'd earlier, so it is.
-    A.send("#status on a call");
+    A.send("/setstatus on a call");
     await p1.catch(() => null);
     let prof = await C.ask(`#profile ${A.name}`, m => m.type === "profile" && m.user === A.name);
     ok("#status is stored and #profile reads it (by a stranger)", prof.status === "on a call", prof);
-    A.send("#avatar https://example.com/me.png");
+    A.send("/setavatar https://example.com/me.png");
     await sleep(300);
     prof = await C.ask(`#profile ${A.name}`, m => m.type === "profile");
     ok("#avatar (https) is stored", prof.avatar === "https://example.com/me.png", prof);
-    A.send("#avatar /uploads/abc123.png");
+    A.send("/setavatar /uploads/abc123.png");
     await sleep(300);
     prof = await C.ask(`#profile ${A.name}`, m => m.type === "profile");
     ok("#avatar (/uploads/) is stored", prof.avatar === "/uploads/abc123.png", prof);
@@ -258,8 +258,8 @@ async function main() {
     console.log("=== Help ===");
     const help = await A.ask("#commands", m => m.type === "cmd_catalog");
     ok("#commands alias returns the catalog", help.commands.length === cat.length);
-    const one = await A.ask("#help react", m => m.type === "cmd_help");
-    ok("#help <command> explains it", one.command.name === "react" && one.command.usage === "#react <messageId> <emoji>", one);
+    const one = await A.ask("#help dm", m => m.type === "cmd_help");
+    ok("#help <command> explains it", one.command.name === "dm" && one.command.usage === "#dm <user> <text...>", one);
     const viaAlias = await A.ask("#help msg", m => m.type === "cmd_help");
     ok("#help <alias> resolves to the command", viaAlias.command.name === "dm", viaAlias);
 
