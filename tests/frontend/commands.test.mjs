@@ -82,6 +82,25 @@ test("sandeshSocket reply and profile methods send expected slash commands", () 
   sandeshSocket.sendSetAvatar("/uploads/alice.png");
   assert.equal(ws.sent.at(-1), "/setavatar /uploads/alice.png");
 
+  sandeshSocket.sendSetAvatar("https://example.com/avatar.png");
+  assert.equal(ws.sent.at(-1), "/setavatar https://example.com/avatar.png");
+
+  // Invalid avatar URL (http://) should be rejected
+  const beforeLen = ws.sent.length;
+  sandeshSocket.sendSetAvatar("http://insecure.com/avatar.png");
+  assert.equal(ws.sent.length, beforeLen);
+
+  sandeshSocket.sendRemoveAvatar();
+  assert.equal(ws.sent.at(-1), "/removeavatar");
+
+  sandeshSocket.sendSetStatus("Working remotely");
+  assert.equal(ws.sent.at(-1), "/setstatus Working remotely");
+
+  // Status over 140 characters should be truncated
+  const longStatus = "A".repeat(160);
+  sandeshSocket.sendSetStatus(longStatus);
+  assert.equal(ws.sent.at(-1), `/setstatus ${"A".repeat(140)}`);
+
   sandeshSocket.sendGetProfile("bob");
   assert.equal(ws.sent.at(-1), "/getprofile bob");
 

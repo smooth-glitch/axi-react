@@ -104,6 +104,19 @@ export default function Composer({
   useEffect(() => {
     const unsub = sandeshSocket.subscribe((event) => {
       if (event.type === "cmd_suggestions" && event.reqId === cmdReqIdRef.current) {
+        if (event.kind === "text") {
+          // Free text: close menu
+          setShowCmdMenu(false);
+          setArgSuggestions([]);
+          return;
+        }
+
+        if (event.arg) {
+          const argIdx = typeof event.arg.index === "number" ? event.arg.index : 0;
+          setCurrentArgIndex(argIdx);
+          setCurrentArgSpec(event.arg);
+        }
+
         if (event.items && Array.isArray(event.items)) {
           setArgSuggestions(
             event.items.map((it) => ({
@@ -115,8 +128,14 @@ export default function Composer({
           );
           if (event.items.length > 0) {
             setShowCmdMenu(true);
+            setCmdMenuMode("args");
+          } else {
+            setShowCmdMenu(false);
           }
+        } else {
+          setShowCmdMenu(false);
         }
+
         setCmdPagination({
           page: event.page || 1,
           pageSize: event.pageSize || 10,
@@ -246,8 +265,8 @@ export default function Composer({
       }
 
       // 2. Space exists: user is typing arguments!
-      const parts = before.split(/\s+/);
-      const cmdWord = parts[0].slice(1).toLowerCase();
+      const firstSpaceIdx = before.indexOf(" ");
+      const cmdWord = before.slice(1, firstSpaceIdx).toLowerCase();
       const matched = DEFAULT_COMMANDS_CATALOG.find(
         (c) => c.name === cmdWord || (c.aliases || []).includes(cmdWord)
       );
@@ -259,22 +278,15 @@ export default function Composer({
       }
 
       setCurrentCommand(matched);
-      const argIndex = parts.length - 2; // parts: ["#cmd", "arg0", "arg1", ...]
-      setCurrentArgIndex(argIndex);
-      const currentToken = parts[parts.length - 1] || "";
-      const argSpec = matched.args ? matched.args[argIndex] : null;
 
-      if (!argSpec || argSpec.type === "text") {
-        // Free text: close menu
+      // If the command explicitly takes no arguments, close the menu
+      if (matched.args && matched.args.length === 0) {
         setShowCmdMenu(false);
         setCmdSearchQuery("");
         return;
       }
 
-      setCmdSearchQuery(currentToken);
-      setCurrentArgSpec(argSpec);
       setCmdMenuMode("args");
-      setSelectedCmdIndex(0);
 
       // Reset page to 1 on input text changes
       setCmdPagination((p) => ({
@@ -282,15 +294,20 @@ export default function Composer({
         page: 1,
         totalPages: 1,
         hasMore: false,
-        token: currentToken,
       }));
 
-      // Local instant suggestions
-      const locals = computeLocalArgSuggestions(argSpec, currentToken);
-      setArgSuggestions(locals);
-      setShowCmdMenu(locals.length > 0);
+      // Immediate local suggestions placeholder if available
+      const afterCmd = before.slice(firstSpaceIdx + 1);
+      const initialArgSpec = currentArgSpec || matched.args?.[0];
+      if (initialArgSpec && initialArgSpec.type !== "text") {
+        const locals = computeLocalArgSuggestions(initialArgSpec, afterCmd);
+        if (locals.length > 0) {
+          setArgSuggestions(locals);
+          setShowCmdMenu(true);
+        }
+      }
 
-      // Debounce call to backend /cmdcomplete
+      // Always debounce call to backend /cmdcomplete with the full text
       if (cmdDebounceTimer.current) {
         clearTimeout(cmdDebounceTimer.current);
       }
@@ -306,7 +323,7 @@ export default function Composer({
         );
       }, 150);
     },
-    [currentUser, computeLocalArgSuggestions]
+    [currentUser, computeLocalArgSuggestions, currentArgSpec]
   );
 
   const handlePageChange = (newPage) => {

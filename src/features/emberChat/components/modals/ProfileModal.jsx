@@ -121,8 +121,8 @@ export default function ProfileModal({ me, onCancel, onSave, onAvatarUpdated }) 
     setUploadingAvatar(true);
     try {
       const res = await sandeshApi.uploadAvatar(file);
-      if (res.ok && res.data?.url) {
-        const newUrl = res.data.url;
+      if (res?.url) {
+        const newUrl = res.url;
         setAvatarUrl(newUrl);
         sandeshSocket.sendSetAvatar(newUrl);
         onAvatarUpdated?.(newUrl);
@@ -137,7 +137,7 @@ export default function ProfileModal({ me, onCancel, onSave, onAvatarUpdated }) 
           }
         } catch {}
       } else {
-        setAvatarError(res.error || "Failed to upload photo.");
+        setAvatarError(res?.error || "Failed to upload photo.");
       }
     } catch (err) {
       setAvatarError(err?.message || "Error uploading image.");
@@ -145,6 +145,22 @@ export default function ProfileModal({ me, onCancel, onSave, onAvatarUpdated }) 
       setUploadingAvatar(false);
       e.target.value = "";
     }
+  };
+
+  const handleRemovePhoto = () => {
+    setAvatarUrl("");
+    sandeshSocket.sendRemoveAvatar();
+    onAvatarUpdated?.(null);
+    try {
+      const saved = localStorage.getItem("sandesh_session_user");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        localStorage.setItem(
+          "sandesh_session_user",
+          JSON.stringify({ ...parsed, avatar: null })
+        );
+      }
+    } catch {}
   };
 
   return (
@@ -191,26 +207,44 @@ export default function ProfileModal({ me, onCancel, onSave, onAvatarUpdated }) 
                 {me.designation || me.role}
               </div>
             </div>
-            <label
-              className="sandesh-btn-secondary-3d"
-              id="ember-profile-photo-label"
-              style={{
-                fontSize: "11px",
-                padding: "6px 12px",
-                cursor: uploadingAvatar ? "not-allowed" : "pointer",
-                opacity: uploadingAvatar ? 0.7 : 1,
-              }}
-            >
-              {uploadingAvatar ? "Uploading..." : "Change Photo"}
-              <input
-                type="file"
-                id="ember-profile-photo-input"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                className="hidden"
-                disabled={uploadingAvatar}
-                onChange={handlePhotoSelect}
-              />
-            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  className="sandesh-btn-secondary-3d"
+                  id="ember-profile-remove-photo-btn"
+                  onClick={handleRemovePhoto}
+                  style={{
+                    fontSize: "11px",
+                    padding: "6px 12px",
+                    color: "#ef4444",
+                    cursor: "pointer",
+                  }}
+                >
+                  Remove Photo
+                </button>
+              )}
+              <label
+                className="sandesh-btn-secondary-3d"
+                id="ember-profile-photo-label"
+                style={{
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                  cursor: uploadingAvatar ? "not-allowed" : "pointer",
+                  opacity: uploadingAvatar ? 0.7 : 1,
+                }}
+              >
+                {uploadingAvatar ? "Uploading..." : "Change Photo"}
+                <input
+                  type="file"
+                  id="ember-profile-photo-input"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  className="hidden"
+                  disabled={uploadingAvatar}
+                  onChange={handlePhotoSelect}
+                />
+              </label>
+            </div>
           </div>
           {avatarError && (
             <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "4px", paddingLeft: "4px" }}>
@@ -230,10 +264,12 @@ export default function ProfileModal({ me, onCancel, onSave, onAvatarUpdated }) 
               id="ember-profile-status-input"
               type="text"
               className="new-group-input"
-              placeholder="What's on your mind?"
-              maxLength={80}
+              placeholder="What's on your mind? (max 140 chars)"
+              maxLength={140}
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) =>
+                setStatus(e.target.value.replace(/[\x00-\x1F\x7F]/g, "").slice(0, 140))
+              }
             />
           </div>
         </div>

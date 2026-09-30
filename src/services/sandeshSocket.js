@@ -251,7 +251,21 @@ class SandeshSocketService {
 
   sendSetAvatar(url) {
     const cleanUrl = (url || '').trim();
-    return this.send(`/setavatar ${cleanUrl}`);
+    if (!cleanUrl) return false;
+    if (cleanUrl.startsWith('/uploads/') || cleanUrl.startsWith('https://')) {
+      return this.send(`/setavatar ${cleanUrl}`);
+    }
+    console.warn('[SandeshSocket] Invalid avatar URL (must be /uploads/... or https://):', cleanUrl);
+    return false;
+  }
+
+  sendRemoveAvatar() {
+    return this.send('/removeavatar');
+  }
+
+  sendSetStatus(status) {
+    const cleanStatus = (status || '').replace(/[\x00-\x1F\x7F]/g, '').trim().slice(0, 140);
+    return this.send(`/setstatus ${cleanStatus}`);
   }
 
   sendGetProfile(username) {

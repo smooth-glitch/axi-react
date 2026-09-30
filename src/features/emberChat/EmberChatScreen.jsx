@@ -1538,7 +1538,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     if (cmd === "inbox" || cmd === "conversations") {
-      sandeshSocket.send("/inbox");
+      sandeshSocket.send("/conversations");
       setModal("inbox");
       return;
     }
@@ -2840,15 +2840,20 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 me={currentUser}
                 onCancel={() => setModal(null)}
                 onSave={({ status, avatar }) => {
-                  setCurrentUser((m) => ({ ...m, status, ...(avatar ? { avatar } : {}) }));
+                  const cleanStatus = (status || "").replace(/[\x00-\x1F\x7F]/g, "").slice(0, 140);
+                  setCurrentUser((m) => ({ ...m, status: cleanStatus, avatar }));
                   try {
                     localStorage.setItem(
                       "sandesh_session_user",
-                      JSON.stringify({ ...currentUser, status, ...(avatar ? { avatar } : {}) })
+                      JSON.stringify({ ...currentUser, status: cleanStatus, avatar })
                     );
                   } catch { }
-                  if (status) sandeshSocket.send(`/setstatus ${status}`);
-                  if (avatar) sandeshSocket.sendSetAvatar(avatar);
+                  if (cleanStatus) sandeshSocket.sendSetStatus(cleanStatus);
+                  if (avatar) {
+                    sandeshSocket.sendSetAvatar(avatar);
+                  } else if (avatar === null || avatar === "") {
+                    sandeshSocket.sendRemoveAvatar();
+                  }
                   setModal(null);
                   pushToast("Profile updated successfully");
                 }}
