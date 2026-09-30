@@ -18,7 +18,7 @@
 
 -export([start_link/0]).
 -export([create_group/2, add_member/3, force_add/3, leave_group/2, list_groups_for/1,
-         list_members/1, all_names/0, owner/1, group_message/3, group_message/4, typing/2, react/4, delete/3]).
+         list_members/1, list_groups_detailed/1, all_names/0, owner/1, group_message/3, group_message/4, typing/2, react/4, delete/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(group, {owner :: string(), members :: [string()]}).
@@ -50,6 +50,10 @@ leave_group(GroupName, Username) ->
 
 list_groups_for(Username) ->
     gen_server:call(?MODULE, {list_for, Username}).
+
+%% [{Name, Members, Owner}] for the groups Username is in (Owner = the group's admin).
+list_groups_detailed(Username) ->
+    gen_server:call(?MODULE, {list_detailed, Username}).
 
 list_members(GroupName) ->
     gen_server:call(?MODULE, {members, GroupName}).
@@ -163,6 +167,15 @@ handle_call({list_for, Username}, _From, State = #state{groups = Groups}) ->
         fun(Name, #group{members = Members}, Acc) ->
             case lists:member(Username, Members) of
                 true -> [{Name, Members} | Acc];
+                false -> Acc
+            end
+        end, [], Groups),
+    {reply, Result, State};
+handle_call({list_detailed, Username}, _From, State = #state{groups = Groups}) ->
+    Result = maps:fold(
+        fun(Name, #group{members = Members, owner = Owner}, Acc) ->
+            case lists:member(Username, Members) of
+                true -> [{Name, Members, Owner} | Acc];
                 false -> Acc
             end
         end, [], Groups),

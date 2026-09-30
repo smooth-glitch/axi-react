@@ -189,6 +189,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     );
   }, [currentUser?.username, currentUser?.name, currentUser?.initials]);
   const [groupMembersByName, setGroupMembersByName] = useState({});
+  const [groupOwnersByName, setGroupOwnersByName] = useState({}); // group name -> username of its admin (creator)
   const [typingUsersByChat, setTypingUsersByChat] = useState({});
   const typingTimersRef = useRef({});
 
@@ -949,10 +950,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
       } else if (event.type === "groups" && Array.isArray(event.list)) {
         // P1: Handle groups event
         const membersMap = {};
+        const ownersMap = {};
         event.list.forEach((g) => {
           membersMap[g.name] = g.members || [];
+          if (g.owner) ownersMap[g.name] = g.owner;
         });
         setGroupMembersByName((prev) => ({ ...prev, ...membersMap }));
+        setGroupOwnersByName((prev) => ({ ...prev, ...ownersMap }));
 
         setChats((prevChats) => {
           const updated = [...prevChats];
@@ -984,6 +988,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         // P1: Handle group_created
         const chatId = `room-${event.name}`;
         setGroupMembersByName((prev) => ({ ...prev, [event.name]: event.members || [] }));
+        if (event.owner) setGroupOwnersByName((prev) => ({ ...prev, [event.name]: event.owner }));
         setChats((prevChats) => {
           if (prevChats.some((c) => c.id === chatId)) return prevChats;
           return [
@@ -1007,6 +1012,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         // P1: Handle added_to_group
         const chatId = `room-${event.name}`;
         setGroupMembersByName((prev) => ({ ...prev, [event.name]: event.members || [] }));
+        if (event.owner) setGroupOwnersByName((prev) => ({ ...prev, [event.name]: event.owner }));
         setChats((prevChats) => {
           const idx = prevChats.findIndex((c) => c.id === chatId);
           if (idx !== -1) {
@@ -1641,6 +1647,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
       const grp = afterGrp ? knownGrp : parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0];
       const user = afterGrp ? afterGrp.split(/\s+/)[0] : parts.length > 1 ? parts[parts.length - 1] : undefined;
       if (grp && user) {
+        // Only the group's creator can add members: say so right away instead of a round trip
+        const owner = groupOwnersByName[grp];
+        const me = (currentUser.username || currentUser.name || "").toLowerCase().trim();
+        if (owner && owner.toLowerCase().trim() !== me) {
+          pushToast(`Only the group admin (${owner}) can add members`, true);
+          return;
+        }
         // Do not add member optimistically. Wait for server event/error.
         sandeshSocket.sendAddMember(grp, user);
       } else if (grp) {
@@ -2819,6 +2832,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 title={activeChat.name}
                 members={enrichedGroupMembers}
                 addableUsers={currentAddableUsers}
+                ownerName={groupOwnersByName[activeChat.name || activeChat.id.replace(/^room-/, "")] || ""}
+                canAddMembers={(() => {
+                  const owner = groupOwnersByName[activeChat.name || activeChat.id.replace(/^room-/, "")];
+                  const me = (currentUser.username || currentUser.name || "").toLowerCase().trim();
+                  // owner unknown (older server): allow, the server still enforces it
+                  return !owner || owner.toLowerCase().trim() === me;
+                })()}
                 onAdd={(userName) => {
                   const groupName = activeChat.name || activeChat.id.replace(/^room-/, "");
                   sandeshSocket.sendAddMember(groupName, userName);

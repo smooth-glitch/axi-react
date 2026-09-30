@@ -190,10 +190,12 @@ async function main() {
     clientB.send(`/creategroup ${groupName}`);
     const groupCreated = await clientB.waitFor(m => m.type === "group_created");
     ok("group created", groupCreated.name === groupName && groupCreated.members.includes(nameB));
+    ok("group_created carries the owner (the group's admin)", groupCreated.owner === nameB, JSON.stringify(groupCreated));
 
     clientB.send(`/addmember ${groupName} ${nameA}`);
     const addedEvt = await clientA.waitFor(m => m.type === "added_to_group" && m.name === groupName);
     ok("client A notified of being added to group", addedEvt.members.includes(nameA) && addedEvt.members.includes(nameB));
+    ok("added_to_group carries the owner", addedEvt.owner === nameB, JSON.stringify(addedEvt));
 
     clientB.send(`/groupmsg ${groupName} hello squad`);
     const groupAck = await clientB.waitFor(m => m.type === "group_msg_ack");
@@ -239,6 +241,7 @@ async function main() {
     clientA.send("/groups");
     const groupsResp = await clientA.waitFor(m => m.type === "groups");
     ok("/groups lists the new group for client A", groupsResp.list.some(g => g.name === groupName));
+    ok("/groups includes each group's owner", groupsResp.list.find(g => g.name === groupName)?.owner === nameB, JSON.stringify(groupsResp.list));
 
     clientA.send(`/leavegroup ${groupName}`);
     const leftResp = await clientA.waitFor(m => m.type === "left_group");

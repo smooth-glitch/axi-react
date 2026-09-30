@@ -1294,7 +1294,7 @@ handle_line(Socket, Name, "/replygroup " ++ Rest) ->
             ws_send_json(Socket, "error", "Usage: /replygroup <group> <messageId> <message>")
     end;
 handle_line(Socket, Name, "/groups") ->
-    ws_send_groups(Socket, chat_groups:list_groups_for(Name));
+    ws_send_groups(Socket, chat_groups:list_groups_detailed(Name));
 %% Sandesh: "/sd <action> [json]" -- everything from the Sandesh spec that
 %% isn't plain chat (org, users, hosts, approvals, cards, forms, admin
 %% console). One command, one reply envelope; see sd_cmds.erl and
@@ -1473,7 +1473,15 @@ ws_send_group_created(Socket, GroupName, Members) ->
     ws_send(Socket, json_obj2([
         {"type", {str, "group_created"}},
         {"name", {str, GroupName}},
+        {"owner", group_owner_field(GroupName)},
         {"members", {raw, json_string_array(Members)}}])).
+
+%% The group's admin (its creator), or null if it can't be found.
+group_owner_field(GroupName) ->
+    case chat_groups:owner(GroupName) of
+        {ok, Owner} -> {str, Owner};
+        _ -> {raw, "null"}
+    end.
 
 ws_send_group_message(Socket, GroupName, Id, Ts, From, Text, ReplyTo) ->
     ws_send(Socket, json_obj2([
@@ -1495,12 +1503,14 @@ ws_send_added_to_group(Socket, GroupName, Members, By) ->
     ws_send(Socket, json_obj2([
         {"type", {str, "added_to_group"}},
         {"name", {str, GroupName}},
+        {"owner", group_owner_field(GroupName)},
         {"members", {raw, json_string_array(Members)}},
         {"by", {str, By}}])).
 
 ws_send_groups(Socket, Groups) ->
-    Items = [json_obj2([{"name", {str, Name}}, {"members", {raw, json_string_array(Members)}}])
-             || {Name, Members} <- Groups],
+    Items = [json_obj2([{"name", {str, Name}}, {"owner", {str, Owner}},
+                        {"members", {raw, json_string_array(Members)}}])
+             || {Name, Members, Owner} <- Groups],
     ws_send(Socket, json_obj2([
         {"type", {str, "groups"}},
         {"list", {raw, "[" ++ string:join(Items, ",") ++ "]"}}])).

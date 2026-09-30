@@ -5,6 +5,8 @@ export default function MembersModal({
   title = "Members",
   members = [],
   addableUsers = [],
+  ownerName = "",
+  canAddMembers = true,
   onAdd,
   onLeave,
   onClose,
@@ -72,6 +74,9 @@ export default function MembersModal({
                     <div className="participant-info">
                       <div className="participant-name-row">
                         <span className="participant-name">{name}</span>
+                        {ownerName && (typeof m === "string" ? m : m.username || m.id || name).toLowerCase() === ownerName.toLowerCase() && (
+                          <span className="role-tag admin" title="Created this group">Group admin</span>
+                        )}
                         {role === "Enterprise Administrator" && (
                           <span className="role-tag admin">Admin</span>
                         )}
@@ -91,7 +96,8 @@ export default function MembersModal({
           </div>
         </div>
 
-        {/* Add Member Section */}
+        {/* Add Member Section (group admin only) */}
+        {canAddMembers ? (
         <div style={{ borderTop: "1px solid rgba(0, 0, 0, 0.06)", paddingTop: "14px" }}>
           <div className="section-title-wrap" style={{ marginBottom: "10px" }}>
             <span className="section-title">Add New Member</span>
@@ -167,6 +173,12 @@ export default function MembersModal({
             </div>
           )}
         </div>
+        ) : (
+          <div style={{ borderTop: "1px solid rgba(0, 0, 0, 0.06)", paddingTop: "14px", display: "flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "var(--sandesh-text-muted)" }}>
+            <span className="material-icons" style={{ fontSize: "18px" }}>lock</span>
+            <span>Only the group admin{ownerName ? ` (${ownerName})` : ""} can add members.</span>
+          </div>
+        )}
       </div>
 
       {/* 3. Footer Action Buttons */}
