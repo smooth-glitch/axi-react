@@ -32,7 +32,7 @@ text_arg_is_always_last_test() ->
 %% guarantees a rewrite can never re-enter the # parser.
 every_command_rewrites_to_a_slash_line_test() ->
     Sample = fun(user) -> "bob"; (group) -> "team"; (host) -> "hr"; (msgid) -> "42";
-                (emoji) -> "x"; (url) -> "https://a.b/c.png"; (word) -> "abc";
+                (emoji) -> "x"; (url) -> "https://a.b/c.png"; (word) -> "abc"; (phrase) -> "my form";
                 ({enum, [V | _]}) -> V; (text) -> "hello there"; ({text, _}) -> "hello there" end,
     lists:foreach(
       fun(#{name := N, args := Specs}) ->
@@ -63,13 +63,30 @@ message_text_is_passed_through_untouched_test() ->
     ?assertEqual({line, "/msg bob #dm x y"}, run("#dm bob #dm x y")),
     ?assertEqual({line, "/msg bob a\nb"}, run("#dm bob a\nb")).
 
+multi_word_names_test() ->
+    {"tstruct.user.open", A} = sd_line("#tstruct Leave Request Form"),
+    ?assertEqual(<<"Leave Request Form">>, maps:get(<<"name">>, A)),
+    {"tstruct.user.open", B} = sd_line("#tstruct   Leave    Request"),
+    ?assertEqual(<<"Leave Request">>, maps:get(<<"name">>, B)),
+    {"tstruct.user.open", C} = sd_line("#tstruct-edit Leave Request 12"),
+    ?assertEqual({<<"Leave Request">>, 12}, {maps:get(<<"name">>, C), maps:get(<<"editRecordId">>, C)}),
+    ?assertEqual(<<"usage">>, error_code("#tstruct")),
+    ?assertEqual(<<"usage">>, error_code("#tstruct-edit Leave Request")).
+
+multi_word_group_names_test() ->
+    ?assertEqual({line, "/creategroup design team"}, run("#creategroup  design   team")),
+    ?assertEqual({line, "/addmember design team bob"}, run("#addmember design team bob")),
+    ?assertEqual({line, "/leavegroup design team"}, run("#leavegroup design team")),
+    ?assertEqual({line, "/history group design team"}, run("#historygroup design team")),
+    %% with no such group registered, the first word is the group and the rest is the message
+    ?assertEqual({line, "/groupmsg design team hi"}, run("#groupmsg design team hi")).
+
 ids_are_normalised_test() ->
-    ?assertEqual({line, "/delete global 7"}, run("#delete 007")),
-    ?assertEqual({line, "/react dm bob 12 X"}, run("#reactdm bob 12 X")).
+    ?assertEqual({line, "/replydm bob 7 hi"}, run("#replydm bob 007 hi")),
+    {"req.respond", A} = sd_line("#accept 007"),
+    ?assertEqual(7, maps:get(<<"id">>, A)).
 
 optional_args_test() ->
-    ?assertEqual({line, "/gifsearch"}, run("#gif")),
-    ?assertEqual({line, "/gifsearch cat"}, run("#gif cat")),
     ?assertEqual({line, "/history global"}, run("#history")).
 
 utf8_text_survives_test() ->
@@ -97,13 +114,6 @@ sd_utf8_is_not_double_encoded_test() ->
     {"reminder.add", Args} = sd_line("#remind " ++ bytes("café")),
     ?assertEqual(<<"café"/utf8>>, maps:get(<<"text">>, Args)).
 
-sd_markread_test() ->
-    {_, All} = sd_line("#markread ALL"),
-    ?assertEqual(true, maps:get(<<"all">>, All)),
-    {_, Cat} = sd_line("#markread personal"),
-    ?assertEqual(<<"personal">>, maps:get(<<"category">>, Cat)),
-    ?assertMatch({reply, _}, run("#markread bogus")).
-
 sd_optional_field_is_omitted_test() ->
     {_, NoStatus} = sd_line("#requests"),
     ?assertNot(maps:is_key(<<"status">>, NoStatus)),
@@ -127,8 +137,8 @@ unknown_command_test() ->
     ?assert(lists:member(<<"dm">>, S)).
 
 a_prefix_never_executes_test() ->
-    %% "#de" must not run "#delete"
-    ?assertEqual(<<"unknown_command">>, error_code("#de 5")).
+    %% "#re" must not run "#reply"
+    ?assertEqual(<<"unknown_command">>, error_code("#re 5")).
 
 unknown_command_does_not_echo_junk_test() ->
     #{<<"text">> := Text} = reply("#a\tb<script>"),
@@ -138,7 +148,7 @@ missing_and_extra_args_test() ->
     ?assertEqual(<<"usage">>, error_code("#dm")),
     ?assertEqual(<<"usage">>, error_code("#dm bob")),
     ?assertEqual(<<"usage">>, error_code("#users extra")),
-    ?assertEqual(<<"usage">>, error_code("#delete 5 6")).
+    ?assertEqual(<<"usage">>, error_code("#accept 5 6")).
 
 usage_error_carries_usage_string_test() ->
     #{<<"usage">> := U, <<"command">> := C} = reply("#dm"),
@@ -146,7 +156,7 @@ usage_error_carries_usage_string_test() ->
     ?assertEqual(<<"dm">>, C).
 
 bad_ids_test() ->
-    [?assertEqual(<<"usage">>, error_code("#delete " ++ Id))
+    [?assertEqual(<<"usage">>, error_code("#accept " ++ Id))
      || Id <- ["abc", "-5", "+5", "5.0", "1e3", "12345678901234567890"]].
 
 control_characters_in_arguments_are_rejected_test() ->
@@ -154,20 +164,13 @@ control_characters_in_arguments_are_rejected_test() ->
     %% second line into the rewritten command
     ?assertEqual(<<"usage">>, error_code("#historydm bob\nfoo")),
     ?assertEqual(<<"usage">>, error_code("#creategroup a\tb")),
-    ?assertEqual(<<"usage">>, error_code("#read bo" ++ [0] ++ "b")).
+    ?assertEqual(<<"usage">>, error_code("#profile bo" ++ [0] ++ "b")).
 
 argument_length_limits_test() ->
     ?assertEqual(<<"usage">>, error_code("#historydm " ++ lists:duplicate(25, $a))),
     ?assertMatch({line, _}, run("#historydm " ++ lists:duplicate(24, $a))),
     ?assertEqual(<<"usage">>, error_code("#creategroup " ++ lists:duplicate(33, $a))),
-    ?assertEqual(<<"usage">>, error_code("#status " ++ lists:duplicate(141, $a))).
-
-avatar_url_is_restricted_test() ->
-    ?assertMatch({line, "/setavatar https://x.io/a.png"}, run("#avatar https://x.io/a.png")),
-    ?assertMatch({line, "/setavatar /uploads/abc.png"}, run("#avatar /uploads/abc.png")),
-    ?assertEqual(<<"usage">>, error_code("#avatar javascript:alert(1)")),
-    ?assertEqual(<<"usage">>, error_code("#avatar data:text/html,x")),
-    ?assertEqual(<<"usage">>, error_code("#avatar //evil.example/x.png")).
+    ?assertEqual(<<"usage">>, error_code("#find " ++ lists:duplicate(101, $a))).
 
 invalid_utf8_is_rejected_not_crashed_test() ->
     ?assertEqual(<<"invalid_encoding">>, error_code([$#, $d, $m, $\s, $b, $\s, 16#ff, 16#fe])).
@@ -175,7 +178,7 @@ invalid_utf8_is_rejected_not_crashed_test() ->
 garbage_never_crashes_test() ->
     %% every one of these must come back as a value, not an exception
     Inputs = ["#a", "#a-", "#" ++ lists:duplicate(500, $x), "#dm " ++ lists:duplicate(1990, $y),
-              "#help " ++ lists:duplicate(300, $z), "#markread   ", "#requests \t", "#form \n"],
+              "#help " ++ lists:duplicate(300, $z), "#notifications   ", "#requests \t", "#form \n"],
     [?assert(is_tuple(run(I))) || I <- Inputs].
 
 %% ---- help & catalog ---------------------------------------------------------------------------------
@@ -202,7 +205,7 @@ catalog_reports_availability_without_a_sandesh_session_test() ->
     ByName = maps:from_list([{maps:get(<<"name">>, C), C} || C <- Cmds]),
     ?assertMatch(#{<<"available">> := true, <<"requires">> := <<"none">>}, maps:get(<<"dm">>, ByName)),
     ?assertMatch(#{<<"available">> := true}, maps:get(<<"me">>, ByName)),
-    ?assertMatch(#{<<"available">> := false, <<"requires">> := <<"signin">>}, maps:get(<<"cards">>, ByName)),
+    ?assertMatch(#{<<"available">> := false, <<"requires">> := <<"signin">>}, maps:get(<<"notifications">>, ByName)),
     ?assertMatch(#{<<"available">> := false, <<"requires">> := <<"signin">>}, maps:get(<<"admin-users">>, ByName)).
 
 catalog_describes_args_test() ->
@@ -211,15 +214,14 @@ catalog_describes_args_test() ->
     ?assertMatch([#{<<"name">> := <<"user">>, <<"type">> := <<"user">>, <<"required">> := true},
                   #{<<"name">> := <<"text">>, <<"type">> := <<"text">>, <<"rest">> := true, <<"max">> := 2000}],
                  maps:get(<<"args">>, Dm)),
-    [Mr] = [C || #{<<"name">> := <<"markread">>} = C <- Cmds],
-    [#{<<"values">> := Vs}] = maps:get(<<"args">>, Mr),
+    [Nf] = [C || #{<<"name">> := <<"notifications">>} = C <- Cmds],
+    [#{<<"values">> := Vs}] = maps:get(<<"args">>, Nf),
     ?assert(lists:member(<<"all">>, Vs)).
 
 catalog_prefix_filter_test() ->
     #{<<"commands">> := Cmds} = json:decode(chat_cmds:catalog_json("RE")),
     Names = [maps:get(<<"name">>, C) || C <- Cmds],
     ?assert(lists:member(<<"reply">>, Names)),
-    ?assert(lists:member(<<"react">>, Names)),
     ?assert(lists:member(<<"reminder">>, [A || C <- Cmds, A <- maps:get(<<"aliases">>, C)])),
     ?assertNot(lists:member(<<"dm">>, Names)),
     #{<<"commands">> := None} = json:decode(chat_cmds:catalog_json("zzz")),
@@ -248,8 +250,27 @@ complete_bare_hash_lists_commands_test() ->
 complete_enum_argument_test() ->
     #{<<"kind">> := <<"arg">>, <<"items">> := Items, <<"token">> := <<"pe">>,
       <<"arg">> := #{<<"name">> := <<"category">>, <<"index">> := 0}} =
-        complete("{\"input\":\"#markread pe\"}"),
+        complete("{\"input\":\"#notifications pe\"}"),
     ?assertEqual([<<"pending">>, <<"personal">>], [V || #{<<"value">> := V} <- Items]).
+
+complete_is_paginated_test() ->
+    P1 = complete("{\"input\":\"#notifications \",\"page\":1,\"pageSize\":2}"),
+    #{<<"total">> := Total, <<"totalPages">> := Pages, <<"hasMore">> := true, <<"page">> := 1, <<"pageSize">> := 2} = P1,
+    ?assertEqual(2, length(maps:get(<<"items">>, P1))),
+    ?assertEqual((Total + 1) div 2, Pages),
+    Last = complete("{\"input\":\"#notifications \",\"page\":99,\"pageSize\":2}"),
+    ?assertMatch(#{<<"hasMore">> := false}, Last),   %% an out-of-range page is clamped to the last one
+    ?assertEqual(Pages, maps:get(<<"page">>, Last)),
+    %% junk paging values fall back to the defaults instead of failing
+    #{<<"page">> := 1, <<"pageSize">> := 10} = complete("{\"input\":\"#notifications \",\"page\":\"x\",\"pageSize\":-4}"),
+    %% pageSize is capped
+    #{<<"pageSize">> := 25} = complete("{\"input\":\"#notifications \",\"pageSize\":5000}").
+
+complete_multi_word_name_is_one_argument_test() ->
+    #{<<"kind">> := <<"arg">>, <<"token">> := <<"Leave Re">>, <<"arg">> := #{<<"index">> := 0}} =
+        complete("{\"input\":\"#tstruct Leave Re\"}"),
+    %% the last word of #tstruct-edit is the record id, not part of the name
+    #{<<"arg">> := #{<<"index">> := 0}} = complete("{\"input\":\"#tstruct-edit Leave Request\"}").
 
 complete_trailing_space_starts_next_argument_test() ->
     %% the reason input travels inside JSON: "#dm bob " != "#dm bob"

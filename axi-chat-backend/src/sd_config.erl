@@ -20,7 +20,7 @@
 %%% runtime is exactly what the chat needs: tell a user which options they
 %%% get, hand them a form definition, and validate + store what they submit.
 -module(sd_config).
--export([list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
+-export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_types/0,
          list_appconns/0, save_appconn/1, delete_appconn/1,
          tstruct_for_user/2, submit/4, list_submissions/2,
@@ -709,6 +709,30 @@ def_for_submission(#{<<"tstruct">> := TName}) ->
 %% Field/section validation is identical (validate_fields/1,
 %% validate_sections/2, check_field_refs/3) -- a user-created structure
 %% obeys the same field-type and condition rules as an admin-managed one.
+
+%% Every structure this user may open: all user-made ones plus the admin-made ones their
+%% options allow. Sorted by caption. Each is the full definition map.
+visible_tstructs(User) ->
+    Admin = [D || D <- list_tstructs(), tstruct_ok(tstruct_for_user(User, maps:get(<<"name">>, D)))],
+    All = list_user_tstructs() ++ [D || D <- Admin, not lists:member(maps:get(<<"name">>, D),
+                                                    [maps:get(<<"name">>, U) || U <- list_user_tstructs()])],
+    lists:sort(fun(A, B) -> cap_key(A) =< cap_key(B) end, All).
+
+tstruct_ok({ok, _}) -> true;
+tstruct_ok(_) -> false.
+
+cap_key(D) -> string:lowercase(maps:get(<<"caption">>, D, maps:get(<<"name">>, D))).
+
+%% "Leave Request" (a caption, any case) or "leave_request" (the name) -> the real name.
+find_tstruct_name(User, Given) when is_binary(Given) ->
+    Low = string:lowercase(string:trim(Given)),
+    Hit = [maps:get(<<"name">>, D) || D <- visible_tstructs(User),
+           string:lowercase(maps:get(<<"name">>, D)) =:= Low
+               orelse string:lowercase(maps:get(<<"caption">>, D, <<>>)) =:= Low],
+    case Hit of
+        [Name | _] -> {ok, Name};
+        [] -> error
+    end.
 
 list_user_tstructs() ->
     lists:sort(fun(A, B) -> maps:get(<<"name">>, A) =< maps:get(<<"name">>, B) end,

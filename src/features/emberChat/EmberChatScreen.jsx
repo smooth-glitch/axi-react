@@ -936,7 +936,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         } else if (event.reqId === "#tstruct" && event.ok && event.data?.tstruct) {
           // Browsing existing records needs a list view, which only the Studio has --
           // SmartStructureModal is a fill-in form only, no list.
-          setModalParam({ initialPath: `/structs/${event.data.tstruct.name}/records` });
+          setModalParam({ initialPath: `/structs/${encodeURIComponent(event.data.tstruct.name)}/records` });
           setModal("tstruct_user");
         } else if ((event.reqId === "#tstruct-add" || event.reqId === "#tstruct-edit") && event.ok && event.data?.tstruct) {
           // Adding/editing a single record fits the same lightweight form the chat's
@@ -1087,6 +1087,30 @@ export function EmberChatScreen({ onOpenAiChat }) {
     const rest = (parsed.rest || "").trim();
     const parts = rest.split(/\s+/).filter(Boolean);
 
+    // Group / host names can contain spaces ("design team"): match the line against the ones we
+    // know (longest wins), else fall back to the first word. Returns [name, remainder].
+    const splitKnownName = (kind) => {
+      const cands = [];
+      chats.forEach((c) => {
+        if (kind === "group" && c.isGroup && c.id !== "room-general") cands.push({ text: c.name, value: c.name });
+        if (kind === "host" && c.isHost) {
+          const key = c.id.replace(/^host-/, "");
+          cands.push({ text: key, value: key });
+          if (c.name) cands.push({ text: c.name, value: key });
+        }
+      });
+      const low = rest.toLowerCase();
+      let best = null;
+      cands.forEach(({ text, value }) => {
+        const t = String(text || "").toLowerCase();
+        if (t && (low === t || low.startsWith(t + " ")) && (!best || t.length > best.len)) {
+          best = { len: t.length, value };
+        }
+      });
+      if (best) return [best.value, rest.slice(best.len).trim()];
+      return [parts[0] || "", parts.slice(1).join(" ")];
+    };
+
     // 2. Messaging commands
     if (cmd === "dm" || cmd === "msg" || cmd === "pm") {
       const targetUser = parts[0];
@@ -1126,8 +1150,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     if (cmd === "host") {
-      const targetHost = parts[0];
-      const messageBody = parts.slice(1).join(" ");
+      const [targetHost, messageBody] = splitKnownName("host");
       if (targetHost) {
         const hClean = targetHost.toLowerCase().trim();
         const chatId = `host-${hClean}`;
@@ -1184,8 +1207,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     if (cmd === "groupmsg" || cmd === "gm") {
-      const targetGroup = parts[0];
-      const messageBody = parts.slice(1).join(" ");
+      const [targetGroup, messageBody] = splitKnownName("group");
       if (targetGroup) {
         const chatId = `room-${targetGroup.toLowerCase().trim()}`;
         handleSelectChat(chatId);
@@ -1348,7 +1370,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     if (cmd === "historygroup") {
-      const grp = parts[0];
+      const grp = splitKnownName("group")[0] || rest;
       if (grp) {
         const chatId = `room-${grp.toLowerCase().trim()}`;
         handleSelectChat(chatId);
@@ -1359,7 +1381,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     if (cmd === "historyhost") {
-      const host = parts[0];
+      const host = splitKnownName("host")[0];
       if (host) {
         const chatId = `host-${host.toLowerCase().trim()}`;
         handleSelectChat(chatId);
@@ -1397,7 +1419,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
     // 4. Groups
     if (cmd === "creategroup" || cmd === "newgroup") {
-      const gName = parts[0];
+      const gName = parts.join(" ").slice(0, 32);
       if (gName) {
         const chatId = `room-${gName}`;
         const newGroupChat = {
@@ -1423,8 +1445,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     if (cmd === "addmember" || cmd === "invitegroup") {
-      const grp = parts[0];
-      const user = parts[1];
+      // the user is the last word; everything before it is the (possibly multi-word) group name
+      const [knownGrp, afterGrp] = splitKnownName("group");
+      const grp = afterGrp ? knownGrp : parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0];
+      const user = afterGrp ? afterGrp.split(/\s+/)[0] : parts.length > 1 ? parts[parts.length - 1] : undefined;
       if (grp && user) {
         sandeshSocket.sendAddMember(grp, user);
         setGroupMembersByName((prev) => ({
@@ -1441,7 +1465,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     if (cmd === "leavegroup" || cmd === "leave") {
-      const grp = parts[0] || (activeChat.isGroup ? activeChat.name : "");
+      const grp = rest || (activeChat.isGroup ? activeChat.name : "");
       if (grp) {
         sandeshSocket.sendLeaveGroup(grp);
         setChats((prev) => prev.filter((c) => c.id !== `room-${grp}`));
@@ -2563,7 +2587,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                     [groupName]: [currentUser.username, ...selectedMembers],
                   }));
 
-                  const safeBackendGroupName = groupName.toLowerCase().replace(/[^a-z0-9_-]/g, "_").slice(0, 24) || "group";
+                  const safeBackendGroupName = groupName.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, 32) || "group";
                   sandeshSocket.sendCreateGroup(safeBackendGroupName);
 
                   // Add invited members

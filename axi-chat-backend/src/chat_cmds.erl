@@ -43,11 +43,12 @@
 -define(MAX_COMPLETE_INPUT, 512).
 -define(MAX_ARG_SUGGESTIONS, 10).
 -define(MAX_CMD_SUGGESTIONS, 25).
+-define(MAX_PAGE_SIZE, 25).
 
 %% ---- the command table -----------------------------------------------------------------------
 %%
 %% Args are {Name, Type, req | opt}. Types:
-%%   user | group | host | msgid | emoji | url | word | {enum, [Value]}
+%%   user | group | host | msgid | emoji | url | word | phrase (several words, only before single-token args) | {enum, [Value]}
 %%   text | {text, MaxBytes}   -- the rest of the line; only allowed as the LAST arg
 %% A missing optional argument reaches the target fun as "".
 %% Target is {line, fun(Vals)} (rewrite to a slash command) or
@@ -78,30 +79,6 @@ commands() ->
      cmd("replygroup", [], messaging, "Reply to a message in a group",
          [{group, group, req}, {messageId, msgid, req}, {text, text, req}],
          {line, fun([G, I, T]) -> "/replygroup " ++ G ++ " " ++ integer_to_list(I) ++ " " ++ T end}, ["group_msg_ack"]),
-     cmd("react", [], messaging, "React to a global-room message (toggles)",
-         [{messageId, msgid, req}, {emoji, emoji, req}],
-         {line, fun([I, E]) -> "/react global " ++ integer_to_list(I) ++ " " ++ E end}, ["reaction"]),
-     cmd("reactdm", [], messaging, "React to a message in a direct conversation",
-         [{user, user, req}, {messageId, msgid, req}, {emoji, emoji, req}],
-         {line, fun([U, I, E]) -> "/react dm " ++ U ++ " " ++ integer_to_list(I) ++ " " ++ E end}, ["dm_reaction"]),
-     cmd("reactgroup", [], messaging, "React to a message in a group",
-         [{group, group, req}, {messageId, msgid, req}, {emoji, emoji, req}],
-         {line, fun([G, I, E]) -> "/react group " ++ G ++ " " ++ integer_to_list(I) ++ " " ++ E end}, ["group_reaction"]),
-     cmd("delete", [], messaging, "Delete your own global-room message",
-         [{messageId, msgid, req}],
-         {line, fun([I]) -> "/delete global " ++ integer_to_list(I) end}, ["deleted", "delete_denied"]),
-     cmd("deletedm", [], messaging, "Delete your own message in a direct conversation",
-         [{user, user, req}, {messageId, msgid, req}],
-         {line, fun([U, I]) -> "/delete dm " ++ U ++ " " ++ integer_to_list(I) end}, ["dm_deleted", "delete_denied"]),
-     cmd("deletegroup", [], messaging, "Delete your own message in a group",
-         [{group, group, req}, {messageId, msgid, req}],
-         {line, fun([G, I]) -> "/delete group " ++ G ++ " " ++ integer_to_list(I) end}, ["group_deleted", "delete_denied"]),
-     cmd("gif", [], messaging, "Search GIFs",
-         [{query, {text, 100}, opt}],
-         {line, fun([Q]) -> "/gifsearch" ++ opt(Q) end}, ["gif_results"]),
-     cmd("sticker", [], messaging, "Search stickers",
-         [{query, {text, 100}, opt}],
-         {line, fun([Q]) -> "/stickersearch" ++ opt(Q) end}, ["sticker_results"]),
 
      %% ---- look things up ----
      cmd("users", ["online", "who"], lookup, "Who is online right now",
@@ -123,15 +100,12 @@ commands() ->
      cmd("historyhost", [], lookup, "Load your conversation with a department host",
          [{host, host, req}],
          {line, fun([H]) -> "/history host " ++ H end}, ["history"]),
-     cmd("read", [], lookup, "Mark a direct conversation as read",
-         [{user, user, req}],
-         {line, fun([U]) -> "/read dm " ++ U end}, []),
      cmd("profile", [], lookup, "See someone's avatar and status",
          [{user, user, req}],
          {line, fun([U]) -> "/getprofile " ++ U end}, ["profile"]),
 
      %% ---- groups ----
-     cmd("creategroup", ["newgroup"], groups, "Create a group (no spaces in the name)",
+     cmd("creategroup", ["newgroup"], groups, "Create a group (the name can have spaces)",
          [{name, group, req}],
          {line, fun([G]) -> "/creategroup " ++ G end}, ["group_created"]),
      cmd("addmember", ["invitegroup"], groups, "Add an online user to a group you are in",
@@ -142,12 +116,6 @@ commands() ->
          {line, fun([G]) -> "/leavegroup " ++ G end}, ["left_group"]),
 
      %% ---- your profile ----
-     cmd("status", [], profile, "Set your status line",
-         [{status, {text, 140}, req}],
-         {line, fun([S]) -> "/setstatus " ++ S end}, []),
-     cmd("avatar", [], profile, "Set your avatar (an http(s) link or an uploaded /uploads/ file)",
-         [{url, url, req}],
-         {line, fun([U]) -> "/setavatar " ++ U end}, []),
 
      %% ---- people & approvals (Sandesh) ----
      cmd("me", ["whoami"], people, "Your Sandesh account, permissions and counters",
@@ -172,11 +140,6 @@ commands() ->
      cmd("reject", [], people, "Reject a request or invitation",
          [{requestId, msgid, req}],
          {sd, <<"req.respond">>, fun([I]) -> #{<<"id">> => I, <<"action">> => <<"reject">>} end}, ["sd"]),
-     cmd("ignore", [], people, "Ignore a request or invitation",
-         [{requestId, msgid, req}],
-         {sd, <<"req.respond">>, fun([I]) -> #{<<"id">> => I, <<"action">> => <<"ignore">>} end}, ["sd"]),
-     cmd("myusers", [], people, "Users you host (hosts only)",
-         [], {sd, <<"host.users">>, fun([]) -> #{} end}, ["sd"]),
      cmd("transfer", [], people, "Ask another host to take over one of your users (hosts only)",
          [{user, user, req}, {toHost, user, req}],
          {sd, <<"host.transfer">>, fun([U, H]) -> #{<<"user">> => ub(U), <<"toHost">> => ub(H)} end}, ["sd"]),
@@ -185,17 +148,6 @@ commands() ->
      cmd("notifications", ["notifs"], inbox, "Your notifications (unread first)",
          [{category, CatEnum, opt}],
          {sd, <<"notifications.list">>, fun([C]) -> opt_field(<<"category">>, C, #{}) end}, ["sd"]),
-     cmd("markread", [], inbox, "Mark notifications as read",
-         [{category, CatEnum, req}],
-         {sd, <<"notifications.read">>,
-          fun(["all"]) -> #{<<"all">> => true};
-             ([C]) -> #{<<"category">> => ub(C)} end}, ["sd"]),
-     cmd("cards", [], inbox, "Your message cards (optionally one section)",
-         [{section, word, opt}],
-         {sd, <<"cards.list">>, fun([S]) -> opt_field(<<"section">>, S, #{}) end}, ["sd"]),
-     cmd("dismiss", [], inbox, "Dismiss a card (or \"all\")",
-         [{cardId, word, req}],
-         {sd, <<"cards.dismiss">>, fun([I]) -> #{<<"id">> => ub(I)} end}, ["sd"]),
      cmd("remind", ["reminder"], inbox, "Add a reminder card for yourself",
          [{text, {text, 500}, req}],
          {sd, <<"reminder.add">>, fun([T]) -> #{<<"text">> => ub(T)} end}, ["sd"]),
@@ -216,16 +168,16 @@ commands() ->
      %% #tstruct-edit <name> <id> -- open the viewer with a specific record pre-selected for editing
      %% #tstruct-delete <name> <id> -- delete your own record
      cmd("tstruct", ["ts", "struct"], forms, "Open a lite T-Struct in the viewer (definition + your records)",
-         [{name, word, req}],
+         [{name, phrase, req}],
          {sd, <<"tstruct.user.open">>, fun([N]) -> #{<<"name">> => ub(N)} end}, ["sd"]),
      cmd("tstruct-add", ["ts-add", "struct-add"], forms, "Open a lite T-Struct to add a new record",
-         [{name, word, req}],
+         [{name, phrase, req}],
          {sd, <<"tstruct.user.open">>, fun([N]) -> #{<<"name">> => ub(N), <<"mode">> => <<"add">>} end}, ["sd"]),
      cmd("tstruct-edit", ["ts-edit", "struct-edit"], forms, "Edit your own record in a lite T-Struct",
-         [{name, word, req}, {submissionId, msgid, req}],
+         [{name, phrase, req}, {submissionId, msgid, req}],
          {sd, <<"tstruct.user.open">>, fun([N, I]) -> #{<<"name">> => ub(N), <<"editRecordId">> => I} end}, ["sd"]),
      cmd("tstruct-delete", ["ts-delete", "struct-delete"], forms, "Delete your own record from a lite T-Struct",
-         [{name, word, req}, {submissionId, msgid, req}],
+         [{name, phrase, req}, {submissionId, msgid, req}],
          {sd, <<"submissions.delete">>, fun([_N, I]) -> #{<<"id">> => I} end}, ["sd"]),
 
      %% ---- administration (permission-gated; the server re-checks on every run) ----
@@ -258,9 +210,6 @@ categories() ->
 cmd(Name, Aliases, Category, Summary, Args, Target, Reply) ->
     #{name => Name, aliases => Aliases, category => Category, summary => Summary,
       args => Args, target => Target, reply => Reply}.
-
-opt("") -> "";
-opt(S) -> " " ++ S.
 
 opt_field(_Key, "", Map) -> Map;
 opt_field(Key, V, Map) -> Map#{Key => ub(V)}.
@@ -333,6 +282,19 @@ parse_args([], Str, Acc) ->
         "" -> {ok, lists:reverse(Acc)};
         _ -> {error, "Too many arguments."}
     end;
+parse_args([{Name, phrase, Req} | More], Str, Acc) ->
+    parse_phrase(Name, Req, More, Str, Acc);
+%% Groups and hosts may have several words in their name ("design team"): match
+%% the line against the ones that exist first (longest wins), then fall back.
+parse_args([{Name, Type, Req} | More], Str, Acc) when Type =:= group; Type =:= host ->
+    case chat_names:longest(known(Type), Str, Type =:= group) of
+        {ok, Val, Rest} -> parse_args(More, Rest, [Val | Acc]);
+        none ->
+            case lists:any(fun({_, T, _}) -> is_text(T) end, More) of
+                false when Type =:= group -> parse_phrase(Name, Type, Req, More, Str, Acc);
+                _ -> parse_word(Name, Type, Req, More, Str, Acc)
+            end
+    end;
 parse_args([{Name, Type, Req} | More], Str, Acc) ->
     case is_text(Type) of
         true -> parse_text(Name, Type, Req, More, Str, Acc);
@@ -349,6 +311,35 @@ parse_text(Name, Type, Req, [], Str, Acc) ->
         length(Text) > Max -> {error, io_lib:format("<~s> is too long (max ~p characters).", [Name, Max])};
         true -> {ok, lists:reverse([Text | Acc])}
     end.
+
+%% A multi-word value (e.g. a T-Struct called "Leave Request"). It takes every token
+%% except the ones the remaining (single-token) args need at the end of the line.
+parse_phrase(Name, Req, More, Str, Acc) -> parse_phrase(Name, phrase, Req, More, Str, Acc).
+
+parse_phrase(Name, Type, Req, More, Str, Acc) ->
+    Toks = string:tokens(Str, " "),
+    Keep = length(Toks) - length(More),
+    if
+        Keep < 1, Req =:= req -> {error, missing(Name)};
+        Keep < 1 -> parse_args(More, Str, ["" | Acc]);
+        true ->
+            {Head, Tail} = lists:split(Keep, Toks),
+            Phrase = string:join(Head, " "),
+            case phrase_ok(Name, Type, Phrase) of
+                {ok, Val} -> parse_args(More, string:join(Tail, " "), [Val | Acc]);
+                {error, _} = E -> E
+            end
+    end.
+
+phrase_ok(Name, group, Phrase) -> convert(Name, group, Phrase);
+phrase_ok(Name, _, Phrase) -> sized(Name, Phrase, 100, "a name").
+
+%% {Text, Value} for every group / host that exists (empty if the registry isn't up).
+known(group) ->
+    try [{G, G} || G <- chat_groups:all_names()] catch _:_ -> [] end;
+known(host) ->
+    try lists:append([[{K, K}, {N, K}] || #{key := K, name := N} <- chat_hosts:list_hosts()])
+    catch _:_ -> [] end.
 
 parse_word(Name, Type, Req, More, Str, Acc) ->
     case take_token(Str) of
@@ -502,6 +493,7 @@ is_text({text, _}) -> true;
 is_text(_) -> false.
 
 type_name(T) when is_atom(T) -> atom_to_list(T);
+type_name(phrase) -> "text";
 type_name({text, _}) -> "text";
 type_name({enum, _}) -> "enum".
 
@@ -575,7 +567,9 @@ complete_json(Body, Name) ->
         case sd_util:jdec(list_to_binary(Body)) of
             {ok, #{<<"input">> := In} = Args} when is_binary(In), byte_size(In) =< ?MAX_COMPLETE_INPUT ->
                 case unicode:characters_to_binary(In, utf8, utf8) of
-                    In -> complete(binary_to_list(In), maps:get(<<"reqId">>, Args, null), Name);
+                    In -> complete(binary_to_list(In), maps:get(<<"reqId">>, Args, null), Name,
+                                   pos_int(maps:get(<<"page">>, Args, 1), 1, 100000),
+                                   pos_int(maps:get(<<"pageSize">>, Args, 0), 0, ?MAX_PAGE_SIZE));
                     _ -> error_json("invalid_encoding", "input is not valid UTF-8.", #{})
                 end;
             _ ->
@@ -586,7 +580,21 @@ complete_json(Body, Name) ->
         error_json("internal", "Something went wrong completing that.", #{})
     end.
 
-complete(Input, ReqId, Name) ->
+pos_int(V, _Min, Max) when is_integer(V), V >= 0 -> min(V, Max);
+pos_int(_, Min, _) -> Min.
+
+%% Slice a full result list into one page. PageSize 0 = the default for that kind of list.
+%% Adds page / pageSize / total / totalPages / hasMore so the client can draw a pager.
+paginate(Items, Page0, Size0, DefaultSize) ->
+    Size = case Size0 of 0 -> DefaultSize; _ -> Size0 end,
+    Total = length(Items),
+    TotalPages = max(1, (Total + Size - 1) div Size),
+    Page = min(max(Page0, 1), TotalPages),
+    Slice = lists:sublist(Items, (Page - 1) * Size + 1, Size),
+    {Slice, #{<<"page">> => Page, <<"pageSize">> => Size, <<"total">> => Total,
+              <<"totalPages">> => TotalPages, <<"hasMore">> => Page < TotalPages}}.
+
+complete(Input, ReqId, Name, Page, Size) ->
     Bare = case Input of [$# | R] -> R; R -> R end,
     Base = #{<<"type">> => <<"cmd_suggestions">>, <<"input">> => list_to_binary(Input),
              <<"reqId">> => ReqId},
@@ -600,51 +608,78 @@ complete(Input, ReqId, Name) ->
                                      lists:any(fun(X) -> lists:prefix(Q, X) end, [N | A])];
                        false -> []
                    end,
+            {PageHits, PageInfo} = paginate(Hits, Page, Size, ?MAX_CMD_SUGGESTIONS),
             Items = [begin
                          J = command_json(C, Ctx),
                          #{<<"value">> => maps:get(<<"name">>, J), <<"label">> => <<"#", (maps:get(<<"name">>, J))/binary>>,
                            <<"hint">> => maps:get(<<"summary">>, J), <<"usage">> => maps:get(<<"usage">>, J),
                            <<"category">> => maps:get(<<"category">>, J), <<"available">> => maps:get(<<"available">>, J)}
-                     end || C <- lists:sublist(Hits, ?MAX_CMD_SUGGESTIONS)],
-            jenc(Base#{<<"kind">> => <<"command">>, <<"token">> => safe_or_empty(Tok), <<"items">> => Items});
+                     end || C <- PageHits],
+            jenc(maps:merge(Base#{<<"kind">> => <<"command">>, <<"token">> => safe_or_empty(Tok), <<"items">> => Items}, PageInfo));
         {Tok, [$\s | After]} ->
             case find(ascii_lower(Tok)) of
                 undefined -> jenc(Base#{<<"kind">> => <<"none">>, <<"items">> => []});
-                #{name := CName, args := Specs} -> complete_arg(Base, CName, Specs, After, Name)
+                #{name := CName, args := Specs} -> complete_arg(Base, CName, Specs, After, Name, Page, Size)
             end
     end.
 
-complete_arg(Base, CName, Specs, After, Name) ->
-    Parts = string:split(After, " ", all),
-    Partial = lists:last(Parts),
-    Done = [P || P <- lists:droplast(Parts), P =/= ""],
-    Idx = length(Done),
+complete_arg(Base, CName, Specs, After, Name, Page, Size) ->
     Common = Base#{<<"command">> => tb(CName)},
-    case spec_at(Idx, Specs) of
+    case walk(Specs, After, Name, 0) of
         none ->
             jenc(Common#{<<"kind">> => <<"none">>, <<"items">> => []});
-        {_, Type, _} = Spec ->
-            {Kind, Items} =
-                case is_text(Type) of
-                    true -> {<<"text">>, []};
-                    false -> {<<"arg">>, [item_json(V, Hint) || {V, Hint} <- match(Partial, candidates(Type, Name)),
-                                                                safe(V) =/= skip]}
-                end,
-            jenc(Common#{<<"kind">> => Kind, <<"token">> => safe_or_empty(Partial),
-                         <<"arg">> => (arg_json(Spec))#{<<"index">> => min(Idx, length(Specs) - 1)},
-                         <<"items">> => Items})
+        {Idx, Partial} ->
+            {_, Type, _} = Spec = lists:nth(min(Idx, length(Specs) - 1) + 1, Specs),
+            case is_text(Type) of
+                true ->
+                    jenc(Common#{<<"kind">> => <<"text">>, <<"token">> => safe_or_empty(Partial),
+                                 <<"arg">> => (arg_json(Spec))#{<<"index">> => min(Idx, length(Specs) - 1)},
+                                 <<"items">> => []});
+                false ->
+                    All = [C || C <- match(Partial, candidates(Type, Name)), safe(element(1, C)) =/= skip],
+                    {Slice, PageInfo} = paginate(All, Page, Size, ?MAX_ARG_SUGGESTIONS),
+                    Items = [item_json(C) || C <- Slice],
+                    jenc(maps:merge(Common#{<<"kind">> => <<"arg">>, <<"token">> => safe_or_empty(Partial),
+                                            <<"arg">> => (arg_json(Spec))#{<<"index">> => min(Idx, length(Specs) - 1)},
+                                            <<"items">> => Items}, PageInfo))
+            end
     end.
 
-%% The argument being typed after Idx finished ones. Once a trailing text
-%% argument has started, everything further is still that text.
-spec_at(Idx, Specs) when Idx < length(Specs) -> lists:nth(Idx + 1, Specs);
-spec_at(_Idx, []) -> none;
-spec_at(_Idx, Specs) ->
-    {_, Type, _} = Last = lists:last(Specs),
-    case is_text(Type) of true -> Last; false -> none end.
+%% Find which argument is being typed and what has been typed of it so far.
+%% Names that may have spaces (tstruct captions, groups, hosts) swallow the rest of the
+%% line until what was typed is exactly a known name followed by a space.
+walk([], _Str, _Name, _Idx) -> none;
+walk([{_, T, _} | More], Str, Name, Idx) ->
+    S = skip_spaces(Str),
+    Multi = lists:member(T, [phrase, group, host]) andalso
+            (T =:= phrase orelse not lists:any(fun({_, T2, _}) -> is_text(T2) end, More)),
+    walk_arg(is_text(T), Multi, T, More, S, Name, Idx).
+
+walk_arg(true, _, _, _, S, _, Idx) -> {Idx, S};
+walk_arg(false, true, T, More, S, Name, Idx) ->
+    Known = [{X, X} || X <- known_texts(T, Name)],
+    Ended = S =/= "" andalso lists:last(S) =:= $\s,
+    case chat_names:longest(Known, S, false) of
+        {ok, _, Rest} when Rest =/= ""; Ended -> walk(More, Rest, Name, Idx + 1);
+        _ -> {Idx, S}
+    end;
+walk_arg(false, false, _, More, S, Name, Idx) ->
+    {Tok, Rest} = lists:splitwith(fun(C) -> C =/= $\s end, S),
+    case {Rest, More} of
+        {[], _} -> {Idx, Tok};
+        {_, []} -> none;
+        _ -> walk(More, Rest, Name, Idx + 1)
+    end.
+
+known_texts(phrase, Self) -> lists:append([[V, A] || {V, _, A} <- candidates(phrase, Self)]);
+known_texts(host, Self) -> lists:append([[V, H] || {V, H} <- candidates(host, Self)]);
+known_texts(Type, Self) -> [V || {V, _} <- candidates(Type, Self)].
 
 safe_or_empty(Bytes) ->
     case safe(Bytes) of skip -> <<>>; B -> B end.
+
+item_json({V, H, _Alt}) -> item_json(V, H);
+item_json({V, H}) -> item_json(V, H).
 
 item_json(Value, Hint) ->
     V = safe(Value),
@@ -652,6 +687,15 @@ item_json(Value, Hint) ->
 
 %% What the argument could be, as {Value, Hint}. Only data this connection may
 %% already see through /list, /groups and /hosts -- no directory browsing.
+candidates(phrase, Self) ->
+    try sd_users:get(Self) of
+        undefined -> [];
+        User ->
+            [{binary_to_list(maps:get(<<"caption">>, D, maps:get(<<"name">>, D))),
+              binary_to_list(maps:get(<<"name">>, D)),
+              binary_to_list(maps:get(<<"name">>, D))} || D <- sd_config:visible_tstructs(User)]
+    catch _:_ -> []   %% store unreachable: no suggestions rather than an error
+    end;
 candidates(user, Self) ->
     [{U, "online"} || U <- chat_room:list_users(), U =/= Self];
 candidates(group, Self) ->
@@ -666,7 +710,9 @@ candidates(_, _) ->
 %% Prefix matches first, then substring matches; each alphabetical; capped.
 match(Partial, Cands) ->
     Q = ascii_lower(Partial),
-    Low = fun({V, _}) -> ascii_lower(V) end,
-    Pre = [C || C <- Cands, lists:prefix(Q, Low(C))],
-    Sub = [C || C <- Cands, Q =/= "", not lists:prefix(Q, Low(C)), string:find(Low(C), Q) =/= nomatch],
-    lists:sublist(lists:sort(Pre) ++ lists:sort(Sub), ?MAX_ARG_SUGGESTIONS).
+    Low = fun(C) -> ascii_lower(element(1, C)) end,
+    Alt = fun({_, _, A}) -> ascii_lower(A); (_) -> "" end,
+    Pre = [C || C <- Cands, lists:prefix(Q, Low(C)) orelse (Alt(C) =/= "" andalso lists:prefix(Q, Alt(C)))],
+    Sub = [C || C <- Cands, Q =/= "", not lists:member(C, Pre),
+                string:find(Low(C), Q) =/= nomatch orelse string:find(Alt(C), Q) =/= nomatch],
+    lists:sort(Pre) ++ lists:sort(Sub).
