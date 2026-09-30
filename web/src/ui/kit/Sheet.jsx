@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
@@ -6,9 +6,10 @@ import { X } from 'lucide-react';
 import { Text, Divider } from './Text';
 import { IconButton } from './Button';
 import { useWindowWidth } from '../hooks';
+import { SheetHostContext } from '../../studio/MenuContext';
 
 const Layer = styled.div`
-  position: fixed;
+  position: ${(p) => (p.$inHost ? 'absolute' : 'fixed')};
   inset: 0;
   z-index: 50;
 `;
@@ -52,11 +53,13 @@ const Foot = styled.div`
   border-top: 1px solid ${(p) => p.theme.border};
 `;
 
-// Slide-over panel: right-hand drawer on wide screens, bottom sheet on narrow ones. Rendered in a portal on <body>
-// (above everything). Not a permanent side panel - it opens on demand and closes with Esc / backdrop / X.
+// Slide-over panel: right-hand drawer on wide screens, bottom sheet on narrow ones. Rendered in a portal on the studio frame
+// (or <body> standalone). Not a permanent side panel - it opens on demand and closes with Esc / backdrop / X.
 export function Sheet({ visible, onClose, title, subtitle, children, footer, testID }) {
   const t = useTheme();
-  const width = useWindowWidth();
+  const windowWidth = useWindowWidth();
+  const host = useContext(SheetHostContext);
+  const width = host ? host.clientWidth : windowWidth; // inside the studio frame, size to the frame, not the window
   const drawer = width >= t.layout.tableBreakpoint;
 
   useEffect(() => {
@@ -69,13 +72,13 @@ export function Sheet({ visible, onClose, title, subtitle, children, footer, tes
   const hidden = drawer ? { x: t.layout.panelWidth } : { y: '100%' };
   const shown = drawer ? { x: 0 } : { y: 0 };
   const panelStyle = drawer
-    ? { top: 0, right: 0, bottom: 0, width: t.layout.panelWidth, maxWidth: '100vw', borderLeftWidth: 1 }
+    ? { top: 0, right: 0, bottom: 0, width: t.layout.panelWidth, maxWidth: '100%', borderLeftWidth: 1 }
     : { left: 0, right: 0, bottom: 0, maxHeight: '90%', borderTopWidth: 1, borderTopLeftRadius: t.radius.xl, borderTopRightRadius: t.radius.xl };
 
   return createPortal(
     <AnimatePresence>
       {visible ? (
-        <Layer key="sheet">
+        <Layer key="sheet" $inHost={!!host}>
           <Backdrop
             aria-label="Close panel"
             onClick={onClose}
@@ -112,6 +115,6 @@ export function Sheet({ visible, onClose, title, subtitle, children, footer, tes
         </Layer>
       ) : null}
     </AnimatePresence>,
-    document.body
+    host || document.body
   );
 }

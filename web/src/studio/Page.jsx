@@ -2,9 +2,10 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, PanelLeft } from 'lucide-react';
 import { IconButton, Text } from '../ui/kit';
 import { useWindowWidth } from '../ui/hooks';
+import { useMenu } from './MenuContext';
 
 const Root = styled.div`
   display: flex;
@@ -60,6 +61,7 @@ export default function Page({ title, subtitle, onBack, actions, children, foote
   const navigate = useNavigate();
   const location = useLocation();
   const vw = useWindowWidth();
+  const menu = useMenu();
   const pad = vw < t.layout.tableBreakpoint ? t.spacing.lg : t.spacing.xl;
   const max = width === 'form' ? t.layout.formMaxWidth : width === 'full' ? t.layout.fullMaxWidth : t.layout.contentMaxWidth;
   // Narrow (e.g. a split tab) has no sidebar: pages without their own back action return to the menu (home).
@@ -70,6 +72,7 @@ export default function Page({ title, subtitle, onBack, actions, children, foote
     <Root>
       <Header>
         <HeaderInner $pad={pad} $max={max}>
+          {menu.toggle && !menu.visible ? <IconButton icon={PanelLeft} label="Menu" onPress={menu.toggle} testID="menu" /> : null}
           {back ? <IconButton icon={ArrowLeft} label="Back" onPress={back} testID="back" /> : null}
           <div style={{ flex: 1, minWidth: 0 }}>
             <Text as="h1" $variant="heading" $ellipsis style={{ margin: 0 }}>

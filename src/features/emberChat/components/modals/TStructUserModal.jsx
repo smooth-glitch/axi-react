@@ -38,6 +38,27 @@ export default function TStructUserModal({ onClose, currentUser, initialPath }) 
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      <button
+        onClick={onClose}
+        aria-label="Close"
+        style={{
+          position: "absolute",
+          top: 2,
+          right: "max(8px, calc((100vw - min(1100px, 96vw)) / 2))",
+          width: 28,
+          height: 28,
+          borderRadius: "50%",
+          border: "none",
+          background: "#fff",
+          color: "#000",
+          fontSize: 18,
+          lineHeight: 1,
+          cursor: "pointer",
+          zIndex: 1,
+        }}
+      >
+        ×
+      </button>
       <div
         style={{
           margin: "32px auto",
@@ -50,39 +71,6 @@ export default function TStructUserModal({ onClose, currentUser, initialPath }) 
           boxShadow: "0 24px 80px rgba(0,0,0,0.4)",
         }}
       >
-        {/* Header bar */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 20px",
-            background: "#ffffff",
-            borderBottom: "1px solid #f3dccf",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: "#000", fontWeight: 600, fontSize: 15 }}>Org Structures</span>
-            <span style={{ color: "#000", fontSize: 12, marginLeft: 4 }}>Lite TStruct Studio</span>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#000",
-              cursor: "pointer",
-              fontSize: 22,
-              lineHeight: 1,
-              padding: "2px 6px",
-            }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
         {/* Studio body — full tstruct React app rendered inline */}
         <div style={{ flex: 1, overflow: "hidden" }}>
           <AppThemeProvider>

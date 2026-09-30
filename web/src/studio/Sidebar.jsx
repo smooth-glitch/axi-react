@@ -2,8 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { LayoutDashboard, Plus, Search, Settings2, SlidersHorizontal, Table2, X } from 'lucide-react';
-import { Button, Skeleton, Text } from '../ui/kit';
+import { LayoutDashboard, PanelLeftClose, Plus, Search, Settings2, SlidersHorizontal, Table2, X } from 'lucide-react';
+import { Button, IconButton, Skeleton, Text } from '../ui/kit';
+import { useMenu } from './MenuContext';
 import { useStructs } from './StructsContext';
 
 const Root = styled.aside`
@@ -33,16 +34,23 @@ const Brand = styled.div`
 `;
 
 const Logo = styled.div`
-  width: 34px;
-  height: 34px;
-  border-radius: ${(p) => p.theme.radius.lg}px;
+  width: 36px;
+  height: 36px;
+  border-radius: ${(p) => p.theme.radius.pill}px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: ${(p) => p.theme.onGradient};
-  background: linear-gradient(135deg, ${(p) => p.theme.gradient[0]}, ${(p) => p.theme.gradient[1]});
-  box-shadow: ${(p) => p.theme.shadow.glow};
+  color: ${(p) => p.theme.primary};
+  background: ${(p) => p.theme.surface};
+  border: 1.5px solid ${(p) => p.theme.peachDeep};
 `;
+
+// Material "table_chart" glyph (same icon as the Org Structs button in the host app).
+const TableChart = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M10 10.02h5V21h-5zM17 21h3c1.1 0 2-.9 2-2v-9h-5v11zm3-18H5c-1.1 0-2 .9-2 2v3h19V5c0-1.1-.9-2-2-2zM3 19c0 1.1.9 2 2 2h3V10H3v9z" />
+  </svg>
+);
 
 const SearchBox = styled.label`
   display: flex;
@@ -145,6 +153,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
   const { pathname } = useLocation();
   const activeRef = matchPath('/structs/:ref/:view/*', pathname)?.params.ref;
   const { structs, error, refresh } = useStructs();
+  const menu = useMenu();
   const [q, setQ] = useState('');
   const fixed = variant === 'sidebar';
 
@@ -157,7 +166,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
     <Root $fixed={fixed}>
       <Brand>
         <Logo>
-          <Table2 size={18} strokeWidth={2} />
+          <TableChart />
         </Logo>
         <div style={{ flex: 1 }}>
           <Text $variant="title" style={{ color: t.navText }}>
@@ -167,6 +176,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
             Lite
           </Text>
         </div>
+        {menu.toggle ? <IconButton icon={PanelLeftClose} label="Collapse menu" onPress={menu.toggle} testID="collapse-menu" /> : null}
       </Brand>
 
       <div style={{ padding: `0 ${t.spacing.lg}px ${t.spacing.md}px` }}>

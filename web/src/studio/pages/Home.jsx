@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
 import { ArrowRight, Database, Layers, ListTree, PanelLeft, Plus, Shapes, Sparkles } from 'lucide-react';
-import Sidebar from '../Sidebar';
-import { Avatar, Button, Card, EmptyState, HoverCard, IconTile, Text } from '../../ui/kit';
-import { useWindowWidth } from '../../ui/hooks';
+import { Avatar, Button, Card, EmptyState, HoverCard, IconButton, IconTile, Text } from '../../ui/kit';
+import { useMenu } from '../MenuContext';
 import { useStructs } from '../StructsContext';
 
 const Hero = styled(motion.div)`
@@ -44,11 +43,11 @@ function CountUp({ value }) {
 
 const pop = (delay = 0) => ({ initial: { opacity: 0, y: 14 }, animate: { opacity: 1, y: 0 }, transition: { type: 'spring', damping: 22, stiffness: 220, delay } });
 
-// Home. Wide: dashboard-style landing in the centre pane (the sidebar lists the structs). Narrow: the list IS the screen.
+// Home: dashboard-style landing in the centre pane (the menu lists the structs; on narrow screens it opens as a drawer).
 export default function Home() {
   const t = useTheme();
   const navigate = useNavigate();
-  const width = useWindowWidth();
+  const menu = useMenu();
   const { structs } = useStructs();
   const stats = useMemo(
     () => ({
@@ -58,11 +57,11 @@ export default function Home() {
     }),
     [structs]
   );
-  if (width < t.layout.wideBreakpoint) return <Sidebar variant="screen" />;
 
   if (structs && structs.length === 0) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.bg }}>
+      <div style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.bg }}>
+        {menu.toggle && !menu.visible ? <div style={{ marginBottom: t.spacing.md }}><IconButton icon={PanelLeft} label="Menu" onPress={menu.toggle} testID="menu" /></div> : null}
         <EmptyState icon={Shapes} title="No structs yet — create one" message="A struct is a form definition: a unique name plus typed fields. Create one, then collect records with it." actionLabel="Create your first struct" actionIcon={Plus} onAction={() => navigate('/structs/new')} />
       </div>
     );
@@ -77,6 +76,7 @@ export default function Home() {
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', background: t.bg, padding: t.spacing.xxl }}>
+      {menu.toggle && !menu.visible ? <div style={{ marginBottom: t.spacing.md }}><IconButton icon={PanelLeft} label="Menu" onPress={menu.toggle} testID="menu" /></div> : null}
       <div style={{ width: '100%', maxWidth: t.layout.contentMaxWidth, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: t.spacing.xl }}>
         <Hero {...pop()}>
           <Blob animate={{ y: [-10, 10, -10] }} transition={{ duration: 5.2, repeat: Infinity, ease: 'easeInOut' }} style={{ width: 180, height: 180, top: -50, right: -30 }} />
