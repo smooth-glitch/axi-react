@@ -298,7 +298,7 @@ export function formatServerMessage(input, defaultError = false, meta = {}) {
     rawLower.includes("permission denied")
   ) {
     return {
-      text: "You do not have permission to perform this action.",
+      text: (rawText && rawText !== "not_allowed" && rawText !== "forbidden") ? rawText : "You do not have permission to perform this action.",
       title: meta.title || "Notice",
       type: "warning",
       icon: meta.icon || "lock",

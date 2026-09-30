@@ -68,7 +68,7 @@ export default function MembersModal({
                   style={{ cursor: "default", justifyContent: "space-between" }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: 1 }}>
-                    <Avatar size={40} initials={initials} color={color} />
+                    <Avatar size={40} initials={initials} color={color} imageUrl={typeof m === "object" ? (m.avatar || m.imageUrl) : null} />
                     <div className="participant-info">
                       <div className="participant-name-row">
                         <span className="participant-name">{name}</span>

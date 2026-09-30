@@ -108,6 +108,7 @@ export default function ChatScreen({
     <main id="sandesh-main-panel" className="sandesh-main-panel-3d">
       <TopBar
         chat={chat}
+        currentUser={currentUser}
         activeView={activeView}
         onChangeView={setActiveView}
         onMenuClick={chat.id === "workspace" || chat.isWorkspace ? onToggleChatsSlider : onMenuClick}

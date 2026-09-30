@@ -105,8 +105,8 @@ export default function NotificationsModal({
       </div>
 
       <div className="sandesh-modal-actions" style={{ padding: "14px 22px" }}>
-        <span style={{ fontSize: "12px", color: "var(--sandesh-text-muted)" }}>
-          Command: <code style={{ color: "var(--sandesh-coral-accent)" }}>#notifications [category]</code> or <code style={{ color: "var(--sandesh-coral-accent)" }}>#markread &lt;category&gt;</code>
+        <span style={{ fontSize: "12px", color: "var(--sandesh-coral-accent)", fontWeight: 500 }}>
+          Command: <code>#notifications [category]</code>
         </span>
         <button
           type="button"

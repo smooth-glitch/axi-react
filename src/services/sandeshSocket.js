@@ -235,6 +235,40 @@ class SandeshSocketService {
     return this.send(`/hostmsg ${key} ${text}`);
   }
 
+  sendReply(msgId, text) {
+    return this.send(`/reply ${msgId} ${text}`);
+  }
+
+  sendReplyDM(toUser, msgId, text) {
+    const target = (toUser || '').trim().toLowerCase();
+    return this.send(`/replydm ${target} ${msgId} ${text}`);
+  }
+
+  sendReplyGroup(group, msgId, text) {
+    const target = (group || '').trim();
+    return this.send(`/replygroup ${target} ${msgId} ${text}`);
+  }
+
+  sendSetAvatar(url) {
+    const cleanUrl = (url || '').trim();
+    return this.send(`/setavatar ${cleanUrl}`);
+  }
+
+  sendGetProfile(username) {
+    const u = (username || '').trim().toLowerCase();
+    return this.send(`/getprofile ${u}`);
+  }
+
+  sendGifSearch(query) {
+    const q = (query || '').trim();
+    return this.send(q ? `/gifsearch ${q}` : '/gifsearch');
+  }
+
+  sendStickerSearch(query) {
+    const q = (query || '').trim();
+    return this.send(q ? `/stickersearch ${q}` : '/stickersearch');
+  }
+
   sendReaction(scope, target, msgId, emoji) {
     if (scope === 'dm') {
       const u = (target || '').trim().toLowerCase();

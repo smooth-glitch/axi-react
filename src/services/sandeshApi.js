@@ -83,6 +83,54 @@ class SandeshApiService {
     }
   }
 
+  getServerOrigin() {
+    const base = this.getBaseUrl();
+    return base.replace(/\/api\/sd\/?$/i, '');
+  }
+
+  async uploadAvatar(file) {
+    if (!file) throw new Error("No file selected.");
+    const MAX_SIZE = 8 * 1024 * 1024; // 8 MB limit per wire contract
+    if (file.size > MAX_SIZE) {
+      throw new Error("File too large. Maximum avatar size is 8 MB.");
+    }
+    const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
+    if (file.type && !validTypes.includes(file.type.toLowerCase())) {
+      throw new Error("Invalid image type. Supported formats are PNG, JPEG, GIF, and WebP.");
+    }
+
+    const fd = new FormData();
+    fd.append("file", file);
+
+    const uploadUrl = `${this.getServerOrigin()}/upload`;
+    let res;
+    try {
+      res = await fetch(uploadUrl, {
+        method: "POST",
+        body: fd,
+      });
+    } catch (err) {
+      throw new Error("Unable to connect to upload service: " + (err.message || "network error"));
+    }
+
+    if (!res.ok) {
+      let errText = `Upload failed (${res.status})`;
+      try {
+        const json = await res.json();
+        if (json.error) errText = json.error;
+      } catch {}
+      if (res.status === 400) throw new Error(errText || "Bad request / no file provided.");
+      if (res.status === 413) throw new Error("File too large. Maximum size is 8 MB.");
+      if (res.status === 415) throw new Error("Not a supported image type or file byte mismatch.");
+      if (res.status === 429) throw new Error("Upload rate limit exceeded. Please wait a moment.");
+      throw new Error(errText);
+    }
+
+    const data = await res.json();
+    if (!data.url) throw new Error("Upload succeeded but server did not return image URL.");
+    return data; // { url: "/uploads/<name>" }
+  }
+
   /**
    * Device ID generation and persistence.
    * "The every 2 weeks re-check is now per DEVICE, not per account.

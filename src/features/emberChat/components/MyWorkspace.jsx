@@ -308,7 +308,9 @@ export default function MyWorkspace({
               </div>
               <div className="workspace-brand-meta">
                 <div className="workspace-title-row">
-                  <h1 className="workspace-heading">My Workspace</h1>
+                  <h1 className="workspace-heading">
+                    {currentUser?.name || currentUser?.username || "My Workspace"}
+                  </h1>
                   <span className="workspace-role-pill">
                     {currentUser?.isAdmin ? "ADMIN" : (currentUser?.role || "USER").toUpperCase()}
                   </span>
@@ -318,9 +320,6 @@ export default function MyWorkspace({
                     className={`status-dot ${socketStatus === "connected" ? "online" : "offline"}`}
                   />
                   <span>
-                    {socketStatus === "connected"
-                      ? "Live Sync (Erlang 8080)"
-                      : "Connecting..."}
                   </span>
                 </div>
               </div>
@@ -379,9 +378,8 @@ export default function MyWorkspace({
                 type="button"
                 className="workspace-pill-action-btn"
                 onClick={onOpenApprovals}
-                title={`User Access Approvals ${
-                  pendingApprovalsCount > 0 ? `(${pendingApprovalsCount} waiting)` : ""
-                }`}
+                title={`User Access Approvals ${pendingApprovalsCount > 0 ? `(${pendingApprovalsCount} waiting)` : ""
+                  }`}
               >
                 <span className="material-icons">how_to_reg</span>
                 <span>Approvals</span>
@@ -670,9 +668,8 @@ export default function MyWorkspace({
                           >
                             <div className="deck-card-left">
                               <span
-                                className={`deck-priority-pill ${
-                                  isHigh ? "pill-red" : "pill-yellow"
-                                }`}
+                                className={`deck-priority-pill ${isHigh ? "pill-red" : "pill-yellow"
+                                  }`}
                               >
                                 {isHigh ? "🔴 High Priority" : "🟡 Medium Priority"}
                               </span>

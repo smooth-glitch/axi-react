@@ -2,6 +2,7 @@ import Avatar from "./Avatar.jsx";
 
 export default function TopBar({
   chat,
+  currentUser = null,
   activeView,
   onChangeView,
   onMenuClick,
@@ -39,6 +40,17 @@ export default function TopBar({
   }));
 
   const isWorkspace = chat.id === "workspace" || chat.isWorkspace;
+  let user = currentUser;
+  if (!user) {
+    try {
+      const saved = localStorage.getItem("sandesh_session_user");
+      if (saved) user = JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+  }
+  const actualUsername = user?.username || user?.name;
+  const displayName = isWorkspace && actualUsername ? actualUsername : chat.name;
 
   return (
     <header className="sandesh-topbar-3d">
@@ -53,8 +65,13 @@ export default function TopBar({
 
         <div className="topbar-avatar-wrap">
           <Avatar
-            initials={isWorkspace ? "WS" : chat.initials || chat.name?.[0]}
+            initials={
+              isWorkspace
+                ? (user?.initials || (actualUsername ? actualUsername.slice(0, 2).toUpperCase() : "WS"))
+                : chat.initials || chat.name?.[0]
+            }
             color={isWorkspace ? "#ff7a59" : chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
+            imageUrl={isWorkspace ? user?.avatar : (chat.avatar || chat.imageUrl)}
             group={chat.isGroup}
             size={40}
           />
@@ -68,8 +85,7 @@ export default function TopBar({
 
         <div className="chat-title-info">
           <div className="title-row">
-            <h2 className="chat-title">{chat.name}</h2>
-            {isWorkspace && <span className="workspace-pill">WORKSPACE</span>}
+            <h2 className="chat-title">{displayName}</h2>
             {!isWorkspace && chat.isHost && <span className="host-pill">HOST</span>}
             {chat.isGroup && <span className="group-pill">GROUP</span>}
             {isOnline && (
@@ -119,17 +135,6 @@ export default function TopBar({
 
       {/* Right Action Icons */}
       <div className="topbar-right">
-        {/* Smart Prompts Button */}
-        <button
-          type="button"
-          className="sandesh-action-pill-btn"
-          onClick={onOpenSmartPrompts}
-          title="Access Smart Structure prompts (Leave, Vitals, Tickets, Invoices)"
-        >
-          <span className="material-icons">bolt</span>
-          <span>Smart Prompts</span>
-        </button>
-
         {/* Org Structures Button */}
         <button
           type="button"
@@ -140,27 +145,17 @@ export default function TopBar({
           <span className="material-icons">table_chart</span>
           <span>Org Structs</span>
         </button>
-        {/* Group Actions: Add Member & View Members */}
+        {/* Group Actions: Add Member */}
         {chat.isGroup && (
-          <>
-            <button
-              type="button"
-              className="sandesh-action-pill-btn add-member-pill-btn"
-              onClick={onMembersClick}
-              title="Add a new member to this group"
-            >
-              <span className="material-icons">person_add</span>
-              <span>Add Member</span>
-            </button>
-            <button
-              type="button"
-              className="sandesh-icon-btn-3d"
-              onClick={onMembersClick}
-              title="View group members"
-            >
-              <span className="material-icons">group</span>
-            </button>
-          </>
+          <button
+            type="button"
+            className="sandesh-action-pill-btn add-member-pill-btn"
+            onClick={onMembersClick}
+            title="Add a new member to this group"
+          >
+            <span className="material-icons">person_add</span>
+            <span>Add Member</span>
+          </button>
         )}
 
         {/* Delete / Clear Chat Button */}
@@ -204,42 +199,6 @@ export default function TopBar({
           </button>
         )}
 
-        {/* Priority Notifications Bell Trigger */}
-        <button
-          type="button"
-          className={`sandesh-icon-btn-3d notif-bell-btn ${notificationsOpen ? "active" : ""}`}
-          onClick={onToggleNotifications}
-          title={`Priority Notifications ${priorityCounts?.unread > 0 ? `(${priorityCounts.unread} unread)` : ""}`}
-          aria-label="Notifications"
-          style={{ position: "relative" }}
-        >
-          <span className="material-icons">notifications</span>
-          {priorityCounts?.unread > 0 && (
-            <span
-              className="topbar-approval-badge"
-              style={{
-                position: "absolute",
-                top: "-4px",
-                right: "-4px",
-                background: priorityCounts.high > 0 ? "#ef4444" : "#f59e0b",
-                color: "#fff",
-                fontSize: "10px",
-                fontWeight: 700,
-                minWidth: "16px",
-                height: "16px",
-                borderRadius: "10px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0 4px",
-                boxShadow: "0 0 8px rgba(0,0,0,0.3)",
-              }}
-            >
-              {priorityCounts.unread}
-            </span>
-          )}
-        </button>
-
         {/* AXI AI Assistant Trigger */}
         <button
           type="button"
@@ -248,17 +207,6 @@ export default function TopBar({
           title="Switch to AXI AI Workspace"
         >
           <span className="material-icons">auto_awesome</span>
-        </button>
-
-        {/* Logout Button */}
-        <button
-          type="button"
-          className="sandesh-icon-btn-3d logout-shortcut-btn"
-          onClick={onSignOut}
-          title="Sign Out / Log Out"
-          aria-label="Log Out"
-        >
-          <span className="material-icons">logout</span>
         </button>
       </div>
     </header>

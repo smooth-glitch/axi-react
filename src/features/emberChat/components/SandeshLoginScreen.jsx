@@ -4,6 +4,7 @@ import { sandeshApi, ERROR_MESSAGES, validatePasswordPolicy } from "../../../ser
 import { generateTotpCode as computeTotpCode } from "../../../services/totpHelper.js";
 import sandeshLogo from "../../../assets/sandesh-logo.png";
 import { SmokeyBackground } from "@/components/ui/login-form";
+import SandeshSelect from "./SandeshSelect.jsx";
 import {
   User,
   Lock,
@@ -40,15 +41,19 @@ const DEV_TOTP_PREFILL =
 const generateTotpCode = (secret) =>
   DEV_TOTP_PREFILL ? computeTotpCode(secret) : Promise.resolve(null);
 
-function buildSessionUser(data) {
+function buildSessionUser(data, enteredIdentifier = "") {
   const u = data.user || {};
+  const cleanId = typeof enteredIdentifier === "string" ? enteredIdentifier.trim() : "";
+  const username = u.username || cleanId || u.name || "user";
   return {
     ...u,
+    username,
+    name: u.name || username,
     token: data.token,
     expiresTs: data.expiresTs,
     mustChangePassword: !!data.mustChangePassword,
     isAdmin: u.role === "admin" || u.canManageUsers === true,
-    initials: (u.name || u.username || "U").slice(0, 2).toUpperCase(),
+    initials: (username || "U").slice(0, 2).toUpperCase(),
     color: "#ff7a59",
     armSessionId: "arm-" + Date.now(),
   };
@@ -57,28 +62,20 @@ function buildSessionUser(data) {
 // Branch / department / designation / affiliate values must come from the
 // organisation's own lists (GET /api/sd/public); the backend rejects anything
 // else ("branch isn't in the organisation's list"), so free text can't work.
-function RefSelect({ label, icon: Icon, value, onChange, options, required, emptyHint }) {
-  const list = Array.isArray(options) ? options : [];
+function RefSelect({ label, icon, value, onChange, options, required, emptyHint, align = "auto" }) {
   return (
-    <div className="sandesh-input-group">
-      <label>{label}</label>
-      <div className="sandesh-input-box-3d select-box">
-        <Icon size={18} className="sandesh-lucide-icon" />
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          required={required}
-          disabled={list.length === 0}
-        >
-          <option value="">{list.length === 0 ? emptyHint || "None" : "Select…"}</option>
-          {list.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
+    <SandeshSelect
+      label={label}
+      icon={icon}
+      value={value}
+      onChange={onChange}
+      options={options}
+      required={required}
+      emptyHint={emptyHint}
+      allowEmpty={true}
+      placeholder="Select…"
+      align={align}
+    />
   );
 }
 
@@ -568,7 +565,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
     }
 
     // Otherwise, login is complete!
-    const sessionUser = buildSessionUser(data);
+    const sessionUser = buildSessionUser(data, signInIdentifier);
     onLoginSuccess(sessionUser);
   };
 
@@ -670,7 +667,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
               color: { dark: "#1e293b", light: "#ffffff" },
             });
           }
-        } catch {}
+        } catch { }
 
         let devCode = null;
         if (res.data.secret) {
@@ -908,7 +905,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
       return;
     }
 
-    const sessionUser = buildSessionUser(session);
+    const sessionUser = buildSessionUser(session, adminModalState?.identifier || signInIdentifier);
     onLoginSuccess(sessionUser);
   };
 
@@ -946,7 +943,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
         const sessionUser = buildSessionUser({
           ...pendingSession,
           mustChangePassword: false,
-        });
+        }, adminPasswordChange?.pendingSession?.user?.username || signInIdentifier);
         onLoginSuccess(sessionUser);
       } else {
         setErrorMsg(sandeshApi.getFriendlyErrorMessage(res.error));
@@ -1930,7 +1927,6 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                 : "Enterprise Messaging & Collaboration Platform"}
             </p>
             <div className="sandesh-enterprise-pill">
-              <span className="live-dot" /> Connected: {publicData?.org ? "Live Organisation" : "Active Core"}
             </div>
           </div>
 
@@ -2049,158 +2045,158 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                 </div>
               </div>
             ) : (
-            <form
-              onSubmit={setupStep === "form" ? handleStartSetup : handleVerifySetupOtp}
-              className="sandesh-auth-form"
-            >
-              {setupStep === "form" ? (
-                <>
-                  <div className="sandesh-input-group">
-                    <label>Enterprise Organisation Name</label>
-                    <div className="sandesh-input-box-3d">
-                      <Building2 size={18} className="sandesh-lucide-icon" />
-                      <input
-                        type="text"
-                        placeholder="e.g. Agile Labs Enterprise"
-                        value={adminOrg}
-                        onChange={(e) => setAdminOrg(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="sandesh-form-row">
+              <form
+                onSubmit={setupStep === "form" ? handleStartSetup : handleVerifySetupOtp}
+                className="sandesh-auth-form"
+              >
+                {setupStep === "form" ? (
+                  <>
                     <div className="sandesh-input-group">
-                      <label>Administrator Full Name</label>
+                      <label>Enterprise Organisation Name</label>
                       <div className="sandesh-input-box-3d">
-                        <ShieldCheck size={18} className="sandesh-lucide-icon" />
+                        <Building2 size={18} className="sandesh-lucide-icon" />
                         <input
                           type="text"
-                          placeholder="Full Name"
-                          value={adminName}
-                          onChange={(e) => setAdminName(e.target.value)}
+                          placeholder="e.g. Agile Labs Enterprise"
+                          value={adminOrg}
+                          onChange={(e) => setAdminOrg(e.target.value)}
                           required
                         />
                       </div>
                     </div>
 
+                    <div className="sandesh-form-row">
+                      <div className="sandesh-input-group">
+                        <label>Administrator Full Name</label>
+                        <div className="sandesh-input-box-3d">
+                          <ShieldCheck size={18} className="sandesh-lucide-icon" />
+                          <input
+                            type="text"
+                            placeholder="Full Name"
+                            value={adminName}
+                            onChange={(e) => setAdminName(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="sandesh-input-group">
+                        <label>Desired Username (Optional)</label>
+                        <div className="sandesh-input-box-3d">
+                          <User size={18} className="sandesh-lucide-icon" />
+                          <input
+                            type="text"
+                            placeholder="e.g. admin"
+                            value={adminUsername}
+                            onChange={(e) => setAdminUsername(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="sandesh-form-row">
+                      <div className="sandesh-input-group">
+                        <label>Corporate Email ID</label>
+                        <div className="sandesh-input-box-3d">
+                          <Mail size={18} className="sandesh-lucide-icon" />
+                          <input
+                            type="email"
+                            placeholder="admin@organisation.com"
+                            value={adminEmail}
+                            onChange={(e) => setAdminEmail(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="sandesh-input-group">
+                        <label>Mobile Number</label>
+                        <div className="sandesh-input-box-3d">
+                          <Phone size={18} className="sandesh-lucide-icon" />
+                          <input
+                            type="text"
+                            placeholder="+91 98860 00000"
+                            value={adminMobile}
+                            onChange={(e) => setAdminMobile(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="sandesh-input-group">
-                      <label>Desired Username (Optional)</label>
+                      <label>Setup Token (Optional — only if required by server)</label>
                       <div className="sandesh-input-box-3d">
-                        <User size={18} className="sandesh-lucide-icon" />
+                        <KeyRound size={18} className="sandesh-lucide-icon" />
                         <input
                           type="text"
-                          placeholder="e.g. admin"
-                          value={adminUsername}
-                          onChange={(e) => setAdminUsername(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="sandesh-form-row">
-                    <div className="sandesh-input-group">
-                      <label>Corporate Email ID</label>
-                      <div className="sandesh-input-box-3d">
-                        <Mail size={18} className="sandesh-lucide-icon" />
-                        <input
-                          type="email"
-                          placeholder="admin@organisation.com"
-                          value={adminEmail}
-                          onChange={(e) => setAdminEmail(e.target.value)}
-                          required
+                          placeholder="Leave blank unless configured"
+                          value={adminSetupToken}
+                          onChange={(e) => setAdminSetupToken(e.target.value)}
                         />
                       </div>
                     </div>
 
-                    <div className="sandesh-input-group">
-                      <label>Mobile Number</label>
-                      <div className="sandesh-input-box-3d">
-                        <Phone size={18} className="sandesh-lucide-icon" />
-                        <input
-                          type="text"
-                          placeholder="+91 98860 00000"
-                          value={adminMobile}
-                          onChange={(e) => setAdminMobile(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="sandesh-input-group">
-                    <label>Setup Token (Optional — only if required by server)</label>
-                    <div className="sandesh-input-box-3d">
-                      <KeyRound size={18} className="sandesh-lucide-icon" />
-                      <input
-                        type="text"
-                        placeholder="Leave blank unless configured"
-                        value={adminSetupToken}
-                        onChange={(e) => setAdminSetupToken(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="sandesh-btn-primary-3d"
-                    disabled={loading}
-                  >
-                    <span>{loading ? "Sending Bootstrap OTP..." : "Send Verification OTP"}</span>
-                    <ArrowRight size={18} className="sandesh-btn-arrow" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="sandesh-input-group">
-                    <div className="label-with-action">
-                      <label>Bootstrap OTP Code</label>
-                      {setupDevOtp && (
-                        <button
-                          type="button"
-                          className="link-btn"
-                          onClick={() => setSetupOtp(setupDevOtp)}
-                        >
-                          Fill Dev OTP: {setupDevOtp}
-                        </button>
-                      )}
-                    </div>
-                    <div className="sandesh-input-box-3d">
-                      <KeyRound size={18} className="sandesh-lucide-icon" />
-                      <input
-                        type="text"
-                        placeholder="Enter 6-digit verification code"
-                        value={setupOtp}
-                        onChange={(e) => setSetupOtp(e.target.value)}
-                        autoFocus
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="sandesh-btn-primary-3d"
-                    disabled={loading}
-                  >
-                    <span>
-                      {loading ? "Verifying & Initializing..." : "Verify & Initialize Organisation"}
-                    </span>
-                    <ArrowRight size={18} className="sandesh-btn-arrow" />
-                  </button>
-
-                  <div style={{ marginTop: 12, textAlign: "center" }}>
                     <button
-                      type="button"
-                      className="sandesh-btn-link"
-                      onClick={() => setSetupStep("form")}
+                      type="submit"
+                      className="sandesh-btn-primary-3d"
+                      disabled={loading}
                     >
-                      ← Edit Organisation Details
+                      <span>{loading ? "Sending Bootstrap OTP..." : "Send Verification OTP"}</span>
+                      <ArrowRight size={18} className="sandesh-btn-arrow" />
                     </button>
-                  </div>
-                </>
-              )}
-            </form>
+                  </>
+                ) : (
+                  <>
+                    <div className="sandesh-input-group">
+                      <div className="label-with-action">
+                        <label>Bootstrap OTP Code</label>
+                        {setupDevOtp && (
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={() => setSetupOtp(setupDevOtp)}
+                          >
+                            Fill Dev OTP: {setupDevOtp}
+                          </button>
+                        )}
+                      </div>
+                      <div className="sandesh-input-box-3d">
+                        <KeyRound size={18} className="sandesh-lucide-icon" />
+                        <input
+                          type="text"
+                          placeholder="Enter 6-digit verification code"
+                          value={setupOtp}
+                          onChange={(e) => setSetupOtp(e.target.value)}
+                          autoFocus
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="sandesh-btn-primary-3d"
+                      disabled={loading}
+                    >
+                      <span>
+                        {loading ? "Verifying & Initializing..." : "Verify & Initialize Organisation"}
+                      </span>
+                      <ArrowRight size={18} className="sandesh-btn-arrow" />
+                    </button>
+
+                    <div style={{ marginTop: 12, textAlign: "center" }}>
+                      <button
+                        type="button"
+                        className="sandesh-btn-link"
+                        onClick={() => setSetupStep("form")}
+                      >
+                        ← Edit Organisation Details
+                      </button>
+                    </div>
+                  </>
+                )}
+              </form>
             )
           )}
 
@@ -2217,7 +2213,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     <input
                       type="text"
                       placeholder="Your full name"
-                    autoComplete="off"
+                      autoComplete="off"
                       value={regName}
                       onChange={(e) => setRegName(e.target.value)}
                       required
@@ -2232,7 +2228,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     <input
                       type="text"
                       placeholder="e.g. john_doe"
-                    autoComplete="off"
+                      autoComplete="off"
                       value={regUsername}
                       onChange={(e) => setRegUsername(e.target.value)}
                     />
@@ -2248,7 +2244,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     <input
                       type="email"
                       placeholder="name@company.com"
-                    autoComplete="off"
+                      autoComplete="off"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
                       required
@@ -2263,7 +2259,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     <input
                       type="text"
                       placeholder="+91..."
-                    autoComplete="off"
+                      autoComplete="off"
                       value={regMobile}
                       onChange={(e) => setRegMobile(e.target.value)}
                     />
@@ -2302,20 +2298,18 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                 </div>
               </div>
 
-              <div className="sandesh-input-group">
-                <label>Registration Type</label>
-                <div className="sandesh-input-box-3d select-box">
-                  <Layers size={18} className="sandesh-lucide-icon" />
-                  <select
-                    value={regType}
-                    onChange={(e) => setRegType(e.target.value)}
-                  >
-                    <option value="employee">Enterprise Employee</option>
-                    <option value="external">Individual Customer / Citizen</option>
-                    <option value="affiliate">Affiliate Partner</option>
-                  </select>
-                </div>
-              </div>
+              <SandeshSelect
+                label="Registration Type"
+                icon={Layers}
+                value={regType}
+                onChange={setRegType}
+                options={[
+                  { value: "employee", label: "Enterprise Employee" },
+                  { value: "external", label: "Individual Customer / Citizen" },
+                  { value: "affiliate", label: "Affiliate Partner" },
+                ]}
+                allowEmpty={false}
+              />
 
               {regType === "employee" && !(publicData?.branches?.length && publicData?.departments?.length && publicData?.designations?.length) && (
                 <div className="sandesh-alert sandesh-alert-danger" style={{ textAlign: "left" }}>
@@ -2334,6 +2328,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     onChange={setRegBranch}
                     options={publicData?.branches}
                     required={true}
+                    align="left"
                   />
 
                   <RefSelect
@@ -2343,6 +2338,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     onChange={setRegDept}
                     options={publicData?.departments}
                     required={true}
+                    align="auto"
                   />
 
                   <RefSelect
@@ -2352,31 +2348,25 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     onChange={setRegDesignation}
                     options={publicData?.designations}
                     required={true}
+                    align="right"
                   />
                 </div>
               )}
 
               {regType === "external" && (
                 <>
-                  <div className="sandesh-input-group">
-                    <label>Category</label>
-                    <div className="sandesh-input-box-3d select-box">
-                      <Layers size={18} className="sandesh-lucide-icon" />
-                      <select
-                        value={regCategory}
-                        onChange={(e) => setRegCategory(e.target.value)}
-                      >
-                        {(publicData?.categories?.length
-                          ? publicData.categories
-                          : ["Citizen", "Customer", "Vendor", "Consultant", "Patient"]
-                        ).map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                  <SandeshSelect
+                    label="Category"
+                    icon={Layers}
+                    value={regCategory}
+                    onChange={setRegCategory}
+                    options={
+                      publicData?.categories?.length
+                        ? publicData.categories
+                        : ["Citizen", "Customer", "Vendor", "Consultant", "Patient"]
+                    }
+                    allowEmpty={false}
+                  />
 
                   <div className="sandesh-form-row">
                     <div className="sandesh-input-group">
@@ -2423,13 +2413,14 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                 <>
                   <div className="sandesh-form-row">
                     <RefSelect
-                    label="Affiliate Organisation"
-                    icon={Building2}
-                    value={regAffiliate}
-                    onChange={setRegAffiliate}
-                    options={publicData?.affiliates?.map((a) => a.name || a)}
-                    required={true}
-                  />
+                      label="Affiliate Organisation"
+                      icon={Building2}
+                      value={regAffiliate}
+                      onChange={setRegAffiliate}
+                      options={publicData?.affiliates?.map((a) => a.name || a)}
+                      required={true}
+                      align="left"
+                    />
                     <RefSelect
                       label="Affiliate Branch (Optional)"
                       icon={Building2}
@@ -2439,6 +2430,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                         publicData?.affiliates?.find((a) => (a.name || a) === regAffiliate)?.branches
                       }
                       emptyHint="No branches"
+                      align="right"
                     />
                   </div>
 

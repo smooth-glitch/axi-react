@@ -50,6 +50,16 @@ export default function Composer({
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
   const [currentCommand, setCurrentCommand] = useState(null);
   const [currentArgSpec, setCurrentArgSpec] = useState(null);
+  const [currentArgIndex, setCurrentArgIndex] = useState(0);
+  const [cmdPagination, setCmdPagination] = useState({
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    totalPages: 1,
+    hasMore: false,
+    token: "",
+    command: "",
+  });
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -94,7 +104,7 @@ export default function Composer({
   useEffect(() => {
     const unsub = sandeshSocket.subscribe((event) => {
       if (event.type === "cmd_suggestions" && event.reqId === cmdReqIdRef.current) {
-        if (event.items && Array.isArray(event.items) && event.items.length > 0) {
+        if (event.items && Array.isArray(event.items)) {
           setArgSuggestions(
             event.items.map((it) => ({
               value: it.value,
@@ -103,7 +113,20 @@ export default function Composer({
               sub: it.usage || "",
             }))
           );
+          if (event.items.length > 0) {
+            setShowCmdMenu(true);
+          }
         }
+        setCmdPagination({
+          page: event.page || 1,
+          pageSize: event.pageSize || 10,
+          total: event.total ?? (event.items?.length || 0),
+          totalPages: event.totalPages || 1,
+          hasMore: !!event.hasMore,
+          token: event.token ?? "",
+          command: event.command || "",
+        });
+        setSelectedCmdIndex(0);
       }
     });
     return unsub;
@@ -237,6 +260,7 @@ export default function Composer({
 
       setCurrentCommand(matched);
       const argIndex = parts.length - 2; // parts: ["#cmd", "arg0", "arg1", ...]
+      setCurrentArgIndex(argIndex);
       const currentToken = parts[parts.length - 1] || "";
       const argSpec = matched.args ? matched.args[argIndex] : null;
 
@@ -252,6 +276,15 @@ export default function Composer({
       setCmdMenuMode("args");
       setSelectedCmdIndex(0);
 
+      // Reset page to 1 on input text changes
+      setCmdPagination((p) => ({
+        ...p,
+        page: 1,
+        totalPages: 1,
+        hasMore: false,
+        token: currentToken,
+      }));
+
       // Local instant suggestions
       const locals = computeLocalArgSuggestions(argSpec, currentToken);
       setArgSuggestions(locals);
@@ -264,12 +297,31 @@ export default function Composer({
       cmdDebounceTimer.current = setTimeout(() => {
         cmdReqIdRef.current += 1;
         sandeshSocket.send(
-          `/cmdcomplete ${JSON.stringify({ input: before, reqId: cmdReqIdRef.current })}`
+          `/cmdcomplete ${JSON.stringify({
+            input: before,
+            page: 1,
+            pageSize: 10,
+            reqId: cmdReqIdRef.current,
+          })}`
         );
       }, 150);
     },
     [currentUser, computeLocalArgSuggestions]
   );
+
+  const handlePageChange = (newPage) => {
+    const caret = textareaRef.current?.selectionEnd ?? text.length;
+    const before = text.slice(0, caret);
+    cmdReqIdRef.current += 1;
+    sandeshSocket.send(
+      `/cmdcomplete ${JSON.stringify({
+        input: before,
+        page: newPage,
+        pageSize: 10,
+        reqId: cmdReqIdRef.current,
+      })}`
+    );
+  };
 
   const handleSend = () => {
     if (!hasText || disabled) return;
@@ -312,11 +364,25 @@ export default function Composer({
     const before = text.slice(0, caret);
     const after = text.slice(caret);
 
-    const parts = before.split(" ");
-    parts[parts.length - 1] = item.value;
-    const newBefore = parts.join(" ") + " ";
-    const combined = newBefore + after;
+    const token = cmdPagination.token ?? "";
+    let newBefore = "";
+    if (token && before.endsWith(token)) {
+      newBefore = before.slice(0, before.length - token.length) + item.value;
+    } else {
+      const parts = before.split(" ");
+      parts[parts.length - 1] = item.value;
+      newBefore = parts.join(" ");
+    }
 
+    const requiresNextArg =
+      currentCommand?.args &&
+      currentCommand.args.length > (currentArgIndex + 1);
+
+    if (requiresNextArg) {
+      newBefore += " ";
+    }
+
+    const combined = newBefore + after;
     setText(combined);
     setShowCmdMenu(false);
     setCmdSearchQuery("");
@@ -586,6 +652,8 @@ export default function Composer({
             onSelectArg={handleSelectArg}
             currentCommand={currentCommand}
             currentArgSpec={currentArgSpec}
+            pagination={cmdMenuMode === "args" ? cmdPagination : null}
+            onPageChange={handlePageChange}
           />
         )}
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { emojiGroups, emojiKeywords, gifResults, stickerResults } from "../data/sampleData.js";
+import { sandeshSocket } from "../../../services/sandeshSocket.js";
 
 const categoryIcons = {
   "All": "grid_view",
@@ -141,7 +142,40 @@ export default function ContentPanel({
   const [activeMediaTab, setActiveMediaTab] = useState(initialTab || "emojis");
   const [searchQuery, setSearchQuery] = useState(initialQuery || "");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [serverGifs, setServerGifs] = useState(null);
+  const [serverStickers, setServerStickers] = useState(null);
   const panelRef = useRef(null);
+
+  // Listen for gif_results and sticker_results from backend WebSocket
+  useEffect(() => {
+    const unsub = sandeshSocket.subscribe((event) => {
+      if (event.type === "gif_results" && Array.isArray(event.results)) {
+        setServerGifs(
+          event.results.map((g, idx) => ({
+            id: g.id || `sg-${idx}`,
+            title: g.title || "GIF",
+            url: g.url,
+            preview: g.preview || "🎬",
+            accent: "#ff7a59",
+            tags: g.tags || [],
+          }))
+        );
+      } else if (event.type === "sticker_results" && Array.isArray(event.results)) {
+        setServerStickers(
+          event.results.map((s, idx) => ({
+            id: s.id || `st-${idx}`,
+            title: s.title || "Sticker",
+            url: s.url,
+            icon: s.icon || "star",
+            badge: s.badge || s.title || "STICKER",
+            color: s.color || "var(--sandesh-coral-accent)",
+            tags: s.tags || [],
+          }))
+        );
+      }
+    });
+    return unsub;
+  }, []);
 
   // Close when clicking outside or pressing Escape
   useEffect(() => {
@@ -166,6 +200,23 @@ export default function ContentPanel({
   }, [onClose]);
 
   const query = searchQuery.trim().toLowerCase();
+
+  // Debounce search query to backend slash commands
+  useEffect(() => {
+    if (!query) {
+      setServerGifs(null);
+      setServerStickers(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (activeMediaTab === "gifs") {
+        sandeshSocket.sendGifSearch(query);
+      } else if (activeMediaTab === "stickers") {
+        sandeshSocket.sendStickerSearch(query);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, activeMediaTab]);
 
   // Filter Emojis
   const filteredGroups = useMemo(() => {
@@ -205,6 +256,9 @@ export default function ContentPanel({
       s.title.toLowerCase().includes(query) || s.tags.some((t) => t.includes(query))
     );
   }, [query]);
+
+  const displayedGifs = query && serverGifs !== null ? serverGifs : filteredGifs;
+  const displayedStickers = query && serverStickers !== null ? serverStickers : filteredStickers;
 
   return (
     <div
@@ -364,14 +418,14 @@ export default function ContentPanel({
       {/* 4. TAB VIEW 2: GIFS */}
       {activeMediaTab === "gifs" && (
         <div className="emoji-scroll-body gifs-scroll-grid">
-          {filteredGifs.length === 0 ? (
+          {displayedGifs.length === 0 ? (
             <div className="emoji-empty-result">
               <span className="material-icons">gif_box</span>
               <p>No GIFs found matching &ldquo;{searchQuery}&rdquo;</p>
             </div>
           ) : (
             <div className="gifs-masonry-grid">
-              {filteredGifs.map((gif) => (
+              {displayedGifs.map((gif) => (
                 <div
                   key={gif.id}
                   className="gif-card-item"
@@ -399,14 +453,14 @@ export default function ContentPanel({
       {/* 5. TAB VIEW 3: STICKERS */}
       {activeMediaTab === "stickers" && (
         <div className="emoji-scroll-body stickers-scroll-grid">
-          {filteredStickers.length === 0 ? (
+          {displayedStickers.length === 0 ? (
             <div className="emoji-empty-result">
               <span className="material-icons">sticky_note_2</span>
               <p>No stickers found matching &ldquo;{searchQuery}&rdquo;</p>
             </div>
           ) : (
             <div className="stickers-cards-grid">
-              {filteredStickers.map((stk) => (
+              {displayedStickers.map((stk) => (
                 <div
                   key={stk.id}
                   className="sticker-card-item"

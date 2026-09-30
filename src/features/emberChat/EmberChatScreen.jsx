@@ -10,7 +10,6 @@ import SubmissionsModal from "./components/modals/SubmissionsModal.jsx";
 import TStructUserModal from "./components/modals/TStructUserModal.jsx";
 import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
 import ForwardModal from "./components/modals/ForwardModal.jsx";
-import CommandsHelpModal from "./components/modals/CommandsHelpModal.jsx";
 import OnlineUsersModal from "./components/modals/OnlineUsersModal.jsx";
 import HostsDirectoryModal from "./components/modals/HostsDirectoryModal.jsx";
 import GroupsDirectoryModal from "./components/modals/GroupsDirectoryModal.jsx";
@@ -40,6 +39,22 @@ const formatTs = (ts) => {
   const ms = Number(ts);
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
+
+function parseForwardedText(rawText, fallbackSender) {
+  if (typeof rawText !== "string") {
+    return { text: rawText, forwarded: false, forwardedBy: null, originalFrom: null };
+  }
+  const match = rawText.match(/^↪\s*\[Forwarded(?:\s+by\s+([^•\]]+))?(?:\s*•\s*from\s+([^\]]+))?\]:\s*([\s\S]*)$/i);
+  if (match) {
+    return {
+      text: match[3] !== undefined ? match[3] : "",
+      forwarded: true,
+      forwardedBy: (match[1] || "").trim() || fallbackSender || "Someone",
+      originalFrom: (match[2] || "").trim() || null,
+    };
+  }
+  return { text: rawText, forwarded: false, forwardedBy: null, originalFrom: null };
+}
 
 // Server request objects (see sd_reqs:view/1) -> the shape ApprovalsModal renders.
 function mapServerRequests(requests, profiles = {}) {
@@ -156,6 +171,23 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return prev;
     });
   }, [currentUser?.name, currentUser?.username]);
+
+  // Keep the workspace conversation name synchronized with the actual username provided at login
+  useEffect(() => {
+    const uname = currentUser?.username || currentUser?.name;
+    if (!uname) return;
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === "workspace"
+          ? {
+              ...c,
+              name: uname,
+              initials: (currentUser?.initials || uname.slice(0, 2)).toUpperCase(),
+            }
+          : c
+      )
+    );
+  }, [currentUser?.username, currentUser?.name, currentUser?.initials]);
   const [groupMembersByName, setGroupMembersByName] = useState({});
   const [typingUsersByChat, setTypingUsersByChat] = useState({});
   const typingTimersRef = useRef({});
@@ -191,8 +223,36 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const pendingApprovalsCount = approvals.filter((r) => r.status === "pending").length;
 
   const [cards, setCards] = useState([]);
-
   const [notifications, setNotifications] = useState([]);
+  const [profilesByUser, setProfilesByUser] = useState({});
+  const requestedProfilesRef = useRef(new Set());
+  const [hostedUsersList, setHostedUsersList] = useState([]);
+
+  const ensureProfileLoaded = useCallback((username) => {
+    if (!username) return;
+    const clean = username.toLowerCase().trim();
+    if (requestedProfilesRef.current.has(clean)) return;
+    requestedProfilesRef.current.add(clean);
+    sandeshSocket.sendGetProfile(clean);
+  }, []);
+
+  const loadCards = useCallback((section) => {
+    const payload = section && section !== "all" ? { section } : {};
+    sandeshSocket.sd("cards.list", payload).then((res) => {
+      if (res.ok && res.data?.cards) {
+        setCards(res.data.cards);
+      }
+    });
+  }, []);
+
+  const loadHostedUsers = useCallback(() => {
+    sandeshSocket.sd("host.users").then((res) => {
+      if (res.ok && res.data) {
+        const list = Array.isArray(res.data) ? res.data : (res.data.users || res.data.hostedUsers || []);
+        setHostedUsersList(list);
+      }
+    });
+  }, []);
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0] || {
     id: "room-general",
@@ -281,6 +341,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
       loadFeed();
     }
   }, [currentUser?.token, loadFeed]);
+
+  useEffect(() => {
+    if (modal === "cards") {
+      loadCards(typeof modalParam === "string" ? modalParam : "all");
+    } else if (modal === "hosted_users") {
+      loadHostedUsers();
+    }
+  }, [modal, modalParam, loadCards, loadHostedUsers]);
 
   const handleResolveNotification = useCallback((notifId) => {
     if (sandeshSocket?.ws?.readyState === WebSocket.OPEN) {
@@ -390,17 +458,21 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const chatId = `user-${partnerUsername}`;
         const timeStr = formatTs(event.ts);
         const isOpen = activeChatIdRef.current === chatId;
+        const parsed = parseForwardedText(event.text, fromUser);
 
         const newMsg = {
           id: event.id || Date.now(),
           kind: "text",
           dir: "in",
           from: fromUser,
-          text: event.text,
+          text: parsed.text,
           time: timeStr,
           ts: event.ts,
           status: "read",
           ticks: "read",
+          ...(parsed.forwarded
+            ? { forwarded: true, forwardedBy: parsed.forwardedBy, originalFrom: parsed.originalFrom }
+            : {}),
           ...(event.replyTo ? { replyTo: event.replyTo } : {}),
         };
 
@@ -409,6 +481,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           [chatId]: [...(prev[chatId] ?? []), newMsg],
         }));
 
+        const previewText = parsed.forwarded
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
+          : event.text;
+
         setChats((prevChats) => {
           const existingIndex = prevChats.findIndex((c) => c.id === chatId);
           if (existingIndex !== -1) {
@@ -416,7 +492,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             const existing = updated[existingIndex];
             updated[existingIndex] = {
               ...existing,
-              preview: event.text,
+              preview: previewText,
               time: timeStr,
               unread: isOpen ? 0 : (existing.unread || 0) + 1,
             };
@@ -429,7 +505,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             isGroup: false,
             category: "associate",
             designation: "Enterprise Associate",
-            preview: event.text,
+            preview: previewText,
             time: timeStr,
             unread: isOpen ? 0 : 1,
             topic: "Direct Message",
@@ -447,16 +523,20 @@ export function EmberChatScreen({ onOpenAiChat }) {
         // P0: Route global room to room-general
         const isMine = event.from && event.from.toLowerCase().trim() === myUsername;
         const timeStr = formatTs(event.ts);
+        const parsed = parseForwardedText(event.text, event.from || "Associate");
         const newMsg = {
           id: event.id || Date.now(),
           kind: "text",
           dir: isMine ? "out" : "in",
           from: event.from || "Associate",
-          text: event.text,
+          text: parsed.text,
           time: timeStr,
           ts: event.ts,
           status: "sent",
           ticks: "sent",
+          ...(parsed.forwarded
+            ? { forwarded: true, forwardedBy: parsed.forwardedBy, originalFrom: parsed.originalFrom }
+            : {}),
           ...(event.replyTo ? { replyTo: event.replyTo } : {}),
         };
 
@@ -485,12 +565,16 @@ export function EmberChatScreen({ onOpenAiChat }) {
           };
         });
 
+        const chatPreview = parsed.forwarded
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
+          : `${event.from || "Associate"}: ${event.text}`;
+
         setChats((prevChats) =>
           prevChats.map((c) =>
             c.id === "room-general"
               ? {
                 ...c,
-                preview: `${event.from || "Associate"}: ${event.text}`,
+                preview: chatPreview,
                 time: timeStr,
                 unread:
                   activeChatIdRef.current === "room-general"
@@ -507,17 +591,21 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const isMine = event.from && event.from.toLowerCase().trim() === myUsername;
         const timeStr = formatTs(event.ts);
         const isOpen = activeChatIdRef.current === targetGroup;
+        const parsed = parseForwardedText(event.text, event.from || "Associate");
 
         const newMsg = {
           id: event.id || Date.now(),
           kind: "text",
           dir: isMine ? "out" : "in",
           from: event.from || "Associate",
-          text: event.text,
+          text: parsed.text,
           time: timeStr,
           ts: event.ts,
           status: "sent",
           ticks: "sent",
+          ...(parsed.forwarded
+            ? { forwarded: true, forwardedBy: parsed.forwardedBy, originalFrom: parsed.originalFrom }
+            : {}),
           ...(event.replyTo ? { replyTo: event.replyTo } : {}),
         };
 
@@ -546,13 +634,17 @@ export function EmberChatScreen({ onOpenAiChat }) {
           };
         });
 
+        const groupPreview = parsed.forwarded
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
+          : `${event.from || "Associate"}: ${event.text}`;
+
         setChats((prevChats) => {
           const idx = prevChats.findIndex((c) => c.id === targetGroup);
           if (idx !== -1) {
             const updated = [...prevChats];
             updated[idx] = {
               ...updated[idx],
-              preview: `${event.from || "Associate"}: ${event.text}`,
+              preview: groupPreview,
               time: timeStr,
               unread: isOpen ? 0 : (updated[idx].unread || 0) + (isMine ? 0 : 1),
             };
@@ -563,7 +655,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             name: groupName,
             isGroup: true,
             category: "channel",
-            preview: `${event.from || "Associate"}: ${event.text}`,
+            preview: groupPreview,
             time: timeStr,
             unread: isOpen ? 0 : (isMine ? 0 : 1),
             topic: groupName,
@@ -576,16 +668,21 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const targetHost = `host-${event.host}`;
         const timeStr = formatTs(event.ts);
         const isOpen = activeChatIdRef.current === targetHost;
+        const sender = event.from || event.host || "Host";
+        const parsed = parseForwardedText(event.text, sender);
         const newMsg = {
           id: event.id || Date.now(),
           kind: "text",
           dir: "in",
-          from: event.from || event.host || "Host",
-          text: event.text,
+          from: sender,
+          text: parsed.text,
           time: timeStr,
           ts: event.ts,
           status: "read",
           ticks: "read",
+          ...(parsed.forwarded
+            ? { forwarded: true, forwardedBy: parsed.forwardedBy, originalFrom: parsed.originalFrom }
+            : {}),
           ...(event.replyTo ? { replyTo: event.replyTo } : {}),
         };
 
@@ -594,13 +691,17 @@ export function EmberChatScreen({ onOpenAiChat }) {
           [targetHost]: [...(prev[targetHost] ?? []), newMsg],
         }));
 
+        const hostPreview = parsed.forwarded
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
+          : event.text;
+
         setChats((prevChats) => {
           const idx = prevChats.findIndex((c) => c.id === targetHost);
           if (idx !== -1) {
             const updated = [...prevChats];
             updated[idx] = {
               ...updated[idx],
-              preview: event.text,
+              preview: hostPreview,
               time: timeStr,
               unread: isOpen ? 0 : (updated[idx].unread || 0) + 1,
             };
@@ -613,7 +714,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             isHost: true,
             category: "department_host",
             designation: "Department Host",
-            preview: event.text,
+            preview: hostPreview,
             time: timeStr,
             unread: isOpen ? 0 : 1,
             topic: "Host Channel",
@@ -716,11 +817,15 @@ export function EmberChatScreen({ onOpenAiChat }) {
             const partnerUsername = partner.toLowerCase().trim();
             const chatId = `user-${partnerUsername}`;
             const timeStr = formatTs(item.ts);
+            const parsed = parseForwardedText(item.text, partner);
+            const previewText = parsed.forwarded
+              ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
+              : (item.text || undefined);
             const existingIdx = updated.findIndex((c) => c.id === chatId);
             if (existingIdx !== -1) {
               updated[existingIdx] = {
                 ...updated[existingIdx],
-                preview: item.text || updated[existingIdx].preview,
+                preview: previewText || updated[existingIdx].preview,
                 time: timeStr || updated[existingIdx].time,
               };
             } else {
@@ -731,7 +836,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 isGroup: false,
                 category: "associate",
                 designation: "Enterprise Associate",
-                preview: item.text || "Direct conversation",
+                preview: previewText || "Direct conversation",
                 time: timeStr,
                 unread: 0,
                 topic: "Direct Message",
@@ -769,16 +874,20 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 }
               });
 
+              const parsed = parseForwardedText(m.text, m.from);
               return {
                 id: m.id,
                 kind: "text",
                 dir: isOutgoing ? "out" : "in",
                 from: m.from,
-                text: m.text,
+                text: parsed.text,
                 time: formatTs(m.ts),
                 ts: m.ts,
                 status: "read",
                 ticks: "read",
+                ...(parsed.forwarded
+                  ? { forwarded: true, forwardedBy: parsed.forwardedBy, originalFrom: parsed.originalFrom }
+                  : {}),
                 reactions: Object.values(emojiMap),
                 replyTo: m.replyTo,
                 previewUrl: m.previewUrl,
@@ -968,8 +1077,102 @@ export function EmberChatScreen({ onOpenAiChat }) {
         forceSignOut("This account has been deactivated. Please contact your administrator.");
       } else if (event.type === "cmd_catalog" && Array.isArray(event.commands)) {
         setCatalog(event.commands);
+      } else if (event.type === "profile" && event.user) {
+        const u = event.user.toLowerCase().trim();
+        setProfilesByUser((prev) => ({
+          ...prev,
+          [u]: {
+            avatar: event.avatar || null,
+            status: event.status || null,
+            user: event.user,
+          },
+        }));
+        if (myUsername && u === myUsername) {
+          setCurrentUser((prev) => {
+            if (!prev) return prev;
+            const updated = {
+              ...prev,
+              avatar: event.avatar || prev.avatar,
+              status: event.status || prev.status,
+            };
+            try {
+              localStorage.setItem("sandesh_session_user", JSON.stringify(updated));
+            } catch {}
+            return updated;
+          });
+        }
+      } else if (event.type === "group_system") {
+        const targetChatId = `room-${event.group}`;
+        const newMsg = {
+          id: event.id || `sys-${Date.now()}`,
+          kind: "system",
+          text: event.text,
+          time: formatTs(event.ts),
+          ts: event.ts || Date.now(),
+        };
+        setMessagesByChat((prev) => ({
+          ...prev,
+          [targetChatId]: [...(prev[targetChatId] || []), newMsg],
+        }));
+      } else if (event.type === "host_ack") {
+        const targetChatId = `host-${event.host}`;
+        setMessagesByChat((prev) => {
+          const list = prev[targetChatId] || [];
+          const idx = list.findIndex(
+            (m) => m.dir === "out" && (m.status === "sending" || m.id.toString().startsWith("temp-"))
+          );
+          if (idx !== -1) {
+            const updated = [...list];
+            updated[idx] = {
+              ...updated[idx],
+              id: event.id,
+              ts: event.ts,
+              time: formatTs(event.ts),
+              status: "sent",
+              ticks: "sent",
+            };
+            return { ...prev, [targetChatId]: updated };
+          }
+          return prev;
+        });
+      } else if (
+        event.type === "link_preview" ||
+        event.type === "dm_link_preview" ||
+        event.type === "group_link_preview"
+      ) {
+        const msgId = event.messageId || event.id;
+        const preview = event.preview || {
+          url: event.url,
+          title: event.title,
+          description: event.description,
+          image: event.image,
+        };
+        setMessagesByChat((prev) => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach((chatId) => {
+            updated[chatId] = (updated[chatId] || []).map((m) => {
+              if (m.id === msgId) {
+                return {
+                  ...m,
+                  previewUrl: preview.url || m.previewUrl,
+                  previewTitle: preview.title || m.previewTitle,
+                  previewDescription: preview.description || m.previewDescription,
+                  previewImage: preview.image || m.previewImage,
+                };
+              }
+              return m;
+            });
+          });
+          return updated;
+        });
       } else if (event.type === "cmd_help" && event.command) {
-        pushToast(event);
+        const c = event.command;
+        pushToast({
+          text: `${c.summary || c.name}${c.usage ? ` (Usage: ${c.usage})` : ""}`,
+          title: `#${c.name} Guide`,
+          icon: "help_outline",
+          type: "info",
+        });
       } else if (event.type === "sd") {
         if (event.reqId === "#cards" && event.ok && event.data?.cards) {
           setCards(event.data.cards);
@@ -979,6 +1182,25 @@ export function EmberChatScreen({ onOpenAiChat }) {
           ["#accept", "#reject", "#ignore"].includes(event.reqId) && event.ok
         ) {
           refreshApprovals();
+          pushToast(`Request ${event.reqId.slice(1)}ed successfully.`);
+        } else if (event.reqId === "#connect") {
+          if (event.ok) {
+            pushToast(`Connected with @${event.data?.user || "user"}`);
+            sandeshSocket.sd("assoc.list").then((res) => {
+              if (res.ok && res.data?.associates) setAssociates(res.data.associates);
+            });
+          } else {
+            pushToast(event.error?.text || event.error?.message || "Failed to connect", true);
+          }
+        } else if (event.reqId === "#disconnect") {
+          if (event.ok) {
+            pushToast(`Disconnected successfully`);
+            sandeshSocket.sd("assoc.list").then((res) => {
+              if (res.ok && res.data?.associates) setAssociates(res.data.associates);
+            });
+          } else {
+            pushToast(event.error?.text || event.error?.message || "Failed to disconnect", true);
+          }
         } else if (event.reqId === "#associates" && event.ok && event.data?.associates) {
           setAssociates(event.data.associates);
         } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
@@ -1013,13 +1235,16 @@ export function EmberChatScreen({ onOpenAiChat }) {
           setModal("smart_structure");
         } else if (event.reqId === "#tstruct-delete" && event.ok) {
           pushToast("Record deleted.");
-        } else if (!event.ok && event.error?.message) {
-          pushToast(event);
+        } else if (!event.ok && (event.error?.text || event.error?.message)) {
+          pushToast(event.error?.text || event.error?.message || "Operation failed", true);
         }
       }
     });
 
     sandeshSocket.connect(currentUser);
+    if (currentUser?.username) {
+      ensureProfileLoaded(currentUser.username);
+    }
 
     return () => {
       unsubscribe();
@@ -1302,101 +1527,27 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
-    if (cmd === "react") {
-      const msgId = Number(parts[0]);
-      const emoji = parts[1] || "👍";
-      if (!isNaN(msgId)) {
-        handleToggleReaction(msgId, emoji);
-        pushToast(`Reacted ${emoji} to message #${msgId}`);
-      }
-      return;
-    }
-
-    if (cmd === "reactdm") {
-      const targetUser = parts[0];
-      const msgId = Number(parts[1]);
-      const emoji = parts[2] || "👍";
-      if (targetUser && !isNaN(msgId)) {
-        sandeshSocket.sendReaction("dm", targetUser, msgId, emoji);
-        pushToast(`Reacted ${emoji} in DM with @${targetUser}`);
-      }
-      return;
-    }
-
-    if (cmd === "reactgroup") {
-      const targetGroup = parts[0];
-      const msgId = Number(parts[1]);
-      const emoji = parts[2] || "👍";
-      if (targetGroup && !isNaN(msgId)) {
-        sandeshSocket.sendReaction("group", targetGroup, msgId, emoji);
-        pushToast(`Reacted ${emoji} in group "${targetGroup}"`);
-      }
-      return;
-    }
-
-    if (cmd === "delete") {
-      const msgId = Number(parts[0]);
-      if (!isNaN(msgId)) {
-        handleDeleteMessage(msgId);
-      }
-      return;
-    }
-
-    if (cmd === "deletedm") {
-      const targetUser = parts[0];
-      const msgId = Number(parts[1]);
-      if (targetUser && !isNaN(msgId)) {
-        const chatId = `user-${targetUser.toLowerCase().trim()}`;
-        setMessagesByChat((prev) => ({
-          ...prev,
-          [chatId]: (prev[chatId] || []).filter((m) => m.id !== msgId),
-        }));
-        pushToast(`Deleted message #${msgId} in DM with @${targetUser}`);
-      }
-      return;
-    }
-
-    if (cmd === "deletegroup") {
-      const targetGroup = parts[0];
-      const msgId = Number(parts[1]);
-      if (targetGroup && !isNaN(msgId)) {
-        const chatId = `room-${targetGroup.toLowerCase().trim()}`;
-        setMessagesByChat((prev) => ({
-          ...prev,
-          [chatId]: (prev[chatId] || []).filter((m) => m.id !== msgId),
-        }));
-        pushToast(`Deleted message #${msgId} in group "${targetGroup}"`);
-      }
-      return;
-    }
-
-    if (cmd === "gif") {
-      setMediaPanelConfig({ open: true, tab: "gifs", query: rest });
-      return;
-    }
-
-    if (cmd === "sticker") {
-      setMediaPanelConfig({ open: true, tab: "stickers", query: rest });
-      return;
-    }
-
     // 3. Look Things Up
     if (cmd === "users" || cmd === "online" || cmd === "who") {
+      sandeshSocket.sendList();
       setModal("online_users");
       return;
     }
 
     if (cmd === "hosts") {
+      sandeshSocket.send("/hosts");
       setModal("hosts_directory");
       return;
     }
 
     if (cmd === "groups") {
+      sandeshSocket.send("/groups");
       setModal("groups_directory");
       return;
     }
 
     if (cmd === "inbox" || cmd === "conversations") {
+      sandeshSocket.send("/inbox");
       setModal("inbox");
       return;
     }
@@ -1441,27 +1592,26 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
-    if (cmd === "read") {
-      const user = parts[0];
-      if (user) {
-        const chatId = `user-${user.toLowerCase().trim()}`;
-        sandeshSocket.sendRead(user);
-        setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, unread: 0 } : c)));
-        pushToast(`Marked conversation with @${user} as read`);
-      }
-      return;
-    }
-
     if (cmd === "profile") {
       const user = parts[0];
-      if (!user || user.toLowerCase().trim() === (currentUser.username || "").toLowerCase()) {
+      if (!user || user.toLowerCase().trim() === (currentUser?.username || "").toLowerCase()) {
+        sandeshSocket.sd("me").then((res) => {
+          if (res.ok && res.data) setModalParam(res.data);
+        });
         setModal("profile");
       } else {
+        ensureProfileLoaded(user);
+        const clean = user.toLowerCase().trim();
+        const profileInfo = profilesByUser[clean] || {};
         const found =
-          associates.find((u) => (u.username || "").toLowerCase() === user.toLowerCase()) ||
-          onlineUsers.find((u) => (u.username || "").toLowerCase() === user.toLowerCase()) ||
+          associates.find((u) => (u.username || "").toLowerCase() === clean) ||
+          onlineUsers.find((u) => (u.username || "").toLowerCase() === clean) ||
           { username: user, name: user, designation: "Associate", status: "Active on Sandesh" };
-        setModalParam(found);
+        setModalParam({
+          ...found,
+          avatar: profileInfo.avatar || found.avatar,
+          status: profileInfo.status || found.status,
+        });
         setModal("user_profile");
       }
       return;
@@ -1500,12 +1650,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
       const grp = afterGrp ? knownGrp : parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0];
       const user = afterGrp ? afterGrp.split(/\s+/)[0] : parts.length > 1 ? parts[parts.length - 1] : undefined;
       if (grp && user) {
+        // Do not add member optimistically. Wait for server event/error.
         sandeshSocket.sendAddMember(grp, user);
-        setGroupMembersByName((prev) => ({
-          ...prev,
-          [grp]: [...(prev[grp] || []), user],
-        }));
-        pushToast(`Added @${user} to group "${grp}"`);
       } else if (grp) {
         setModal("members");
       } else {
@@ -1525,36 +1671,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
-    // 5. Your Profile
-    if (cmd === "status") {
-      if (rest) {
-        setCurrentUser((u) => ({ ...u, status: rest }));
-        try {
-          localStorage.setItem("sandesh_session_user", JSON.stringify({ ...currentUser, status: rest }));
-        } catch { }
-        sandeshSocket.send(`/setstatus ${rest}`);
-        pushToast(`Status updated to: "${rest}"`);
-      } else {
-        setModal("profile");
-      }
-      return;
-    }
-
-    if (cmd === "avatar") {
-      if (rest) {
-        setCurrentUser((u) => ({ ...u, avatar: rest }));
-        try {
-          localStorage.setItem("sandesh_session_user", JSON.stringify({ ...currentUser, avatar: rest }));
-        } catch { }
-        pushToast("Avatar updated");
-      } else {
-        setModal("profile");
-      }
-      return;
-    }
-
-    // 6. People & Approvals (Sandesh)
+    // 5. Profile & Directory (Sandesh)
     if (cmd === "me" || cmd === "whoami") {
+      sandeshSocket.sd("me").then((res) => {
+        if (res.ok && res.data) setModalParam(res.data);
+      });
       setModal("profile");
       return;
     }
@@ -1572,20 +1693,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
     if (cmd === "connect") {
       const targetUser = parts[0];
-      if (targetUser) {
-        pushToast(`Invitation sent to @${targetUser}`);
-      } else {
+      if (!targetUser) {
         setModal("find_people");
       }
       return;
     }
 
     if (cmd === "disconnect") {
-      const targetUser = parts[0];
-      if (targetUser) {
-        setAssociates((prev) => prev.filter((a) => (a.username || "").toLowerCase() !== targetUser.toLowerCase()));
-        pushToast(`Disconnected from @${targetUser}`);
-      }
       return;
     }
 
@@ -1597,14 +1711,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
-    if (cmd === "accept" || cmd === "reject" || cmd === "ignore") {
+    if (cmd === "accept" || cmd === "reject") {
       // The line was already sent to the server above; the list refreshes
       // from its reply (see the "sd" event handler).
-      return;
-    }
-
-    if (cmd === "myusers") {
-      setModal("hosted_users");
       return;
     }
 
@@ -1615,54 +1724,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
-    // 7. Notifications & Cards
-    if (cmd === "notifications" || cmd === "notifs") {
-      const cat = parts[0] || "all";
-      setModalParam(cat);
-      setModal("notifications");
-      return;
-    }
-
-    if (cmd === "markread") {
-      const cat = parts[0] || "all";
-      setNotifications((prev) =>
-        prev.map((n) => (cat === "all" || n.category === cat ? { ...n, read: true } : n))
-      );
-      pushToast(`Marked ${cat} notifications as read`);
-      return;
-    }
-
-    if (cmd === "cards") {
-      const section = parts[0] || "all";
-      setModalParam(section);
-      setModal("cards");
-      return;
-    }
-
-    if (cmd === "dismiss") {
-      const cardId = parts[0];
-      if (cardId === "all") {
-        setCards([]);
-        pushToast("Dismissed all cards");
-      } else if (cardId) {
-        setCards((prev) => prev.filter((c) => c.id !== cardId));
-        pushToast(`Dismissed card #${cardId}`);
-      }
-      return;
-    }
-
+    // 6. Cards & Reminders
     if (cmd === "remind" || cmd === "reminder") {
-      if (rest) {
-        const newCard = {
-          id: `rem-${Date.now()}`,
-          section: "reminders",
-          title: "Personal Reminder",
-          text: rest,
-          time: "Just now",
-        };
-        setCards((prev) => [newCard, ...prev]);
-        pushToast(`Reminder saved: "${rest}"`);
-      } else {
+      if (!rest) {
+        loadCards("reminders");
+        setModalParam("reminders");
         setModal("cards");
       }
       return;
@@ -1707,8 +1773,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
     // 9. Help
     if (cmd === "help" || cmd === "commands") {
-      setModalParam(rest);
-      setModal("commands_help");
+      pushToast("Type # in chat composer to view and use live commands.");
       return;
     }
   };
@@ -1746,18 +1811,29 @@ export function EmberChatScreen({ onOpenAiChat }) {
       sendResult = true;
     } else if (activeChat.isGroup) {
       if (activeChat.id === "room-general") {
-        // Don't send /groupmsg for General Broadcast
-        sendResult = sandeshSocket.sendGlobalMsg(text);
+        if (replyTo && replyTo.id) {
+          sendResult = sandeshSocket.sendReply(replyTo.id, text);
+        } else {
+          sendResult = sandeshSocket.sendGlobalMsg(text);
+        }
       } else {
         const grp = activeChat.name || activeChat.id.replace(/^room-/, "");
-        sendResult = sandeshSocket.sendGroupMsg(grp, text);
+        if (replyTo && replyTo.id) {
+          sendResult = sandeshSocket.sendReplyGroup(grp, replyTo.id, text);
+        } else {
+          sendResult = sandeshSocket.sendGroupMsg(grp, text);
+        }
       }
     } else if (activeChat.isHost) {
       sendResult = sandeshSocket.sendHostMsg(activeChat.id.replace(/^host-/, ""), text);
     } else {
       // P0: Send to username, not display name
       const targetUser = (activeChat.username || activeChat.id.replace(/^user-/, "")).toLowerCase().trim();
-      sendResult = sandeshSocket.sendDM(targetUser, text);
+      if (replyTo && replyTo.id) {
+        sendResult = sandeshSocket.sendReplyDM(targetUser, replyTo.id, text);
+      } else {
+        sendResult = sandeshSocket.sendDM(targetUser, text);
+      }
     }
 
     if (!sendResult) {
@@ -1911,14 +1987,21 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const handleForwardMessage = (selectedTargets, originalMsg) => {
     if (!selectedTargets || selectedTargets.length === 0 || !originalMsg) return;
 
+    const senderName = currentUser.name || currentUser.username || "You";
+    const cleanOriginalText = originalMsg.text
+      ? originalMsg.text.replace(/^↪\s*\[Forwarded[^\]]*\]:\s*/i, "")
+      : (originalMsg.fileName || originalMsg.title || "Forwarded attachment");
+    const originalAuthor = originalMsg.originalFrom || (originalMsg.forwarded ? originalMsg.forwardedBy : (originalMsg.from || null));
+    const forwardPayload = `↪ [Forwarded by ${senderName}${originalAuthor && originalAuthor !== senderName ? ` • from ${originalAuthor}` : ""}]: ${cleanOriginalText}`;
+
     selectedTargets.forEach((target) => {
       const tempId = `temp-fwd-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const forwardedMsg = {
         id: tempId,
         kind: originalMsg.kind || "text",
         dir: "out",
-        from: currentUser.name || currentUser.username,
-        text: originalMsg.text || "",
+        from: senderName,
+        text: cleanOriginalText,
         fileName: originalMsg.fileName,
         fileSize: originalMsg.fileSize,
         imageUrl: originalMsg.imageUrl,
@@ -1932,7 +2015,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
         status: "sent",
         ticks: "sent",
         forwarded: true,
-        originalFrom: originalMsg.from,
+        forwardedBy: senderName,
+        originalFrom: originalAuthor && originalAuthor !== senderName ? originalAuthor : null,
       };
 
       // 1. Update local chat messages
@@ -1942,10 +2026,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
       }));
 
       // 2. Transmit through sandeshSocket backend if connected
-      const forwardPayload = forwardedMsg.text
-        ? forwardedMsg.text
-        : (forwardedMsg.fileName || forwardedMsg.title || "Forwarded attachment");
-
       if (socketStatus === "connected") {
         if (target.isGroup) {
           if (target.id === "room-general") {
@@ -1964,13 +2044,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
       // 3. Update sidebar conversation preview
       setChats((prevChats) => {
+        const previewDisplay = `↪ You: ${cleanOriginalText}`;
         const chatExists = prevChats.some((c) => c.id === target.id);
         if (chatExists) {
           return prevChats.map((c) =>
             c.id === target.id
               ? {
                 ...c,
-                preview: `You (Forwarded): ${forwardPayload}`,
+                preview: previewDisplay,
                 time: "now",
               }
               : c
@@ -1983,7 +2064,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             username: target.username,
             isGroup: false,
             color: target.color || "#10b981",
-            preview: `You (Forwarded): ${forwardPayload}`,
+            preview: previewDisplay,
             time: "now",
             unread: 0,
           },
@@ -2079,6 +2160,20 @@ export function EmberChatScreen({ onOpenAiChat }) {
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
     setActiveChatId("workspace");
+    const uname = user?.username || user?.name;
+    if (uname) {
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === "workspace"
+            ? {
+                ...c,
+                name: uname,
+                initials: (user?.initials || uname.slice(0, 2)).toUpperCase(),
+              }
+            : c
+        )
+      );
+    }
     try {
       localStorage.setItem("sandesh_session_user", JSON.stringify(user));
     } catch {
@@ -2251,15 +2346,22 @@ export function EmberChatScreen({ onOpenAiChat }) {
     [currentUser.username || currentUser.name];
 
   const enrichedGroupMembers = currentGroupMembersRaw.map((m) => {
-    if (typeof m === "object" && m !== null) return m;
+    const rawName = typeof m === "string" ? m : m?.username || m?.name || m?.id || "";
+    const clean = String(rawName).toLowerCase().trim();
+    const prof = profilesByUser[clean];
+    if (typeof m === "object" && m !== null) {
+      return prof ? { ...m, avatar: prof.avatar || m.avatar, status: prof.status || m.status } : m;
+    }
     const found =
       associates.find(
-        (u) => (u.username || u.name || u.id || "").toLowerCase() === String(m).toLowerCase()
+        (u) => (u.username || u.name || u.id || "").toLowerCase() === clean
       ) ||
       onlineUsers.find(
-        (u) => (u.username || u.name || u.id || "").toLowerCase() === String(m).toLowerCase()
+        (u) => (u.username || u.name || u.id || "").toLowerCase() === clean
       );
-    if (found) return found;
+    if (found) {
+      return prof ? { ...found, avatar: prof.avatar || found.avatar, status: prof.status || found.status } : found;
+    }
     return {
       id: m,
       username: m,
@@ -2268,10 +2370,84 @@ export function EmberChatScreen({ onOpenAiChat }) {
       designation: "Team Associate",
       initials: String(m).slice(0, 2).toUpperCase(),
       color: "#ff7a59",
+      avatar: prof?.avatar || null,
+      status: prof?.status || "Active",
     };
   });
 
-  const teamPool = [...(onlineUsers || []), ...(associates || [])];
+  const enrichedOnlineUsers = useMemo(() => {
+    return onlineUsers.map((u) => {
+      const clean = (u.username || u.name || "").toLowerCase().trim();
+      const prof = profilesByUser[clean];
+      return prof ? { ...u, avatar: prof.avatar || u.avatar, status: prof.status || u.status } : u;
+    });
+  }, [onlineUsers, profilesByUser]);
+
+  const enrichedAssociates = useMemo(() => {
+    return associates.map((a) => {
+      const clean = (a.username || a.name || "").toLowerCase().trim();
+      const prof = profilesByUser[clean];
+      return prof ? { ...a, avatar: prof.avatar || a.avatar, status: prof.status || a.status } : a;
+    });
+  }, [associates, profilesByUser]);
+
+  const enrichedChats = useMemo(() => {
+    return chats.map((c) => {
+      if (!c.isGroup && !c.isHost && c.id.startsWith("user-")) {
+        const u = (c.username || c.id.replace(/^user-/, "")).toLowerCase().trim();
+        const prof = profilesByUser[u];
+        if (prof) {
+          return { ...c, avatar: prof.avatar || c.avatar, status: prof.status || c.status };
+        }
+      }
+      return c;
+    });
+  }, [chats, profilesByUser]);
+
+  const enrichedActiveChat = useMemo(() => {
+    let base = enrichedChats.find((c) => c.id === activeChatId) || activeChat;
+    if (base.isGroup) {
+      base = { ...base, members: enrichedGroupMembers };
+    } else if (!base.isHost && base.id.startsWith("user-")) {
+      const u = (base.username || base.id.replace(/^user-/, "")).toLowerCase().trim();
+      const prof = profilesByUser[u];
+      if (prof) {
+        base = { ...base, avatar: prof.avatar || base.avatar, status: prof.status || base.status };
+      }
+    }
+    return base;
+  }, [enrichedChats, activeChatId, activeChat, enrichedGroupMembers, profilesByUser]);
+
+  // Auto-request /getprofile for chat contacts & online users
+  useEffect(() => {
+    if (socketStatus !== "connected") return;
+    const usersToFetch = new Set();
+    chats.forEach((c) => {
+      if (!c.isGroup && !c.isHost && c.id.startsWith("user-")) {
+        const u = c.username || c.id.replace(/^user-/, "");
+        if (u) usersToFetch.add(u.toLowerCase().trim());
+      }
+      if (c.members && Array.isArray(c.members)) {
+        c.members.forEach((m) => {
+          const raw = typeof m === "string" ? m : m?.username || m?.name;
+          if (raw) usersToFetch.add(String(raw).toLowerCase().trim());
+        });
+      }
+    });
+    onlineUsers.forEach((u) => {
+      const un = u.username || u.name;
+      if (un) usersToFetch.add(un.toLowerCase().trim());
+    });
+    associates.forEach((a) => {
+      if (a.username) usersToFetch.add(a.username.toLowerCase().trim());
+    });
+
+    usersToFetch.forEach((u) => {
+      ensureProfileLoaded(u);
+    });
+  }, [chats, onlineUsers, associates, socketStatus, ensureProfileLoaded]);
+
+  const teamPool = [...(enrichedOnlineUsers || []), ...(enrichedAssociates || [])];
   const currentAddableUsers = teamPool.filter((u) => {
     const uName = (u.username || u.name || u.id || "").toLowerCase();
     return !currentGroupMembersRaw.some((m) => {
@@ -2301,8 +2477,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
         {activeChatId !== "workspace" && (
           <Sidebar
             me={currentUser}
-            chats={chats}
-            onlineUsers={onlineUsers}
+            chats={enrichedChats}
+            onlineUsers={enrichedOnlineUsers}
             activeChatId={activeChatId}
             isOpen={sidebarOpen}
             onSelectChat={handleSelectChat}
@@ -2314,10 +2490,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
             onOpenAdminConsole={() => {
               setModalParam({ tab: "users" });
               setModal("admin_console");
-            }}
-            onOpenCommandsHelp={() => {
-              setModalParam("");
-              setModal("commands_help");
             }}
             onOpenWorkspace={() => handleSelectChat("workspace")}
             onSignOut={handleSignOut}
@@ -2334,7 +2506,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
         <ChatScreen
           key={activeChatId}
-          chat={{ ...activeChat, members: enrichedGroupMembers }}
+          chat={enrichedActiveChat}
           messages={messages}
           userCategory={currentUser.category || "employee"}
           isAdmin={currentUser.isAdmin}
@@ -2376,9 +2548,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
           disabled={activeChatId !== "workspace" && socketStatus !== "connected"}
           pushToast={pushToast}
           currentUser={currentUser}
-          onlineUsers={onlineUsers}
-          availableUsers={associates}
-          chats={chats}
+          onlineUsers={enrichedOnlineUsers}
+          availableUsers={enrichedAssociates}
+          chats={enrichedChats}
           initialComposerText={composerPrefill}
           mediaPanelConfig={mediaPanelConfig}
           onCloseMediaPanel={() => setMediaPanelConfig(null)}
@@ -2406,24 +2578,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
             setModal(null);
             setModalParam(null);
           }}>
-            {modal === "commands_help" && (
-              <CommandsHelpModal
-                initialCommand={typeof modalParam === "string" ? modalParam : ""}
-                onSelectCommand={(cmd) => {
-                  setComposerPrefill(`#${cmd.name} `);
-                  setModal(null);
-                  setModalParam(null);
-                }}
-                onClose={() => {
-                  setModal(null);
-                  setModalParam(null);
-                }}
-              />
-            )}
             {modal === "online_users" && (
               <OnlineUsersModal
-                onlineUsers={onlineUsers}
-                availableUsers={associates}
+                onlineUsers={enrichedOnlineUsers}
+                availableUsers={enrichedAssociates}
                 currentUsername={currentUser.username}
                 onSelectUser={handleSelectOnlineUser}
                 onViewProfile={(u) => {
@@ -2444,7 +2602,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "groups_directory" && (
               <GroupsDirectoryModal
-                chats={chats}
+                chats={enrichedChats}
                 groupMembersByName={groupMembersByName}
                 onSelectChat={(chatId) => {
                   handleSelectChat(chatId);
@@ -2456,7 +2614,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "inbox" && (
               <InboxModal
-                chats={chats}
+                chats={enrichedChats}
                 onSelectChat={(chatId) => {
                   handleSelectChat(chatId);
                   setModal(null);
@@ -2480,7 +2638,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "associates" && (
               <AssociatesModal
-                associates={associates}
+                associates={enrichedAssociates}
                 onSelectUser={(u) => {
                   handleSelectOnlineUser(u);
                   setModal(null);
@@ -2502,16 +2660,16 @@ export function EmberChatScreen({ onOpenAiChat }) {
             {modal === "find_people" && (
               <FindPeopleModal
                 initialQuery={typeof modalParam === "string" ? modalParam : ""}
-                availableUsers={associates.length > 0 ? associates : onlineUsers}
+                availableUsers={enrichedAssociates.length > 0 ? enrichedAssociates : enrichedOnlineUsers}
                 currentUsername={currentUser.username}
-                associates={associates}
+                associates={enrichedAssociates}
                 onConnect={(username) => {
                   sandeshSocket.send(`#connect ${username}`);
                   const found =
-                    associates.find(
+                    enrichedAssociates.find(
                       (u) => (u.username || "").toLowerCase() === username.toLowerCase()
                     ) ||
-                    onlineUsers.find(
+                    enrichedOnlineUsers.find(
                       (u) => (u.username || "").toLowerCase() === username.toLowerCase()
                     );
                   if (found && !associates.some((a) => a.username === found.username)) {
@@ -2546,15 +2704,15 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "hosted_users" && (
               <HostedUsersModal
-                hostedUsers={associates.filter(
+                hostedUsers={hostedUsersList.length > 0 ? hostedUsersList : enrichedAssociates.filter(
                   (u) =>
                     (u.hostUser && u.hostUser === currentUser.name) ||
                     u.hostUser === currentUser.username
                 )}
-                availableHosts={onlineUsers.map((u) => u.username || u.name).filter(Boolean)}
+                availableHosts={enrichedOnlineUsers.map((u) => u.username || u.name).filter(Boolean)}
                 onTransferUser={(user, toHost) => {
                   sandeshSocket.send(`#transfer ${user} ${toHost}`);
-                  pushToast(`Transferred @${user} to Host @${toHost}`);
+                  pushToast(`Transfer requested for @${user} to Host @${toHost}`);
                   setModal(null);
                 }}
                 onClose={() => setModal(null)}
@@ -2564,14 +2722,19 @@ export function EmberChatScreen({ onOpenAiChat }) {
               <NotificationsModal
                 initialCategory={typeof modalParam === "string" ? modalParam : "all"}
                 notifications={notifications}
-                onMarkRead={(cat) => {
-                  sandeshSocket.send(`#markread ${cat}`);
-                  setNotifications((prev) =>
-                    prev.map((n) =>
-                      cat === "all" || n.category === cat ? { ...n, read: true } : n
-                    )
-                  );
-                  pushToast(`Marked ${cat} notifications as read`);
+                onMarkRead={async (cat) => {
+                  const payload = cat === "all" ? { all: true } : { category: cat };
+                  const res = await sandeshSocket.sd("notifications.read", payload);
+                  if (res.ok) {
+                    setNotifications((prev) =>
+                      prev.map((n) =>
+                        cat === "all" || n.category === cat ? { ...n, read: true } : n
+                      )
+                    );
+                    pushToast(`Marked ${cat} notifications as read`);
+                  } else {
+                    pushToast(res.error || "Failed to mark notifications read", true);
+                  }
                 }}
                 onClose={() => {
                   setModal(null);
@@ -2583,24 +2746,29 @@ export function EmberChatScreen({ onOpenAiChat }) {
               <CardsModal
                 initialSection={typeof modalParam === "string" ? modalParam : "all"}
                 cards={cards}
-                onDismissCard={(cardId) => {
-                  sandeshSocket.send(`#dismiss ${cardId}`);
-                  setCards((prev) => prev.filter((c) => c.id !== cardId));
-                  pushToast(`Dismissed card #${cardId}`);
+                onDismissCard={async (cardId) => {
+                  const res = await sandeshSocket.sd("cards.dismiss", { id: cardId });
+                  if (res.ok) {
+                    if (cardId === "all") {
+                      setCards([]);
+                      pushToast("Dismissed all cards");
+                    } else {
+                      setCards((prev) => prev.filter((c) => c.id !== cardId));
+                      pushToast(`Dismissed card #${cardId}`);
+                    }
+                  } else {
+                    pushToast(res.error || "Failed to dismiss card", true);
+                  }
                 }}
-                onAddReminder={(remText) => {
-                  sandeshSocket.send(`#remind ${remText}`);
-                  setCards((prev) => [
-                    {
-                      id: `rem-${Date.now()}`,
-                      section: "reminders",
-                      title: "Personal Reminder",
-                      text: remText,
-                      time: "Just now",
-                    },
-                    ...prev,
-                  ]);
-                  pushToast(`Reminder saved: "${remText}"`);
+                onAddReminder={async (remText) => {
+                  const res = await sandeshSocket.sd("reminder.add", { text: remText });
+                  if (res.ok) {
+                    pushToast(`Reminder saved: "${remText}"`);
+                    loadCards("reminders");
+                    loadFeed();
+                  } else {
+                    pushToast(res.error || "Failed to save reminder", true);
+                  }
                 }}
                 onClose={() => {
                   setModal(null);
@@ -2610,8 +2778,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
             )}
             {modal === "new-group" && (
               <NewGroupModal
-                onlineUsers={onlineUsers}
-                availableUsers={associates.length > 0 ? associates : onlineUsers}
+                onlineUsers={enrichedOnlineUsers}
+                availableUsers={enrichedAssociates.length > 0 ? enrichedAssociates : enrichedOnlineUsers}
                 currentUsername={currentUser.username}
                 onCancel={() => setModal(null)}
                 onCreate={(payload) => {
@@ -2663,11 +2831,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 onAdd={(userName) => {
                   const groupName = activeChat.name || activeChat.id.replace(/^room-/, "");
                   sandeshSocket.sendAddMember(groupName, userName);
-                  setGroupMembersByName((prev) => ({
-                    ...prev,
-                    [groupName]: [...(prev[groupName] || []), userName],
-                  }));
-                  pushToast(`Added ${userName} to ${groupName}`);
                   setModal(null);
                 }}
                 onLeave={() => {
@@ -2685,17 +2848,21 @@ export function EmberChatScreen({ onOpenAiChat }) {
               <ProfileModal
                 me={currentUser}
                 onCancel={() => setModal(null)}
-                onSave={({ status }) => {
-                  setCurrentUser((m) => ({ ...m, status }));
+                onSave={({ status, avatar }) => {
+                  setCurrentUser((m) => ({ ...m, status, ...(avatar ? { avatar } : {}) }));
                   try {
                     localStorage.setItem(
                       "sandesh_session_user",
-                      JSON.stringify({ ...currentUser, status })
+                      JSON.stringify({ ...currentUser, status, ...(avatar ? { avatar } : {}) })
                     );
                   } catch { }
-                  sandeshSocket.send(`/setstatus ${status}`);
+                  if (status) sandeshSocket.send(`/setstatus ${status}`);
+                  if (avatar) sandeshSocket.sendSetAvatar(avatar);
                   setModal(null);
-                  pushToast("Profile status updated");
+                  pushToast("Profile updated successfully");
+                }}
+                onAvatarUpdated={(newAvatar) => {
+                  setCurrentUser((m) => ({ ...m, avatar: newAvatar }));
                 }}
               />
             )}
@@ -2750,9 +2917,9 @@ export function EmberChatScreen({ onOpenAiChat }) {
             {modal === "forward" && forwardTargetMsg && (
               <ForwardModal
                 message={forwardTargetMsg}
-                chats={chats}
-                onlineUsers={onlineUsers}
-                availableUsers={associates.length > 0 ? associates : onlineUsers}
+                chats={enrichedChats}
+                onlineUsers={enrichedOnlineUsers}
+                availableUsers={enrichedAssociates.length > 0 ? enrichedAssociates : enrichedOnlineUsers}
                 currentUsername={currentUser.username}
                 onCancel={() => {
                   setModal(null);
