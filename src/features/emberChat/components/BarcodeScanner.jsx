@@ -10,6 +10,9 @@ function ScannerOverlay({ onDetected, onClose }) {
   const scannerRef = useRef(null);
   const stoppedRef = useRef(false);
   const tracksRef = useRef([]);
+  // Latest onDetected in a ref so it isn't an effect dependency (a fresh callback per render would restart the camera).
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
 
   // Privacy: the camera must be off the moment scanning ends (a code was read, the dialog was
   // closed, or it unmounted). Stop the underlying media tracks directly -- synchronously -- rather
@@ -76,7 +79,7 @@ function ScannerOverlay({ onDetected, onClose }) {
               if (stoppedRef.current) return;
               stoppedRef.current = true;
               safeStop(qr);
-              onDetected(decodedText);
+              onDetectedRef.current(decodedText);
             },
             () => {
               // per-frame "no code found" -- expected while aiming the camera, not an error
@@ -109,7 +112,7 @@ function ScannerOverlay({ onDetected, onClose }) {
       safeStop(scannerRef.current);
       releaseCamera();
     };
-  }, [domId, onDetected]);
+  }, [domId]);
 
   return createPortal(
     <div

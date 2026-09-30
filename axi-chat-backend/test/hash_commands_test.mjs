@@ -5,7 +5,7 @@
 //   node test/hash_commands_test.mjs [port]
 //   node test/hash_commands_test.mjs --url ws://<host>/ws
 //
-// Runs in the default SANDESH_MODE=open. Sandesh-backed commands (#cards,
+// Runs in the default SANDESH_MODE=open. Sandesh-backed commands (#notifications,
 // #accept, ...) are exercised here only as far as "no Sandesh session" goes;
 // see sandesh_test.mjs for signed-in flows. The frontend contract these
 // assertions pin down is written up in docs/HASH_COMMANDS.md.
@@ -94,7 +94,7 @@ async function main() {
     const byName = Object.fromEntries(cat.commands.map(c => [c.name, c]));
     ok("dm is described with typed args", byName.dm?.args?.[0]?.type === "user" && byName.dm?.args?.[1]?.rest === true, JSON.stringify(byName.dm));
     ok("dm is available; Sandesh commands need sign-in here",
-        byName.dm.available === true && byName.cards.available === false && byName.cards.requires === "signin");
+        byName.dm.available === true && byName.notifications.available === false && byName.notifications.requires === "signin");
     ok("every command has a category that exists",
         cat.commands.every(c => cat.categories.some(k => k.id === c.category)));
     const filtered = await A.ask("/cmds re", m => m.type === "cmd_catalog" && m.filter === "re");
@@ -109,13 +109,13 @@ async function main() {
     ok("#dm delivers and acks", (await bGot).from === A.name && ack.with === B.name && ack.status === "delivered");
 
     const react = A.next(m => m.type === "dm_reaction" && m.messageId === ack.id);
-    B.send(`#reactdm ${A.name} ${ack.id} :+1:`);
+    B.send(`/react dm ${A.name} ${ack.id} :+1:`);
     ok("#reactdm reacts", (await react).reactions.some(r => r.user === B.name));
 
-    const denied = await B.ask(`#deletedm ${A.name} ${ack.id}`, m => m.type === "delete_denied");
+    const denied = await B.ask(`/delete dm ${A.name} ${ack.id}`, m => m.type === "delete_denied");
     ok("#deletedm by a non-author is still refused server-side", denied.reason === "forbidden");
     const gone = A.next(m => m.type === "dm_deleted" && m.messageId === ack.id);
-    A.send(`#deletedm ${B.name} ${ack.id}`);
+    A.send(`/delete dm ${B.name} ${ack.id}`);
     ok("#deletedm by the author deletes", !!(await gone));
 
     const hist = await A.ask(`#historydm ${B.name}`, m => m.type === "history" && m.scope === "dm");
@@ -144,11 +144,11 @@ async function main() {
     ok("#leavegroup leaves", !!left);
 
     console.log("=== Profile ===");
-    await A.ask("#status feeling hashy", m => m.type === "profile" && m.user === A.name).catch(() => null);
+    await A.ask("/setstatus feeling hashy", m => m.type === "profile" && m.user === A.name).catch(() => null);
     const prof = await B.ask(`#profile ${A.name}`, m => m.type === "profile" && m.user === A.name);
     ok("#status then #profile round-trips", prof.status === "feeling hashy", JSON.stringify(prof));
-    const badAvatar = await A.ask("#avatar javascript:alert(1)", m => m.type === "error");
-    ok("#avatar rejects non-http URLs", badAvatar.code === "usage");
+    const badAvatar = await A.ask("/setavatar javascript:alert(1)", m => m.type === "error");
+    ok("/setavatar rejects non-https URLs", /Avatar must be/.test(badAvatar.text), badAvatar);
 
     console.log("=== Errors are replies, never chat ===");
     const unk = await A.ask("#nope", m => m.type === "error");
@@ -158,7 +158,7 @@ async function main() {
     ok("nothing was broadcast to the room", await B.silent(m => m.type === "chat" && /^#(nope|dmm)/.test(m.text)));
     const use = await A.ask("#dm", m => m.type === "error" && m.code === "usage");
     ok("missing args -> usage with the usage string", use.usage === "#dm <user> <text...>" && use.command === "dm");
-    const bad = await A.ask("#delete abc", m => m.type === "error");
+    const bad = await A.ask("#accept abc", m => m.type === "error");
     ok("non-numeric id is rejected", bad.code === "usage");
 
     const esc = B.next(m => m.type === "chat" && m.text === "#hashtag literal");
@@ -180,8 +180,8 @@ async function main() {
     console.log("=== Sandesh actions (no session in open mode) ===");
     const me = await A.ask("#me", m => m.type === "sd" && m.action === "me");
     ok("#me answers in the /sd envelope, echoing reqId '#me'", me.ok === true && me.reqId === "#me" && me.data.authenticated === false, JSON.stringify(me));
-    const cards = await A.ask("#cards", m => m.type === "sd" && m.action === "cards.list");
-    ok("#cards without a session -> unauthenticated", cards.ok === false && cards.error.code === "unauthenticated" && cards.reqId === "#cards", JSON.stringify(cards));
+    const cards = await A.ask("#notifications", m => m.type === "sd" && m.action === "notifications.list");
+    ok("#notifications without a session -> unauthenticated", cards.ok === false && cards.error.code === "unauthenticated" && cards.reqId === "#notifications", JSON.stringify(cards));
     const adm = await A.ask("#admin-users", m => m.type === "sd" && m.action === "admin.users.list");
     ok("#admin-users without a session is refused", adm.ok === false && adm.error.code === "unauthenticated");
 
@@ -201,7 +201,7 @@ async function main() {
     ok("trailing space moves to the first argument", c3.kind === "arg" && c3.arg.index === 0 && c3.token === "");
     const c4 = await A.ask(`/cmdcomplete {"input":"#dm ${B.name} "}`, m => m.type === "cmd_suggestions");
     ok("after the user, the message text has no suggestions", c4.kind === "text" && c4.items.length === 0);
-    const c5 = await A.ask('/cmdcomplete {"input":"#markread p"}', m => m.type === "cmd_suggestions");
+    const c5 = await A.ask('/cmdcomplete {"input":"#notifications p"}', m => m.type === "cmd_suggestions");
     ok("enum arguments suggest their values", c5.items.map(i => i.value).join() === "pending,personal,priority".split(",").sort().join() || c5.items.length >= 2, JSON.stringify(c5.items));
     const c6 = await A.ask("/cmdcomplete not-json", m => m.type === "error");
     ok("malformed /cmdcomplete -> usage error", c6.code === "usage");

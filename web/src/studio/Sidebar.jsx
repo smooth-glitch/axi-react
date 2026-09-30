@@ -2,10 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { Boxes, LayoutDashboard, Moon, Plus, Search, Settings2, SlidersHorizontal, Sun, Table2, X } from 'lucide-react';
-import { Button, Skeleton, Text } from '../ui/kit';
+import { LayoutDashboard, PanelLeftClose, Plus, Search, Settings2, SlidersHorizontal, Table2, X } from 'lucide-react';
+import { Button, IconButton, Skeleton, Text } from '../ui/kit';
+import { useMenu } from './MenuContext';
+import tstructIcon from '../assets/tstruct-icon.svg';
 import { useStructs } from './StructsContext';
-import { useThemeMode } from '../ui/theme';
 
 const Root = styled.aside`
   position: relative;
@@ -34,15 +35,15 @@ const Brand = styled.div`
 `;
 
 const Logo = styled.div`
-  width: 34px;
-  height: 34px;
-  border-radius: ${(p) => p.theme.radius.lg}px;
+  width: 36px;
+  height: 36px;
+  border-radius: ${(p) => p.theme.radius.pill}px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: ${(p) => p.theme.onGradient};
-  background: linear-gradient(135deg, ${(p) => p.theme.gradient[0]}, ${(p) => p.theme.gradient[1]});
-  box-shadow: ${(p) => p.theme.shadow.glow};
+  color: ${(p) => p.theme.primary};
+  background: ${(p) => p.theme.surface};
+  border: 1.5px solid ${(p) => p.theme.peachDeep};
 `;
 
 const SearchBox = styled.label`
@@ -112,14 +113,6 @@ const Count = styled.span`
   color: ${(p) => (p.$active ? p.theme.primaryText : p.theme.navMuted)};
 `;
 
-const Foot = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: ${(p) => p.theme.spacing.md}px ${(p) => p.theme.spacing.lg}px;
-  border-top: 1px solid ${(p) => p.theme.navBorder};
-`;
-
 function NavLink({ icon: IconCmp, label, active, onPress, testID, badge, index = 0, children }) {
   const t = useTheme();
   return (
@@ -147,8 +140,6 @@ function NavLink({ icon: IconCmp, label, active, onPress, testID, badge, index =
   );
 }
 
-const MODE_ICON = { light: Sun, dark: Moon };
-
 // Struct navigation. variant="sidebar": fixed left menu (wide screens). variant="screen": full-screen home list (narrow).
 export default function Sidebar({ variant = 'sidebar' }) {
   const t = useTheme();
@@ -156,10 +147,9 @@ export default function Sidebar({ variant = 'sidebar' }) {
   const { pathname } = useLocation();
   const activeRef = matchPath('/structs/:ref/:view/*', pathname)?.params.ref;
   const { structs, error, refresh } = useStructs();
-  const { mode } = useThemeMode();
+  const menu = useMenu();
   const [q, setQ] = useState('');
   const fixed = variant === 'sidebar';
-  const ModeIcon = MODE_ICON[mode];
 
   const shown = useMemo(() => (structs || []).filter((s) => s.name.toLowerCase().includes(q.trim().toLowerCase())), [structs, q]);
   // wide: replace (switching structs doesn't build history); narrow: push so Back returns to the list
@@ -170,7 +160,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
     <Root $fixed={fixed}>
       <Brand>
         <Logo>
-          <Boxes size={18} strokeWidth={2} />
+          <img src={tstructIcon} width={20} height={20} alt="" />
         </Logo>
         <div style={{ flex: 1 }}>
           <Text $variant="title" style={{ color: t.navText }}>
@@ -180,6 +170,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
             Lite
           </Text>
         </div>
+        {menu.toggle ? <IconButton icon={PanelLeftClose} label="Collapse menu" onPress={menu.toggle} testID="collapse-menu" /> : null}
       </Brand>
 
       <div style={{ padding: `0 ${t.spacing.lg}px ${t.spacing.md}px` }}>
@@ -242,16 +233,10 @@ export default function Sidebar({ variant = 'sidebar' }) {
           </Text>
         ) : null}
         {shown.map((s, i) => (
-          <NavLink key={s.id} index={i} testID={`nav-struct-${s.name}`} icon={Table2} label={s.name} active={isActive(s)} badge={s.recordCount || undefined} onPress={() => go(`/structs/${s.id}/records`)} />
+          <NavLink key={s.id} index={i} testID={`nav-struct-${s.name}`} icon={Table2} label={s.name} active={isActive(s)} badge={s.recordCount || undefined} onPress={() => go(`/structs/${encodeURIComponent(s.id)}/records`)} />
         ))}
       </div>
 
-      <Foot>
-        <Text $variant="caption" style={{ color: t.navMuted }}>
-          Theme: Automatic ({mode})
-        </Text>
-        <ModeIcon size={15} strokeWidth={1.9} color={t.navMuted} aria-hidden="true" data-testid="theme-indicator" />
-      </Foot>
     </Root>
   );
 }

@@ -9,13 +9,13 @@ import { configure } from '../core/api';
  * Data is stored in the browser (no server): apiUrl / getAuthToken / headers are accepted but ignored.
  *
  *   <TstructProvider user="alice" storageName="crm-tstruct"
- *                    theme={{ primary: '#0a7', gradient: ['#3c9', '#0a7'] }} colorMode="light">
+ *                    theme={{ primary: '#0a7', gradient: ['#3c9', '#0a7'] }}>
  *     <StructForm struct="leave-request" ... />
  *   </TstructProvider>
  *
  * Every exported component also works WITHOUT this provider (it then creates its own default theme).
  */
-export function TstructProvider({ apiUrl, getAuthToken, user, headers, storageName, maxUploadMb, theme, colorMode, children }) {
+export function TstructProvider({ apiUrl, getAuthToken, user, headers, storageName, maxUploadMb, theme, children }) {
   // configure synchronously so children's first fetch already uses it (effects of children run before the parent's)
   useMemo(() => {
     const next = {};
@@ -30,7 +30,7 @@ export function TstructProvider({ apiUrl, getAuthToken, user, headers, storageNa
   }, [apiUrl, getAuthToken, user, headers, storageName, maxUploadMb]);
 
   return (
-    <AppThemeProvider mode={colorMode} overrides={theme}>
+    <AppThemeProvider overrides={theme}>
       <TstructRoot>
         <ToastProvider>{children}</ToastProvider>
       </TstructRoot>

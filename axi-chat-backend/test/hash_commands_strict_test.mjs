@@ -124,6 +124,7 @@ class Client {
     hash(typed, rest = "", canon = typed) {
         return this.ask(`#${typed}${rest ? " " + rest : ""}`, m => m.type === "sd" && m.reqId === `#${canon}`);
     }
+    complete(obj) { const input = obj.input; return this.ask("/cmdcomplete " + JSON.stringify(obj), m => m.type === "cmd_suggestions" && m.input === input); }
     async silent(pred, ms = 500) { const n = this.inbox.length; await sleep(ms); return !this.inbox.slice(n).some(pred); }
     close() { try { this.ws.close(); } catch { /* ignore */ } }
 }
@@ -150,7 +151,7 @@ async function main() {
     const A0 = await new Client(adminName).connect(setupToken);
     m = await A0.hash("me");
     ok("#me still works and reports mustChange", m.ok && m.data.password.mustChange === true, m);
-    m = await A0.hash("cards");
+    m = await A0.sd("cards.list");
     ok("#cards -> password_change_required", !m.ok && m.error.code === "password_change_required", m);
     m = await A0.hash("remind", "x");
     ok("#remind -> password_change_required", !m.ok && m.error.code === "password_change_required", m);
@@ -191,12 +192,12 @@ async function main() {
     console.log("=== Catalog reflects who is asking ===");
     const cats = {};
     for (const [n, c] of [["admin", A], ["priya", P], ["sam", S]]) cats[n] = Object.fromEntries((await c.ask("/cmds", x => x.type === "cmd_catalog")).commands.map(x => [x.name, x]));
-    ok("admin: Sandesh, host and admin commands all available", ["me", "cards", "myusers", "admin-users", "admin-activate"].every(k => cats.admin[k].available), cats.admin["admin-users"]);
-    ok("host: myusers available; admin-* requires admin",
-        cats.priya.myusers.available && !cats.priya["admin-users"].available && cats.priya["admin-users"].requires === "admin");
+    ok("admin: Sandesh, host and admin commands all available", ["me", "notifications", "transfer", "admin-users", "admin-activate"].every(k => cats.admin[k].available), cats.admin["admin-users"]);
+    ok("host: transfer available; admin-* requires admin",
+        cats.priya.transfer.available && !cats.priya["admin-users"].available && cats.priya["admin-users"].requires === "admin");
     ok("host: admin-activate requires manage", cats.priya["admin-activate"].requires === "manage" || cats.priya["admin-activate"].requires === "admin", cats.priya["admin-activate"]);
-    ok("employee: cards available; myusers requires host; admin-* requires admin",
-        cats.sam.cards.available && cats.sam.myusers.requires === "host" && cats.sam["admin-org"].requires === "admin");
+    ok("employee: notifications available; admin-* requires admin",
+        cats.sam.notifications.available && cats.sam["admin-org"].requires === "admin", cats.sam["admin-org"]);
 
     console.log("=== #me and #whoami ===");
     m = await A.hash("me");
@@ -274,7 +275,7 @@ async function main() {
     ok("a rejected invitation creates no link", m.type === "error" && m.code === "not_associated", m);
     m = await S.hash("connect", ravi);
     const req3 = m.data.request.id;
-    m = await R.hash("ignore", String(req3));
+    m = await R.sd("req.respond", { id: Number(req3), action: "ignore" });
     ok("#ignore", m.ok && m.data.request.status === "ignored", m);
     m = await R.hash("requests", "all");
     ok("#requests all shows accepted, rejected and ignored", ["accepted", "rejected", "ignored"].every(s => m.data.requests.some(q => q.status === s)), m.data.requests?.map(q => q.status));
@@ -282,10 +283,10 @@ async function main() {
     ok("#accept of a nonexistent request -> not_found", !m.ok && m.error.code === "not_found", m);
 
     console.log("=== Hosts: #myusers and #transfer ===");
-    m = await P.hash("myusers");
+    m = await P.sd("host.users");
     ok("#myusers: priya hosts ravi and erin", m.ok && [ravi, erin].every(u => m.data.users.some(x => x.username === u)), m);
     ok("#myusers rows say who is online", m.data.users.find(x => x.username === ravi).online === true);
-    m = await S.hash("myusers");
+    m = await S.sd("host.users");
     ok("#myusers by a non-host -> forbidden", !m.ok && m.error.code === "forbidden", m);
     m = await S.hash("transfer", `${ravi} ${adminName}`);
     ok("#transfer by someone who isn't the user's host -> forbidden", !m.ok && m.error.code === "forbidden", m);
@@ -300,9 +301,9 @@ async function main() {
     ok("the receiving host sees it in #requests", m.ok && m.data.requests.some(q => q.id === trId), m);
     m = await A.hash("accept", String(trId));
     ok("#accept by the receiving host", m.ok && m.data.request.status === "accepted", m);
-    m = await A.hash("myusers");
+    m = await A.sd("host.users");
     ok("#myusers: ravi is now the admin's", m.ok && m.data.users.some(x => x.username === ravi), m);
-    m = await P.hash("myusers");
+    m = await P.sd("host.users");
     ok("#myusers: and no longer priya's", m.ok && !m.data.users.some(x => x.username === ravi) && m.data.users.some(x => x.username === erin), m);
 
     console.log("=== Cards: #cards, #dismiss, #remind ===");
@@ -310,30 +311,30 @@ async function main() {
     ok("admin -> sam DM (sam's host is the admin)", dmA.type === "dm_ack", dmA);
     await A.ask(`#dm ${sam} !urgent thing`, x => x.type === "dm_ack");
     await sleep(400);
-    m = await S.hash("cards");
+    m = await S.sd("cards.list");
     ok("#cards: sam has cards from the admin", m.ok && m.data.cards.length >= 2 && Array.isArray(m.data.sections), m);
     const urgent = m.data.cards.find(c => c.text?.startsWith("!urgent"));
     const plain = m.data.cards.find(c => c.text === "hello sam");
     ok('"!" text lands in the priority section', urgent?.section === "priority", urgent);
-    m = await S.hash("cards", "priority");
+    m = await S.sd("cards.list", { section: "priority" });
     ok("#cards <section> filters", m.ok && m.data.cards.length >= 1 && m.data.cards.every(c => c.section === "priority"), m);
-    m = await S.hash("cards", "no_such_section");
+    m = await S.sd("cards.list", { section: "no_such_section" });
     ok("#cards for an unknown section -> empty, not an error", m.ok && m.data.cards.length === 0, m);
-    m = await S.hash("dismiss", plain.id);
+    m = await S.sd("cards.dismiss", { id: plain.id });
     ok("#dismiss <cardId>", m.ok && m.data.dismissed === true, m);
-    m = await S.hash("cards");
+    m = await S.sd("cards.list");
     ok("...the card is gone, the other remains", !m.data.cards.some(c => c.id === plain.id) && m.data.cards.some(c => c.id === urgent.id), m);
     m = await S.hash("remind", `call "Priya" \\ about {"x":1} tomorrow`);
     ok("#remind creates a reminder card (quotes/braces/backslash survive)", m.ok && m.data.card.section === "reminders" && m.data.card.text === `call "Priya" \\ about {"x":1} tomorrow`, m);
     m = await S.hash("reminder", "second one", "remind");
     ok("#reminder alias", m.ok, m);
-    m = await S.hash("cards", "reminders");
+    m = await S.sd("cards.list", { section: "reminders" });
     ok("both reminders are in the reminders section", m.ok && m.data.cards.length === 2, m);
-    m = await S.hash("dismiss", "all");
+    m = await S.sd("cards.dismiss", { id: "all" });
     ok("#dismiss all", m.ok, m);
-    m = await S.hash("cards");
+    m = await S.sd("cards.list");
     ok("...leaves nothing", m.ok && m.data.cards.length === 0, m);
-    m = await S.hash("dismiss", "definitely_not_a_card_id");
+    m = await S.sd("cards.dismiss", { id: "definitely_not_a_card_id" });
     ok("#dismiss of an unknown id is harmless", m.ok, m);
 
     console.log("=== Notifications: #notifications / #notifs / #markread ===");
@@ -349,14 +350,14 @@ async function main() {
     }
     m = await S.hash("notifications", "PERSONAL");
     ok("category is case-insensitive (#notifications PERSONAL)", m.ok && Array.isArray(m.data.notifications), m);
-    m = await S.hash("markread", "personal");
+    m = await S.sd("notifications.read", "personal" === "all" ? { all: true } : { category: "personal" });
     ok("#markread personal", m.ok, m);
     m = await S.hash("notifications", "personal");
     ok("...personal notifications are now read", m.ok && m.data.notifications.length === 0, m);
     m = await S.hash("notifications", "priority");
     ok("...priority ones are untouched", m.ok && m.data.notifications.length >= 1, m);
     for (const c of ["priority", "pending", "reminders", "all"]) {
-        m = await S.hash("markread", c);
+        m = await S.sd("notifications.read", c === "all" ? { all: true } : { category: c });
         ok(`#markread ${c}`, m.ok, m);
     }
     m = await S.hash("notifications");
@@ -380,7 +381,7 @@ async function main() {
     m = await A.hash("submissions");
     ok("...and #submissions for the admin also sees it (admins see everyone's)", m.ok, m);
 
-    console.log("=== Lite T-Struct hash commands: #lookups / #tstruct / #tstruct-add / #tstruct-edit / #tstruct-delete ===");
+    console.log("=== Lite T-Struct hash commands: #lookups / #tstruct / #tstruct-add (edit/delete are viewer buttons -> /sd) ===");
     m = await R.hash("lookups");
     ok("#lookups returns the org lists the option builder's dropdowns use",
         m.ok && ["branches", "departments", "designations", "categories", "affiliates"].every(k => Array.isArray(m.data[k])) && m.data.categories.length > 0, m);
@@ -393,6 +394,33 @@ async function main() {
         m.ok && m.data.tstruct.name === "hashpoll" && m.data.scope === "user" && Array.isArray(m.data.submissions) && m.data.submissions.length === 0, m);
     m = await R.hash("tstruct-add", "hashpoll", "tstruct-add");
     ok("#tstruct-add opens the definition to add a record", m.ok && m.data.tstruct.name === "hashpoll", m);
+
+    console.log("=== #tstruct suggestions: listing, paging, multi-word captions ===");
+    for (let i = 1; i <= 12; i++) {
+        m = await R.sd("tstruct.user.save", { name: `tsx_${i}_${sfx}`, caption: `Test Form ${i} ${sfx}`, fields: [{ name: "q", type: "text", caption: "Q", required: false }] });
+        if (!m.ok) { ok(`(setup) structure ${i}`, false, m); break; }
+    }
+    let c = await R.complete({ input: "#tstruct ", page: 1, pageSize: 5 });
+    ok("#tstruct <nothing> lists structures, 5 per page, with paging info",
+        c.kind === "arg" && c.items.length === 5 && c.total >= 13 && c.hasMore === true && c.page === 1 && c.totalPages === Math.ceil(c.total / 5), c);
+    const p1 = c.items.map(i => i.value);
+    c = await R.complete({ input: "#tstruct ", page: 2, pageSize: 5 });
+    ok("page 2 is a different set", c.page === 2 && c.items.length === 5 && c.items.every(i => !p1.includes(i.value)), c.items);
+    c = await R.complete({ input: "#tstruct ", page: 99, pageSize: 5 });
+    ok("a page past the end is clamped to the last page", c.page === c.totalPages && c.hasMore === false && c.items.length >= 1, c);
+    c = await R.complete({ input: "#tstruct Test Form 1" });
+    ok("typing a multi-word caption filters the list (the whole phrase is the token)",
+        c.kind === "arg" && c.token === "Test Form 1" && c.items.length >= 1 && c.items.every(i => i.value.startsWith("Test Form 1")), c);
+    c = await R.complete({ input: "#tstruct hash", page: 1 });
+    ok("...and matching by technical name works too", c.items.some(i => i.hint === "hashpoll"), c.items);
+    m = await R.hash("tstruct", `Test Form 3 ${sfx}`);
+    ok("#tstruct opens a structure by its multi-word caption", m.ok && m.data.tstruct.name === `tsx_3_${sfx}`, m);
+    m = await R.hash("tstruct", `test form 3 ${sfx}`);
+    ok("...in any letter case", m.ok && m.data.tstruct.name === `tsx_3_${sfx}`, m);
+    c = await R.complete({ input: "#tstruct-edit Test Form 3 " });
+    ok("#tstruct-edit no longer exists in the # layer", c.kind === "none", c);
+    c = await S.complete({ input: "#tstruct ", pageSize: 25 });
+    ok("another user sees user-made structures too", c.kind === "arg" && c.total >= 13, c.total);
     m = await R.hash("tstruct", "no_such_struct");
     ok("#tstruct for an unknown structure -> not_found", !m.ok && m.error.code === "not_found", m);
     m = await R.sd("tstruct.user.submit", { name: "hashpoll", values: { q: "lunch?" } });
@@ -402,16 +430,16 @@ async function main() {
     ok("#tstruct now lists ravi's own record", m.ok && m.data.submissions.some(x => x.id === pollId), m);
     m = await A.hash("tstruct", "hashpoll");
     ok("...but only YOUR records: the admin sees the definition, not ravi's record", m.ok && m.data.tstruct.name === "hashpoll" && !m.data.submissions.some(x => x.id === pollId), m);
-    m = await R.hash("tstruct-edit", `hashpoll ${pollId}`, "tstruct-edit");
-    ok("#tstruct-edit passes the record id through for the editor", m.ok && m.data.editRecordId === pollId && m.data.tstruct.name === "hashpoll", m);
-    m = await R.hash("tstruct-delete", `hashpoll ${pollId}`, "tstruct-delete");
-    ok("#tstruct-delete by the author deletes the record", m.ok && m.data.deleted === true, m);
+    m = await R.sd("tstruct.user.open", { name: "hashpoll", editRecordId: pollId });
+    ok("viewer Edit button (/sd tstruct.user.open + editRecordId) passes the record id through", m.ok && m.data.editRecordId === pollId && m.data.tstruct.name === "hashpoll", m);
+    m = await R.sd("submissions.delete", { id: pollId });
+    ok("viewer Delete button (/sd submissions.delete) by the author deletes the record", m.ok && m.data.deleted === true, m);
     m = await R.hash("tstruct", "hashpoll");
     ok("...and it is gone from #tstruct", m.ok && m.data.submissions.length === 0, m);
     m = await R.sd("tstruct.user.submit", { name: "hashpoll", values: { q: "again" } });
     const pollId2 = m.data?.submission?.id;
-    m = await A.hash("tstruct-delete", `hashpoll ${pollId2}`, "tstruct-delete");
-    ok("#tstruct-delete of someone else's record is refused (author only)", !m.ok && m.error.code === "forbidden", m);
+    m = await A.sd("submissions.delete", { id: pollId2 });
+    ok("deleting someone else's record is refused (author only)", !m.ok && m.error.code === "forbidden", m);
     m = await R.sd("tstruct.user.delete", { name: "hashpoll" });
     ok("(cleanup) ravi deletes the structure", m.ok, m);
 
@@ -484,7 +512,7 @@ async function main() {
     ok("locked: #admin-deactivate -> admin_locked (and sam is untouched)", !m.ok && m.error.code === "admin_locked", m);
     const cat2 = Object.fromEntries((await A2.ask("/cmds", x => x.type === "cmd_catalog")).commands.map(x => [x.name, x]));
     ok("catalog still says admin commands are available (lock is a runtime state, not a role)", cat2["admin-org"].available === true);
-    m = await A2.hash("cards");
+    m = await A2.sd("cards.list");
     ok("locked console doesn't affect ordinary commands (#cards works)", m.ok, m);
     m = await A2.sd("admin.unlock.start");
     m = await A2.sd("admin.unlock", { password: pw, otp: m.data.devOtp });

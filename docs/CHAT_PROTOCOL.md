@@ -114,7 +114,8 @@ consume client-side.
 | `/read dm <username>` | Mark a DM thread as read (triggers `dm_read` to the other party). For a signed-in Sandesh user it also clears that sender's *personal/priority* notifications and pushes `notifications_changed` ([`SANDESH_API.md`](SANDESH_API.md) "Notifications"). |
 | `/pubkey <base64Key>` | Publish your E2EE public key (for DM encryption support — currently only consumed by the iOS client's crypto, not yet by any web/React flow). |
 | `/getpubkey <username>` | Fetch another user's public key. |
-| `/setavatar <url>` | Set your avatar URL. Broadcasts a `profile` event to contacts. |
+| `/setavatar <url>` | Set your avatar. Only an `/uploads/…` path or an `https://…` link (max 300 chars, no spaces/control characters); anything else gets an `error`. Broadcasts a `profile` event. |
+| `/removeavatar` | Remove your avatar. Broadcasts a `profile` event with `avatar: null`. |
 | `/setstatus <text>` | Set your status line. Same broadcast as above. |
 | `/getprofile <username>` | Fetch another user's avatar/status. |
 | `/gifsearch [query]` | Search GIFs (Giphy-backed). Reply: `gif_results` event. |

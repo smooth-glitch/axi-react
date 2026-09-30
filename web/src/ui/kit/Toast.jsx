@@ -34,7 +34,7 @@ const Item = styled(motion.div)`
   max-width: 520px;
   padding: ${(p) => p.theme.spacing.md}px ${(p) => p.theme.spacing.lg}px;
   border-radius: ${(p) => p.theme.radius.lg}px;
-  background: ${(p) => (p.theme.mode === 'dark' ? p.theme.surfaceAlt : p.theme.nav)};
+  background: ${(p) => p.theme.nav};
   color: ${(p) => p.theme.navText};
   box-shadow: ${(p) => p.theme.shadow.lg};
 `;

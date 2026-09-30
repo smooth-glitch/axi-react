@@ -68,10 +68,10 @@ multi_word_names_test() ->
     ?assertEqual(<<"Leave Request Form">>, maps:get(<<"name">>, A)),
     {"tstruct.user.open", B} = sd_line("#tstruct   Leave    Request"),
     ?assertEqual(<<"Leave Request">>, maps:get(<<"name">>, B)),
-    {"tstruct.user.open", C} = sd_line("#tstruct-edit Leave Request 12"),
-    ?assertEqual({<<"Leave Request">>, 12}, {maps:get(<<"name">>, C), maps:get(<<"editRecordId">>, C)}),
     ?assertEqual(<<"usage">>, error_code("#tstruct")),
-    ?assertEqual(<<"usage">>, error_code("#tstruct-edit Leave Request")).
+    %% edit / delete were removed from the # layer (the viewer's buttons use /sd directly)
+    ?assertEqual(<<"unknown_command">>, error_code("#tstruct-edit Leave Request 12")),
+    ?assertEqual(<<"unknown_command">>, error_code("#tstruct-delete Leave Request 12")).
 
 multi_word_group_names_test() ->
     ?assertEqual({line, "/creategroup design team"}, run("#creategroup  design   team")),
@@ -269,8 +269,8 @@ complete_is_paginated_test() ->
 complete_multi_word_name_is_one_argument_test() ->
     #{<<"kind">> := <<"arg">>, <<"token">> := <<"Leave Re">>, <<"arg">> := #{<<"index">> := 0}} =
         complete("{\"input\":\"#tstruct Leave Re\"}"),
-    %% the last word of #tstruct-edit is the record id, not part of the name
-    #{<<"arg">> := #{<<"index">> := 0}} = complete("{\"input\":\"#tstruct-edit Leave Request\"}").
+    %% #tstruct-add takes the whole rest of the line as the name
+    #{<<"arg">> := #{<<"index">> := 0}} = complete("{\"input\":\"#tstruct-add Leave Request\"}").
 
 complete_trailing_space_starts_next_argument_test() ->
     %% the reason input travels inside JSON: "#dm bob " != "#dm bob"

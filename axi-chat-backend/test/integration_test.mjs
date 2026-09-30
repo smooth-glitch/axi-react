@@ -201,6 +201,41 @@ async function main() {
     const groupMsgOnClientA = await clientA.waitFor(m => m.type === "group_message" && m.group === groupName);
     ok("client A receives the group message with matching id/ts", groupMsgOnClientA.id === groupAck.id && groupMsgOnClientA.ts === groupAck.ts);
 
+    console.log("=== Group admin & multi-word group names ===");
+    clientA.send(`/addmember ${groupName} someone${suffix}`);
+    const notOwner = await clientA.waitFor(m => m.type === "error" && /group admin/i.test(m.text || ""), 2000, "non-admin addmember rejection");
+    ok("a member who did not create the group cannot add members", !!notOwner);
+
+    const spacedName = `sq team ${suffix}`;
+    clientB.send(`/creategroup ${spacedName}`);
+    await clientB.waitFor(m => m.type === "group_created" && m.name === spacedName);
+    clientB.send(`/addmember ${spacedName} ${nameA}`);
+    await clientA.waitFor(m => m.type === "added_to_group" && m.name === spacedName);
+    ok("creator can add a member to a group whose name has spaces", true);
+    clientB.send(`/groupmsg ${spacedName} hello spaced squad`);
+    const spacedMsg = await clientA.waitFor(m => m.type === "group_message" && m.group === spacedName, 2000, "spaced group message");
+    ok("group message reaches a group whose name has spaces (text kept intact)", spacedMsg.text === "hello spaced squad", JSON.stringify(spacedMsg));
+
+    console.log("=== Profile input validation ===");
+    for (const bad of ["javascript:alert(1)", "http://plain.example/a.png"]) {
+        clientA.send(`/setavatar ${bad}`);
+        const rej = await clientA.waitFor(m => m.type === "error" && /Avatar must be/i.test(m.text || ""), 2000, `avatar rejection: ${bad}`);
+        ok(`avatar "${bad}" is rejected`, !!rej);
+    }
+    clientA.send(`/setstatus ${"x".repeat(141)}`);
+    const longStatus = await clientA.waitFor(m => m.type === "error" && /Status is too long/i.test(m.text || ""), 2000, "long status rejection");
+    ok("over-long status is rejected", !!longStatus);
+
+    clientA.send("/setavatar https://example.com/keep.png");
+    await clientA.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === "https://example.com/keep.png", 2000, "avatar set");
+    clientA.send("/removeavatar");
+    const removed = await clientA.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === null, 2000, "avatar removal broadcast");
+    ok("/removeavatar clears the picture and broadcasts avatar:null", !!removed);
+    await clientB.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === null, 2000, "removal broadcast reaches B");
+    clientB.send(`/getprofile ${nameA}`);
+    const afterRemove = await clientB.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === null, 2000, "profile after removal");
+    ok("/getprofile reports no avatar after removal", afterRemove.avatar === null, JSON.stringify(afterRemove));
+
     clientA.send("/groups");
     const groupsResp = await clientA.waitFor(m => m.type === "groups");
     ok("/groups lists the new group for client A", groupsResp.list.some(g => g.name === groupName));
@@ -237,8 +272,11 @@ async function main() {
     spaced.close();
 
     clientA.send(`/creategroup two words ${suffix}`);
-    const badGroup = await clientA.waitFor(m => m.type === "error" && /group name cannot contain spaces/i.test(m.text), 2000, "space-in-group-name rejection");
-    ok("group name containing a space is rejected", !!badGroup);
+    const spacedGroup = await clientA.waitFor(m => m.type === "group_created" && m.name === `two words ${suffix}`, 2000, "group name with spaces accepted");
+    ok("group name containing spaces is accepted", !!spacedGroup);
+    clientA.send(`/creategroup two words ${suffix} more`);
+    const closeGroup = await clientA.waitFor(m => m.type === "error" && /too close/i.test(m.text), 2000, "prefix-ambiguous group name rejection");
+    ok("group name that starts with an existing group's name is rejected", !!closeGroup);
 
     const marker = `/nosuchcommand${suffix}`;
     clientA.send(`${marker} arg`);
