@@ -310,5 +310,5 @@ These exist on the server but nothing in `src/` calls them (some are reached onl
 ## D. Backend follow-ups the frontend will need
 
 1. Add `owner` to `groups` and `group_created` events (group admin UI).
-2. Decide on avatar removal (`/setavatar` with no URL is currently ignored).
+2. ~~Avatar removal~~ — done: `/removeavatar`.
 3. Decide whether ownership transfers when a group admin leaves.

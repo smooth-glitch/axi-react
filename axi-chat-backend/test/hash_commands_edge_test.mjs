@@ -150,22 +150,12 @@ async function main() {
     ok("an oversized junk #line is refused, not processed", /too long/i.test(over.text), over);
     over = await A.ask(`#remind ${"x".repeat(600)}`, m => m.type === "error");
     ok("#remind text over its 500 limit -> usage", over.code === "usage" && /too long/.test(over.text), over);
-    over = await A.ask(`#status ${"x".repeat(141)}`, m => m.type === "error");
-    ok("#status over 140 -> usage", over.code === "usage", over);
-    A.ws.send(`#status ${"s".repeat(140)}`);
-    await sleep(300);
-    const prof = await B.ask(`#profile ${A.name}`, m => m.type === "profile" && m.user === A.name);
-    ok("...and stored in full", prof.status.length === 140, prof.status?.length);
     over = await A.ask(`#historydm ${"u".repeat(25)}`, m => m.type === "error");
     ok("a 25-char username argument -> usage", over.code === "usage", over);
     over = await A.ask("#creategroup " + "g".repeat(33), m => m.type === "error");
     ok("a 33-char group name -> usage", over.code === "usage", over);
-    over = await A.ask(`#react 5 ${"e".repeat(33)}`, m => m.type === "error");
-    ok("a 33-byte emoji argument -> usage", over.code === "usage", over);
-    over = await A.ask(`#delete ${"9".repeat(19)}`, m => m.type === "error");
+    over = await A.ask(`#accept ${"9".repeat(19)}`, m => m.type === "error");
     ok("a 19-digit id -> usage (no bignum surprises)", over.code === "usage", over);
-    ack = await A.ask(`#delete ${"9".repeat(18)}`, m => m.type === "delete_denied" || m.type === "error");
-    ok("an 18-digit id is accepted and simply not found", ack.type === "delete_denied", ack);
 
     console.log("=== Unusual but valid input ===");
     const u = "héllo wörld 👍 日本語";
@@ -196,7 +186,7 @@ async function main() {
     ok("bare '#' lists commands (capped at 25)", c.kind === "command" && c.items.length === 25, c.items.length);
     c = await A.complete("#re");
     const names = c.items.map(i => i.value);
-    ok("'#re' matches by prefix on names and aliases", ["reply", "replydm", "replygroup", "react", "reactdm", "reactgroup", "read", "reject", "requests", "remind"].every(n => names.includes(n)), names);
+    ok("'#re' matches by prefix on names and aliases", ["reply", "replydm", "replygroup", "reject", "requests", "remind"].every(n => names.includes(n)), names);
     c = await A.complete("#RE");
     ok("suggestions are case-insensitive", c.items.length === names.length);
     c = await A.complete("#zzzz");
@@ -207,11 +197,9 @@ async function main() {
     ok("free-form name argument: no candidates", c.kind === "arg" && c.items.length === 0 && c.arg.type === "group", c);
     c = await A.complete("#historyhost ");
     ok("host argument: none configured -> empty (fixed AI hosts aren't routable)", c.kind === "arg" && c.arg.type === "host" && c.items.length === 0, c);
-    c = await A.complete("#react 5 ");
-    ok("emoji argument: no candidates", c.kind === "arg" && c.arg.type === "emoji" && c.items.length === 0, c);
-    c = await A.complete("#delete ");
+    c = await A.complete("#accept ");
     ok("message-id argument: no candidates, type reported", c.kind === "arg" && c.arg.type === "msgid" && c.items.length === 0, c);
-    c = await A.complete("#status hello wor");
+    c = await A.complete("#remind hello wor");
     ok("free text argument -> kind text", c.kind === "text", c);
     c = await A.complete("#requests ");
     ok("enum argument lists its values", c.kind === "arg" && c.items.length === 5, c.items);

@@ -19,6 +19,8 @@
 
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
 -define(MAX_UPLOAD_SIZE, 8 * 1024 * 1024).
+-define(MAX_AVATAR_URL_LEN, 300).
+-define(MAX_STATUS_LEN, 140).
 -define(DRAIN_CEILING, 32 * 1024 * 1024).
 -define(ALLOWED_UPLOAD_TYPES, ["image/png", "image/jpeg", "image/gif", "image/webp",
                                 "audio/webm", "audio/ogg", "audio/mp4"]).
@@ -680,6 +682,12 @@ split_group(Rest) ->
         none -> string:split(Rest, " ")
     end.
 
+valid_avatar_url(Url) ->
+    Url =/= "" andalso length(Url) =< ?MAX_AVATAR_URL_LEN andalso not has_control(Url)
+        andalso not lists:member($\s, Url)
+        andalso (lists:prefix("/uploads/", Url) orelse lists:prefix("https://", Url))
+        andalso not lists:member($\\, Url).
+
 add_member_checked(Socket, Name, GroupName, NewMember) ->
     %% Sandesh: in strict mode a group invite for someone outside your
     %% own users waits for THEIR host's approval (see sd_policy).
@@ -1117,12 +1125,32 @@ handle_line(Socket, _Name, "/getpubkey " ++ Other) ->
     end,
     ws_send(Socket, json_obj2([{"type", {str, "pubkey"}}, {"user", {str, Other}}, KeyField]));
 %% ---- profile: avatar + status ----
-handle_line(_Socket, Name, "/setavatar " ++ Url) ->
-    chat_store:set_avatar(Name, Url),
+%% Both values are shown to everyone, so they are checked here (the # layer's own
+%% checks are not enough: the raw slash commands are reachable directly).
+handle_line(Socket, Name, "/setavatar " ++ Url0) ->
+    Url = string:trim(Url0),
+    case valid_avatar_url(Url) of
+        true ->
+            chat_store:set_avatar(Name, Url),
+            chat_room:broadcast_profile(Name);
+        false ->
+            ws_send_json(Socket, "error",
+                io_lib:format("Avatar must be an uploaded /uploads/ file or an https:// link (max ~p characters)",
+                              [?MAX_AVATAR_URL_LEN]))
+    end;
+handle_line(_Socket, Name, "/removeavatar") ->
+    chat_store:clear_avatar(Name),
     chat_room:broadcast_profile(Name);
-handle_line(_Socket, Name, "/setstatus " ++ Status) ->
-    chat_store:set_status(Name, Status),
-    chat_room:broadcast_profile(Name);
+handle_line(Socket, Name, "/setstatus " ++ Status0) ->
+    Status = string:trim(Status0),
+    case length(Status) =< ?MAX_STATUS_LEN andalso not has_control(Status) of
+        true ->
+            chat_store:set_status(Name, Status),
+            chat_room:broadcast_profile(Name);
+        false ->
+            ws_send_json(Socket, "error",
+                io_lib:format("Status is too long or has invalid characters (max ~p characters)", [?MAX_STATUS_LEN]))
+    end;
 handle_line(Socket, _Name, "/getprofile " ++ Other) ->
     {Avatar, Status} = chat_store:get_profile(Other),
     AvatarField = case Avatar of undefined -> {"avatar", {raw, "null"}}; A -> {"avatar", {str, A}} end,
