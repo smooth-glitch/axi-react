@@ -66,6 +66,10 @@ function ScannerModal({ onDetected, onClose }) {
   const [error, setError] = useState(null);
   const scannerRef = useRef(null);
   const stoppedRef = useRef(false);
+  // The parent passes a fresh onDetected on every render. Keep the latest in a ref so it is NOT an effect dependency:
+  // otherwise each parent re-render restarts the camera and a second <video> gets stacked under the first.
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
 
   // Html5Qrcode.stop() THROWS SYNCHRONOUSLY (not a rejected promise) when called on a scanner
   // whose start() never actually got going (e.g. camera permission denied) - calling it
@@ -112,12 +116,16 @@ function ScannerModal({ onDetected, onClose }) {
               if (stoppedRef.current) return;
               stoppedRef.current = true;
               safeStop(qr);
-              onDetected(decodedText);
+              onDetectedRef.current(decodedText);
             },
             () => {
               // per-frame "no code found" — expected while aiming the camera, not an error
             }
           )
+          .then(() => {
+            // closed / restarted while the camera was still starting: shut this instance down so its video doesn't linger
+            if (cancelled) safeStop(qr);
+          })
           .catch((err) => {
             if (cancelled) return;
             setError(err?.message?.includes('Permission') || String(err).includes('NotAllowed') ? 'Camera permission was denied. Allow it in the browser and try again.' : 'Could not start the camera on this device.');
@@ -132,7 +140,7 @@ function ScannerModal({ onDetected, onClose }) {
       stoppedRef.current = true;
       safeStop(scannerRef.current);
     };
-  }, [domId, onDetected]);
+  }, [domId]);
 
   return (
     <Overlay initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
