@@ -231,6 +231,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
     if (res.ok) setOptions(res.data?.options || []);
   }, []);
 
+  // Smart Prompts bar: one pill per category (with a count). The server applies "Applicable to".
+  const [optionCategories, setOptionCategories] = useState([]);
+  const [optionsVersion, setOptionsVersion] = useState(0); // bumped on options_changed so an open category dropdown reloads
+  const refreshOptionCategories = useCallback(async () => {
+    const res = await sandeshSocket.sd("options.categories");
+    if (res.ok) setOptionCategories(res.data?.categories || []);
+  }, []);
+
   const pendingApprovalsCount = approvals.filter((r) => r.status === "pending").length;
 
   const [cards, setCards] = useState([]);
@@ -420,6 +428,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         if (event.status === "connected") {
           refreshApprovals();
           refreshOptions();
+          refreshOptionCategories();
           loadFeed();
           sandeshSocket.sd("me").then((res) => {
             if (res.ok && res.data?.feed) {
@@ -1068,6 +1077,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
         // an option was made/changed/removed (by anyone): re-ask what THIS user is offered -- the server applies
         // "applicable to", so we never guess from the event
         refreshOptions();
+        refreshOptionCategories();
+        setOptionsVersion((v) => v + 1);
       } else if (event.type === "sd_event" && event.event === "feed_item" && event.data?.notification) {
         const item = event.data.notification;
         setPriorityNotifications((prev) => [
@@ -2546,7 +2557,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onDeleteMessage={handleDeleteMessage}
           onDeleteChat={handleRequestDeleteChat}
           onActionCardClick={handleActionCardClick}
-          options={options}
+          optionCategories={optionCategories}
+          optionsVersion={optionsVersion}
           onOpenSubmissions={() => setModal("submissions")}
           onOpenSmartPrompts={(p) => {
             setEditingSubmission(null);
