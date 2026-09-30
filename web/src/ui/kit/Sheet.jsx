@@ -55,14 +55,13 @@ const Foot = styled.div`
 
 // Slide-over panel: right-hand drawer on wide screens, bottom sheet on narrow ones. Rendered in a portal on the studio frame
 // (or <body> standalone). Not a permanent side panel - it opens on demand and closes with Esc / backdrop / X.
-export function Sheet({ visible, onClose, title, subtitle, children, footer, testID }) {
+export function Sheet({ visible, onClose, title, subtitle, children, footer, testID, full: wantFull }) {
   const t = useTheme();
   const windowWidth = useWindowWidth();
   const host = useContext(SheetHostContext);
   const width = host ? host.clientWidth : windowWidth; // inside the studio frame, size to the frame, not the window
-  // Inside the studio frame the panel is a full-pane view (slides in over the page, with a back arrow) - a half-width
-  // drawer plus dimmed backdrop looks cramped inside a modal.
-  const full = !!host;
+  // `full` (record viewing) inside the studio frame: a full-pane view with a back arrow. Other panels stay a side drawer.
+  const full = !!host && !!wantFull;
   const drawer = !full && width >= t.layout.tableBreakpoint;
 
   useEffect(() => {
