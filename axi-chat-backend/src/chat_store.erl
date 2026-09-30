@@ -29,7 +29,7 @@
          save_group/3, delete_group/1, load_groups/0, toggle_reaction/3,
          delete_message/2,
          save_link_preview/2,
-         set_pubkey/2, get_pubkey/1, set_avatar/2, set_status/2, get_profile/1]).
+         set_pubkey/2, get_pubkey/1, set_avatar/2, clear_avatar/1, set_status/2, get_profile/1]).
 -include_lib("kernel/include/logger.hrl").
 
 -define(HISTORY_LIMIT, 50).
@@ -251,6 +251,11 @@ get_pubkey(Username) ->
 
 set_avatar(Username, Url) ->
     q_ok(["HSET", profile_key(Username), "avatar_url", Url]),
+    ok.
+
+%% Removes the picture entirely (get_profile then reports it as undefined -> null).
+clear_avatar(Username) ->
+    q_ok(["HDEL", profile_key(Username), "avatar_url"]),
     ok.
 
 set_status(Username, Status) ->
