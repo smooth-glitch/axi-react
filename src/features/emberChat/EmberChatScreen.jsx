@@ -1203,6 +1203,8 @@ export function EmberChatScreen({ onOpenAiChat }) {
         ) {
           refreshApprovals();
           pushToast(`Request ${event.reqId.slice(1)}ed successfully.`);
+        } else if (event.reqId === "#remind") {
+          if (event.ok) pushToast("Reminder saved");
         } else if (event.reqId === "#connect") {
           if (event.ok) {
             // the reply is a pending invitation (the other person still has to accept it)
@@ -1731,6 +1733,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     // 6. Cards & Reminders
+    if (cmd === "notifications" || cmd === "notifs") {
+      // the reply (reqId "#notifications") fills the list; here just open the panel
+      setNotificationsOpen(true);
+      return;
+    }
+
     if (cmd === "remind" || cmd === "reminder") {
       if (!rest) {
         loadCards("reminders");
