@@ -77,12 +77,6 @@ const COMMAND_USAGE_GUIDES = {
   "tstruct-add": "Please provide the struct name, e.g. #tstruct-add leave-request.",
   "ts-add": "Please provide the struct name, e.g. #ts-add leave-request.",
   "struct-add": "Please provide the struct name, e.g. #struct-add leave-request.",
-  "tstruct-edit": "Please provide the struct name and record ID, e.g. #tstruct-edit leave-request 42.",
-  "ts-edit": "Please provide the struct name and record ID, e.g. #ts-edit leave-request 42.",
-  "struct-edit": "Please provide the struct name and record ID, e.g. #struct-edit leave-request 42.",
-  "tstruct-delete": "Please provide the struct name and record ID, e.g. #tstruct-delete leave-request 42.",
-  "ts-delete": "Please provide the struct name and record ID, e.g. #ts-delete leave-request 42.",
-  "struct-delete": "Please provide the struct name and record ID, e.g. #struct-delete leave-request 42.",
   lookups: "Type #lookups to see the org's config lists (branches, departments, etc.).",
   "cfg-lookups": "Type #cfg-lookups to see the org's config lists (branches, departments, etc.).",
 };
