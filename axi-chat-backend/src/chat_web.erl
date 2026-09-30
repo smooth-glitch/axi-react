@@ -1138,6 +1138,9 @@ handle_line(Socket, Name, "/setavatar " ++ Url0) ->
                 io_lib:format("Avatar must be an uploaded /uploads/ file or an https:// link (max ~p characters)",
                               [?MAX_AVATAR_URL_LEN]))
     end;
+handle_line(_Socket, Name, "/removeavatar") ->
+    chat_store:clear_avatar(Name),
+    chat_room:broadcast_profile(Name);
 handle_line(Socket, Name, "/setstatus " ++ Status0) ->
     Status = string:trim(Status0),
     case length(Status) =< ?MAX_STATUS_LEN andalso not has_control(Status) of

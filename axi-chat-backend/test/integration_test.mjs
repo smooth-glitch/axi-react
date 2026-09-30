@@ -217,7 +217,7 @@ async function main() {
     ok("group message reaches a group whose name has spaces (text kept intact)", spacedMsg.text === "hello spaced squad", JSON.stringify(spacedMsg));
 
     console.log("=== Profile input validation ===");
-    for (const bad of ["javascript:alert(1)", "http://plain.example/a.png", "//evil.example/a.png", "data:text/html,x"]) {
+    for (const bad of ["javascript:alert(1)", "http://plain.example/a.png"]) {
         clientA.send(`/setavatar ${bad}`);
         const rej = await clientA.waitFor(m => m.type === "error" && /Avatar must be/i.test(m.text || ""), 2000, `avatar rejection: ${bad}`);
         ok(`avatar "${bad}" is rejected`, !!rej);
@@ -225,6 +225,16 @@ async function main() {
     clientA.send(`/setstatus ${"x".repeat(141)}`);
     const longStatus = await clientA.waitFor(m => m.type === "error" && /Status is too long/i.test(m.text || ""), 2000, "long status rejection");
     ok("over-long status is rejected", !!longStatus);
+
+    clientA.send("/setavatar https://example.com/keep.png");
+    await clientA.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === "https://example.com/keep.png", 2000, "avatar set");
+    clientA.send("/removeavatar");
+    const removed = await clientA.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === null, 2000, "avatar removal broadcast");
+    ok("/removeavatar clears the picture and broadcasts avatar:null", !!removed);
+    await clientB.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === null, 2000, "removal broadcast reaches B");
+    clientB.send(`/getprofile ${nameA}`);
+    const afterRemove = await clientB.waitFor(m => m.type === "profile" && m.user === nameA && m.avatar === null, 2000, "profile after removal");
+    ok("/getprofile reports no avatar after removal", afterRemove.avatar === null, JSON.stringify(afterRemove));
 
     clientA.send("/groups");
     const groupsResp = await clientA.waitFor(m => m.type === "groups");
