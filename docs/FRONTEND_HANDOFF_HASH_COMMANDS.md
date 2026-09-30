@@ -27,10 +27,8 @@ The menu and the help modal show only the commands in `FRIENDLY_COMMAND_NAMES`
 | Profile | `#me` |
 | People | `#associates` · `#find <query>` · `#connect <user>` · `#disconnect <user>` · `#requests [status]` · `#accept <id>` · `#reject <id>` |
 | Cards | `#remind <text>` |
+| T-Struct | `#tstruct <name>` (aliases `#ts`, `#struct`) · `#tstruct-add <name>` |
 | Help | `#help [command]` |
-
-`#tstruct <name>` (aliases `#ts`, `#struct`) and `#tstruct-add / -edit / -delete` are
-deliberately not in the menu list but must keep working (section 3).
 
 **Removed everywhere (backend + catalog): `#gif`, `#sticker`, `#status`, `#avatar`,
 `#cards`, `#delete*`, `#react*`, `#read`, `#markread`, `#dismiss`, `#ignore`,
@@ -105,6 +103,19 @@ as `hint`); `#dm`/`#profile`/`#connect`… → online users; group args → the 
 groups; `#host` → department hosts. Suggestions are empty for free-text arguments
 (`kind:"text"`).
 
+**Two bugs in `Composer.jsx` that stop `#tstruct` (and multi-word names) from listing today**
+(the server side is verified end to end: listing, paging, multi-word captions):
+1. `const argIndex = parts.length - 2` counts *words*. For `#tstruct Leave Re` that gives
+   argument index 1, which doesn't exist, so the menu closes. For arguments that take a
+   multi-word name (`tstruct*` name, group, host) the argument index and `currentToken`
+   must come from the server reply (`event.arg.index`, `event.token`), not from splitting on
+   spaces. Simplest: always send `/cmdcomplete` with the full text and let the reply decide.
+2. `setShowCmdMenu(locals.length > 0)` hides the menu when there are no *local* suggestions
+   (there are none for tstructs), and the `cmd_suggestions` handler only calls
+   `setArgSuggestions` — it never re-opens the menu. In that handler also call
+   `setShowCmdMenu(true)` when `items.length > 0`, and set `currentArgSpec` from `event.arg`.
+   Also handle an empty `items` reply by clearing the stale list.
+
 Note: `computeLocalArgSuggestions` (instant local suggestions) will not know about
 paging. Either drop it for `phrase`-style args (tstruct/group/host) or only use it as
 a placeholder until the server reply arrives.
@@ -119,8 +130,6 @@ Names with spaces now work end to end. Do **not** split these on whitespace your
 |---|---|
 | `#tstruct Leave Request` | whole rest of the line is the name (caption or technical name, any case) |
 | `#tstruct-add Leave Request` | same |
-| `#tstruct-edit Leave Request 12` | last word = record id, everything before = name |
-| `#tstruct-delete Leave Request 12` | same |
 | `#creategroup design team` | whole rest = group name (max 32 chars) |
 | `#leavegroup design team` · `#historygroup design team` | whole rest |
 | `#addmember design team bob` | last word = user, before it = group |
@@ -211,8 +220,8 @@ usage line), `invalid_encoding`, `not_allowed`, `internal`.
 1. Type `#` → only the ~27 friendly commands appear; no gif/sticker/react/delete/etc.
 2. `#tstruct ` → forms listed with a pager; page through; type to filter; pick one
    with a multi-word caption → viewer opens.
-3. `#tstruct Leave Request` typed by hand (any case) → viewer opens; `#tstruct-edit
-   Leave Request 12` → edit form for record 12.
+3. `#tstruct Leave Request` typed by hand (any case) → viewer opens; each
+   record in the viewer has Edit / Delete buttons (delete asks for confirmation first).
 4. `#creategroup design team` → group "design team" appears; `#groupmsg design team
    hi` posts to it; `#creategroup design` afterwards → "too close" error.
 5. Second user: `#addmember design team carol` as non-admin → error toast, no local

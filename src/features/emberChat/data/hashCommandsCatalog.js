@@ -446,32 +446,6 @@ export const DEFAULT_COMMANDS_CATALOG = [
     requires: "none",
   },
   {
-    name: "tstruct-edit",
-    aliases: ["ts-edit", "struct-edit"],
-    category: "lookup",
-    summary: "Edit your own record in a lite T-Struct",
-    usage: "#tstruct-edit <name> <submissionId>",
-    args: [
-      { name: "name", type: "word", required: true },
-      { name: "submissionId", type: "msgid", required: true },
-    ],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "tstruct-delete",
-    aliases: ["ts-delete", "struct-delete"],
-    category: "lookup",
-    summary: "Delete your own record from a lite T-Struct",
-    usage: "#tstruct-delete <name> <submissionId>",
-    args: [
-      { name: "name", type: "word", required: true },
-      { name: "submissionId", type: "msgid", required: true },
-    ],
-    available: true,
-    requires: "none",
-  },
-  {
     name: "lookups",
     aliases: ["cfg-lookups"],
     category: "lookup",
@@ -509,6 +483,7 @@ export const FRIENDLY_COMMAND_NAMES = new Set([
   "me",
   "associates", "find", "connect", "disconnect", "requests", "accept", "reject",
   "notifications", "remind",
+  "tstruct", "tstruct-add",
   "help",
 ]);
 

@@ -143,8 +143,8 @@ team") and host names may contain spaces. While the user types one, `token` is t
 whole name typed so far (`"Leave Re"`), not just the last word; the argument
 advances only once a complete known name is followed by a space. `#tstruct` accepts
 the caption or the technical name, in any letter case. The last word of
-`#tstruct-edit` / `#tstruct-delete` is the record id, and the last word of
-`#addmember` is the user.
+`#addmember` is the user. (`#tstruct-edit` / `#tstruct-delete` no longer exist: the viewer's
+Edit / Delete buttons call `/sd tstruct.user.open` with `editRecordId` and `/sd submissions.delete`.)
 
 **Groups.** Whoever creates a group is its admin; only they can `#addmember`
 (everyone else gets a `not_allowed` error).

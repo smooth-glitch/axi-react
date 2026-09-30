@@ -124,6 +124,7 @@ class Client {
     hash(typed, rest = "", canon = typed) {
         return this.ask(`#${typed}${rest ? " " + rest : ""}`, m => m.type === "sd" && m.reqId === `#${canon}`);
     }
+    complete(obj) { const input = obj.input; return this.ask("/cmdcomplete " + JSON.stringify(obj), m => m.type === "cmd_suggestions" && m.input === input); }
     async silent(pred, ms = 500) { const n = this.inbox.length; await sleep(ms); return !this.inbox.slice(n).some(pred); }
     close() { try { this.ws.close(); } catch { /* ignore */ } }
 }
@@ -380,7 +381,7 @@ async function main() {
     m = await A.hash("submissions");
     ok("...and #submissions for the admin also sees it (admins see everyone's)", m.ok, m);
 
-    console.log("=== Lite T-Struct hash commands: #lookups / #tstruct / #tstruct-add / #tstruct-edit / #tstruct-delete ===");
+    console.log("=== Lite T-Struct hash commands: #lookups / #tstruct / #tstruct-add (edit/delete are viewer buttons -> /sd) ===");
     m = await R.hash("lookups");
     ok("#lookups returns the org lists the option builder's dropdowns use",
         m.ok && ["branches", "departments", "designations", "categories", "affiliates"].every(k => Array.isArray(m.data[k])) && m.data.categories.length > 0, m);
@@ -393,6 +394,33 @@ async function main() {
         m.ok && m.data.tstruct.name === "hashpoll" && m.data.scope === "user" && Array.isArray(m.data.submissions) && m.data.submissions.length === 0, m);
     m = await R.hash("tstruct-add", "hashpoll", "tstruct-add");
     ok("#tstruct-add opens the definition to add a record", m.ok && m.data.tstruct.name === "hashpoll", m);
+
+    console.log("=== #tstruct suggestions: listing, paging, multi-word captions ===");
+    for (let i = 1; i <= 12; i++) {
+        m = await R.sd("tstruct.user.save", { name: `tsx_${i}_${sfx}`, caption: `Test Form ${i} ${sfx}`, fields: [{ name: "q", type: "text", caption: "Q", required: false }] });
+        if (!m.ok) { ok(`(setup) structure ${i}`, false, m); break; }
+    }
+    let c = await R.complete({ input: "#tstruct ", page: 1, pageSize: 5 });
+    ok("#tstruct <nothing> lists structures, 5 per page, with paging info",
+        c.kind === "arg" && c.items.length === 5 && c.total >= 13 && c.hasMore === true && c.page === 1 && c.totalPages === Math.ceil(c.total / 5), c);
+    const p1 = c.items.map(i => i.value);
+    c = await R.complete({ input: "#tstruct ", page: 2, pageSize: 5 });
+    ok("page 2 is a different set", c.page === 2 && c.items.length === 5 && c.items.every(i => !p1.includes(i.value)), c.items);
+    c = await R.complete({ input: "#tstruct ", page: 99, pageSize: 5 });
+    ok("a page past the end is clamped to the last page", c.page === c.totalPages && c.hasMore === false && c.items.length >= 1, c);
+    c = await R.complete({ input: "#tstruct Test Form 1" });
+    ok("typing a multi-word caption filters the list (the whole phrase is the token)",
+        c.kind === "arg" && c.token === "Test Form 1" && c.items.length >= 1 && c.items.every(i => i.value.startsWith("Test Form 1")), c);
+    c = await R.complete({ input: "#tstruct hash", page: 1 });
+    ok("...and matching by technical name works too", c.items.some(i => i.hint === "hashpoll"), c.items);
+    m = await R.hash("tstruct", `Test Form 3 ${sfx}`);
+    ok("#tstruct opens a structure by its multi-word caption", m.ok && m.data.tstruct.name === `tsx_3_${sfx}`, m);
+    m = await R.hash("tstruct", `test form 3 ${sfx}`);
+    ok("...in any letter case", m.ok && m.data.tstruct.name === `tsx_3_${sfx}`, m);
+    c = await R.complete({ input: "#tstruct-edit Test Form 3 " });
+    ok("#tstruct-edit no longer exists in the # layer", c.kind === "none", c);
+    c = await S.complete({ input: "#tstruct ", pageSize: 25 });
+    ok("another user sees user-made structures too", c.kind === "arg" && c.total >= 13, c.total);
     m = await R.hash("tstruct", "no_such_struct");
     ok("#tstruct for an unknown structure -> not_found", !m.ok && m.error.code === "not_found", m);
     m = await R.sd("tstruct.user.submit", { name: "hashpoll", values: { q: "lunch?" } });
@@ -402,16 +430,16 @@ async function main() {
     ok("#tstruct now lists ravi's own record", m.ok && m.data.submissions.some(x => x.id === pollId), m);
     m = await A.hash("tstruct", "hashpoll");
     ok("...but only YOUR records: the admin sees the definition, not ravi's record", m.ok && m.data.tstruct.name === "hashpoll" && !m.data.submissions.some(x => x.id === pollId), m);
-    m = await R.hash("tstruct-edit", `hashpoll ${pollId}`, "tstruct-edit");
-    ok("#tstruct-edit passes the record id through for the editor", m.ok && m.data.editRecordId === pollId && m.data.tstruct.name === "hashpoll", m);
-    m = await R.hash("tstruct-delete", `hashpoll ${pollId}`, "tstruct-delete");
-    ok("#tstruct-delete by the author deletes the record", m.ok && m.data.deleted === true, m);
+    m = await R.sd("tstruct.user.open", { name: "hashpoll", editRecordId: pollId });
+    ok("viewer Edit button (/sd tstruct.user.open + editRecordId) passes the record id through", m.ok && m.data.editRecordId === pollId && m.data.tstruct.name === "hashpoll", m);
+    m = await R.sd("submissions.delete", { id: pollId });
+    ok("viewer Delete button (/sd submissions.delete) by the author deletes the record", m.ok && m.data.deleted === true, m);
     m = await R.hash("tstruct", "hashpoll");
     ok("...and it is gone from #tstruct", m.ok && m.data.submissions.length === 0, m);
     m = await R.sd("tstruct.user.submit", { name: "hashpoll", values: { q: "again" } });
     const pollId2 = m.data?.submission?.id;
-    m = await A.hash("tstruct-delete", `hashpoll ${pollId2}`, "tstruct-delete");
-    ok("#tstruct-delete of someone else's record is refused (author only)", !m.ok && m.error.code === "forbidden", m);
+    m = await A.sd("submissions.delete", { id: pollId2 });
+    ok("deleting someone else's record is refused (author only)", !m.ok && m.error.code === "forbidden", m);
     m = await R.sd("tstruct.user.delete", { name: "hashpoll" });
     ok("(cleanup) ravi deletes the structure", m.ok, m);
 
