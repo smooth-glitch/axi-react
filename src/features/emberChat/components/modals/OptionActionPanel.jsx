@@ -50,10 +50,10 @@ function Download({ option, token }) {
 function Upload({ token }) {
   const [state, setState] = useState({ status: "idle" });
   const [dl, setDl] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef(null);
 
-  const pick = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow choosing the same file again
+  const processFile = async (file) => {
     if (!file) return;
     setState({ status: "uploading", name: file.name });
     try {
@@ -62,6 +62,20 @@ function Upload({ token }) {
     } catch (err) {
       setState({ status: "error", message: err.message });
     }
+  };
+
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow choosing the same file again
+    processFile(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (state.status === "uploading") return;
+    const file = e.dataTransfer.files?.[0];
+    processFile(file);
   };
 
   const back = async () => {
@@ -75,20 +89,97 @@ function Upload({ token }) {
   };
 
   return (
-    <>
-      <p className="section-note">Choose a file to upload (up to {MAX_UPLOAD_MB} MB).</p>
-      <input type="file" onChange={pick} disabled={state.status === "uploading"} data-testid="option-upload-input" />
-      {state.status === "uploading" && <p className="section-note">Uploading {state.name}…</p>}
-      {state.status === "error" && <div className="sandesh-alert sandesh-alert-danger" style={{ marginTop: 10 }}>{state.message}</div>}
-      {state.status === "done" && (
-        <div className="sandesh-alert sandesh-alert-success" style={{ marginTop: 10, textAlign: "left" }}>
-          Uploaded <strong>{state.meta.name}</strong> ({Math.max(1, Math.round(state.meta.size / 1024))} KB).
-          <div>File id: <code data-testid="option-upload-id">{state.meta.id}</code></div>
-          <button type="button" className="sandesh-btn-link" onClick={back}>Download it back</button>
-          {dl && <div>{dl}</div>}
+    <div className="sandesh-upload-wrapper">
+      <div
+        className={`sandesh-upload-dropzone ${dragOver ? "drag-over" : ""} ${state.status === "uploading" ? "is-uploading" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (state.status !== "uploading") setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        onClick={() => {
+          if (state.status !== "uploading") inputRef.current?.click();
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          onChange={pick}
+          disabled={state.status === "uploading"}
+          data-testid="option-upload-input"
+          style={{ display: "none" }}
+        />
+
+        <div className="sandesh-upload-icon-circle">
+          <span className="material-icons">
+            {state.status === "uploading" ? "sync" : "cloud_upload"}
+          </span>
+        </div>
+
+        <div className="sandesh-upload-text-group">
+          <h4 className="sandesh-upload-headline">
+            {state.status === "uploading"
+              ? `Uploading ${state.name}…`
+              : dragOver
+              ? "Drop file to upload"
+              : "Choose a file to upload"}
+          </h4>
+          <p className="sandesh-upload-hint">
+            Drag and drop your file here, or click below (up to {MAX_UPLOAD_MB} MB)
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="sandesh-btn-choose-file"
+          disabled={state.status === "uploading"}
+          onClick={(e) => {
+            e.stopPropagation();
+            inputRef.current?.click();
+          }}
+        >
+          <span className="material-icons">folder_open</span>
+          <span>{state.status === "uploading" ? "Uploading…" : "Choose file"}</span>
+        </button>
+
+        {state.status === "uploading" && (
+          <div className="sandesh-upload-progress-bar">
+            <div className="sandesh-upload-progress-fill" />
+          </div>
+        )}
+      </div>
+
+      {state.status === "error" && (
+        <div className="sandesh-alert sandesh-alert-danger" style={{ marginTop: 14 }}>
+          <span className="material-icons" style={{ fontSize: 18 }}>error_outline</span>
+          <span>{state.message}</span>
         </div>
       )}
-    </>
+
+      {state.status === "done" && (
+        <div className="sandesh-alert sandesh-alert-success sandesh-upload-success-card" style={{ marginTop: 14 }}>
+          <div className="upload-success-header">
+            <span className="material-icons upload-success-check">check_circle</span>
+            <div>
+              <strong>{state.meta.name}</strong>
+              <div className="upload-file-meta-row">
+                <span>{Math.max(1, Math.round(state.meta.size / 1024))} KB</span>
+                <span className="meta-bullet">•</span>
+                <span>ID: <code data-testid="option-upload-id">{state.meta.id}</code></span>
+              </div>
+            </div>
+          </div>
+          <div className="upload-success-actions">
+            <button type="button" className="sandesh-btn-link" onClick={back}>
+              <span className="material-icons" style={{ fontSize: 16 }}>download</span>
+              <span>Download it back</span>
+            </button>
+            {dl && <span className="dl-status-msg">{dl}</span>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
