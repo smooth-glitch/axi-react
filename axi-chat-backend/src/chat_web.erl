@@ -18,12 +18,20 @@
 -include_lib("kernel/include/logger.hrl").
 
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
--define(MAX_UPLOAD_SIZE, 8 * 1024 * 1024).
+-define(MAX_UPLOAD_SIZE, 8 * 1024 * 1024).          %% images and voice notes
+-define(MAX_DOC_SIZE, 20 * 1024 * 1024).            %% documents
+-define(MAX_VIDEO_SIZE, 25 * 1024 * 1024).          %% video; also the most a request body may carry
+-define(MAX_BODY_SIZE, ?MAX_VIDEO_SIZE).
+-define(DOCX, "application/vnd.openxmlformats-officedocument.wordprocessingml.document").
+-define(XLSX, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").
+-define(PPTX, "application/vnd.openxmlformats-officedocument.presentationml.presentation").
 -define(MAX_AVATAR_URL_LEN, 300).
 -define(MAX_STATUS_LEN, 140).
 -define(DRAIN_CEILING, 32 * 1024 * 1024).
 -define(ALLOWED_UPLOAD_TYPES, ["image/png", "image/jpeg", "image/gif", "image/webp",
-                                "audio/webm", "audio/ogg", "audio/mp4"]).
+                                "audio/webm", "audio/ogg", "audio/mp4",
+                                "video/mp4", "video/webm", "video/quicktime",
+                                "application/pdf", ?DOCX, ?XLSX, ?PPTX, "text/plain"]).
 
 start(Socket) ->
     Pid = spawn(fun() -> wait_for_socket(Socket) end),
@@ -186,6 +194,8 @@ respond(Socket, Code, Reason, ContentType, Body) ->
             %% tells it not to sniff the body and guess at executing it as
             %% something else (relevant to /uploads/*, harmless elsewhere).
             "X-Content-Type-Options: nosniff\r\n",
+            %% Documents are downloaded, never rendered in the page's own origin.
+            case is_document_type(ContentType) of true -> "Content-Disposition: attachment\r\n"; false -> "" end,
             %% This app changes several times a day during the demo push --
             %% no-cache forces the browser to revalidate every request
             %% instead of silently serving a stale index.html/JS from
@@ -232,13 +242,13 @@ handle_upload(Socket, Headers, BodyStart) ->
                     case read_body(Socket, Headers, BodyStart) of
                         {ok, Body} ->
                             case find_file_part(Body, Boundary) of
-                                {ok, _Filename, PartContentType, Data} ->
-                                    store_upload(Socket, PartContentType, Data);
+                                {ok, Filename, PartContentType, Data} ->
+                                    store_upload(Socket, PartContentType, Data, Filename);
                                 error ->
                                     respond_json_error(Socket, 400, "No file found in upload")
                             end;
                         {error, too_large} ->
-                            respond_json_error(Socket, 413, "File too large (max 8 MB)");
+                            respond_json_error(Socket, 413, "File too large (max 25 MB)");
                         {error, _} ->
                             respond_json_error(Socket, 400, "Bad request")
                     end;
@@ -269,9 +279,9 @@ read_body(Socket, Headers, BodyStart) ->
     case maps:find("content-length", Headers) of
         {ok, LenStr} ->
             case string:to_integer(LenStr) of
-                {Len, []} when Len >= 0, Len =< ?MAX_UPLOAD_SIZE ->
+                {Len, []} when Len >= 0, Len =< ?MAX_BODY_SIZE ->
                     read_body_bytes(Socket, BodyStart, Len);
-                {Len, []} when Len > ?MAX_UPLOAD_SIZE ->
+                {Len, []} when Len > ?MAX_BODY_SIZE ->
                     %% Drain the rejected body (bounded) before responding,
                     %% rather than closing out from under a client still
                     %% mid-upload -- that closes the TCP connection with data
@@ -390,7 +400,7 @@ extract_disposition_field(DispositionValue, Field) ->
             end
     end.
 
-store_upload(Socket, ContentType, Data) ->
+store_upload(Socket, ContentType, Data, Filename) ->
     %% MediaRecorder's blob.type (voice notes) commonly carries a codec
     %% parameter, e.g. "audio/webm;codecs=opus" -- strip it before comparing
     %% against the whitelist. Harmless for image uploads, which never have one.
@@ -398,13 +408,15 @@ store_upload(Socket, ContentType, Data) ->
     NormalizedType = string:trim(hd(string:split(Trimmed, ";"))),
     case lists:member(NormalizedType, ?ALLOWED_UPLOAD_TYPES) of
         false ->
-            respond_json_error(Socket, 415, "Only images or voice notes are allowed");
+            respond_json_error(Socket, 415, "Only images, voice notes, video, PDF, Office documents or text files are allowed");
         true ->
+            Limit = type_limit(NormalizedType),
             case byte_size(Data) of
                 0 ->
                     respond_json_error(Socket, 400, "Empty file");
-                Size when Size > ?MAX_UPLOAD_SIZE ->
-                    respond_json_error(Socket, 413, "File too large (max 8 MB)");
+                Size when Size > Limit ->
+                    respond_json_error(Socket, 413, lists:flatten(io_lib:format("File too large (max ~p MB)",
+                                                                    [Limit div (1024 * 1024)])));
                 _ ->
                     %% The declared Content-Type is whatever the client claimed --
                     %% never trusted alone. Check the file's actual magic bytes
@@ -414,12 +426,12 @@ store_upload(Socket, ContentType, Data) ->
                         false ->
                             respond_json_error(Socket, 415, "File content doesn't match its declared type");
                         true ->
-                            store_upload_bytes(Socket, NormalizedType, Data)
+                            store_upload_bytes(Socket, NormalizedType, Data, Filename)
                     end
             end
     end.
 
-store_upload_bytes(Socket, NormalizedType, Data) ->
+store_upload_bytes(Socket, NormalizedType, Data, Filename) ->
     Ext = extension_for(NormalizedType),
     RandomName = random_hex(24) ++ Ext,
     UploadsDir = uploads_dir(),
@@ -427,7 +439,8 @@ store_upload_bytes(Socket, NormalizedType, Data) ->
     Path = filename:join(UploadsDir, RandomName),
     ok = file:write_file(Path, Data),
     ?LOG_DEBUG("stored upload ~s (~p bytes, ~s)", [RandomName, byte_size(Data), NormalizedType]),
-    Json = "{\"url\":\"/uploads/" ++ RandomName ++ "\"}",
+    Json = "{\"url\":\"/uploads/" ++ RandomName ++ "\",\"type\":\"" ++ NormalizedType ++ "\",\"size\":"
+        ++ integer_to_list(byte_size(Data)) ++ ",\"name\":\"" ++ json_escape(clean_upload_name(Filename)) ++ "\"}",
     respond(Socket, 200, "OK", "application/json", list_to_binary(Json)).
 
 %% Magic-byte signature check -- the first few bytes of each format are
@@ -449,7 +462,33 @@ matches_signature("audio/ogg", _) -> false;
 %% "ftyp" -- the size varies per file, so only the type tag itself is fixed.
 matches_signature("audio/mp4", <<_Size:32, "ftyp", _/binary>>) -> true;
 matches_signature("audio/mp4", _) -> false;
+matches_signature("video/mp4", <<_Size:32, "ftyp", _/binary>>) -> true;
+matches_signature("video/mp4", _) -> false;
+matches_signature("video/quicktime", <<_Size:32, "ftyp", _/binary>>) -> true;
+matches_signature("video/quicktime", _) -> false;
+matches_signature("video/webm", <<16#1A, 16#45, 16#DF, 16#A3, _/binary>>) -> true;
+matches_signature("video/webm", _) -> false;
+matches_signature("application/pdf", <<"%PDF-", _/binary>>) -> true;
+matches_signature("application/pdf", _) -> false;
+%% Office files are zip archives ("PK\3\4").
+matches_signature(T, <<"PK", 3, 4, _/binary>>) when T =:= ?DOCX; T =:= ?XLSX; T =:= ?PPTX -> true;
+matches_signature(T, _) when T =:= ?DOCX; T =:= ?XLSX; T =:= ?PPTX -> false;
+%% Plain text: valid UTF-8 with no NUL bytes (a NUL means it's really a binary file).
+matches_signature("text/plain", Data) ->
+    binary:match(Data, <<0>>) =:= nomatch andalso unicode:characters_to_binary(Data, utf8, utf8) =:= Data;
 matches_signature(_, _) -> false.
+
+type_limit("video/" ++ _) -> ?MAX_VIDEO_SIZE;
+type_limit(T) when T =:= "application/pdf"; T =:= ?DOCX; T =:= ?XLSX; T =:= ?PPTX; T =:= "text/plain" -> ?MAX_DOC_SIZE;
+type_limit(_) -> ?MAX_UPLOAD_SIZE.
+
+%% The client's file name, for display only (the stored name is random): no path, no control characters or
+%% quotes, at most 100 characters.
+clean_upload_name(undefined) -> "";
+clean_upload_name(Name) ->
+    Base = lists:last(string:tokens(Name, "/\\")),
+    Clean = [C || C <- Base, C >= 32, C =/= 127, C =/= $", C =/= $\\],
+    lists:sublist(Clean, 100).
 
 extension_for("image/png") -> ".png";
 extension_for("image/jpeg") -> ".jpg";
@@ -457,7 +496,15 @@ extension_for("image/gif") -> ".gif";
 extension_for("image/webp") -> ".webp";
 extension_for("audio/webm") -> ".webm";
 extension_for("audio/ogg") -> ".ogg";
-extension_for("audio/mp4") -> ".m4a".
+extension_for("audio/mp4") -> ".m4a";
+extension_for("video/mp4") -> ".mp4";
+extension_for("video/webm") -> ".vwebm";
+extension_for("video/quicktime") -> ".mov";
+extension_for("application/pdf") -> ".pdf";
+extension_for(?DOCX) -> ".docx";
+extension_for(?XLSX) -> ".xlsx";
+extension_for(?PPTX) -> ".pptx";
+extension_for("text/plain") -> ".txt".
 
 random_hex(NumBytes) ->
     Bytes = crypto:strong_rand_bytes(NumBytes),
@@ -544,10 +591,21 @@ content_type_for_filename(Name) ->
         ".webm" -> "audio/webm";
         ".ogg" -> "audio/ogg";
         ".m4a" -> "audio/mp4";
+        ".mp4" -> "video/mp4";
+        ".vwebm" -> "video/webm";
+        ".mov" -> "video/quicktime";
+        ".pdf" -> "application/pdf";
+        ".docx" -> ?DOCX;
+        ".xlsx" -> ?XLSX;
+        ".pptx" -> ?PPTX;
+        ".txt" -> "text/plain; charset=utf-8";
         ".json" -> "application/json";
         ".js" -> "application/javascript";
         _ -> "application/octet-stream"
     end.
+
+is_document_type(T) ->
+    lists:any(fun(D) -> lists:prefix(D, T) end, ["application/pdf", ?DOCX, ?XLSX, ?PPTX, "text/plain"]).
 
 respond_json_error(Socket, Code, Message) ->
     Json = "{\"error\":\"" ++ json_escape(Message) ++ "\"}",
@@ -856,6 +914,30 @@ ws_loop(Socket, Name, Buf) ->
                 {"type", {str, "deleted"}}, {"scope", {str, "global"}},
                 {"messageId", {raw, integer_to_list(MessageId)}}])),
             ws_loop(Socket, Name, Buf);
+        {edited, MessageId, Text, EditedTs} ->
+            ws_send(Socket, json_obj2([
+                {"type", {str, "edited"}}, {"scope", {str, "global"}},
+                {"messageId", {raw, integer_to_list(MessageId)}}, {"text", {str, Text}},
+                {"editedTs", {raw, integer_to_list(EditedTs)}}])),
+            ws_loop(Socket, Name, Buf);
+        {dm_edited, MessageId, Text, EditedTs, UserA, UserB} ->
+            ws_send(Socket, json_obj2([
+                {"type", {str, "dm_edited"}},
+                {"messageId", {raw, integer_to_list(MessageId)}}, {"text", {str, Text}},
+                {"editedTs", {raw, integer_to_list(EditedTs)}},
+                {"userA", {str, UserA}}, {"userB", {str, UserB}}])),
+            ws_loop(Socket, Name, Buf);
+        {group_edited, GroupName, MessageId, Text, EditedTs} ->
+            ws_send(Socket, json_obj2([
+                {"type", {str, "group_edited"}}, {"group", {str, GroupName}},
+                {"messageId", {raw, integer_to_list(MessageId)}}, {"text", {str, Text}},
+                {"editedTs", {raw, integer_to_list(EditedTs)}}])),
+            ws_loop(Socket, Name, Buf);
+        {edit_denied, MessageId, Reason} ->
+            ws_send(Socket, json_obj2([
+                {"type", {str, "edit_denied"}}, {"messageId", {raw, integer_to_list(MessageId)}},
+                {"reason", {str, atom_to_list(Reason)}}])),
+            ws_loop(Socket, Name, Buf);
         {delete_denied, MessageId, Reason} ->
             ws_send(Socket, json_obj2([
                 {"type", {str, "delete_denied"}}, {"messageId", {raw, integer_to_list(MessageId)}},
@@ -1083,7 +1165,7 @@ handle_line(Socket, Name, "/conversations") ->
                  {"with", {str, Other}}, {"id", {raw, integer_to_list(Id)}},
                  {"ts", {raw, integer_to_list(Ts)}}, {"from", {str, From}},
                  {"text", {str, case Deleted of true -> ""; false -> Text end}}])
-             || {Other, {Id, Ts, From, Text, _P, _R, _Pr, _Rt, Deleted}} <- chat_store:list_dm_conversations(Name)],
+             || {Other, {Id, Ts, From, Text, _P, _R, _Pr, _Rt, Deleted, _E}} <- chat_store:list_dm_conversations(Name)],
     ws_send(Socket, json_obj2([{"type", {str, "conversations"}},
                                {"list", {raw, "[" ++ string:join(Items, ",") ++ "]"}}]));
 handle_line(Socket, Name, "/history " ++ Rest) ->
@@ -1199,6 +1281,46 @@ handle_line(_Socket, Name, "/delete " ++ Rest) ->
             with_int(MsgIdStr, fun(Id) -> chat_groups:delete(GroupName, Id, Name) end);
         _ ->
             ok
+    end;
+%% /edit global <id> <text> | /edit dm <user> <id> <text> | /edit group <group> <id> <text>
+%% Sender only, within CHAT_EDIT_WINDOW_SEC (default 900 = 15 min) of sending. Answers arrive as
+%% {"type":"edited"|"dm_edited"|"group_edited"} events (to everyone in the conversation) or {"type":"edit_denied"}.
+handle_line(Socket, Name, "/edit " ++ Rest) ->
+    Usage = "Usage: /edit global <id> <text> | /edit dm <user> <id> <text> | /edit group <group> <id> <text>",
+    Edit = fun(IdStr, Text, Fun) ->
+               case {string:to_integer(IdStr), string:trim(Text)} of
+                   {_, ""} -> ws_send_json(Socket, "error", Usage);
+                   {_, T} when length(T) > ?MAX_MESSAGE_LEN ->
+                       ws_send_json(Socket, "error", io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
+                   {{Id, []}, T} -> Fun(Id, T);
+                   _ -> ws_send_json(Socket, "error", Usage)
+               end
+           end,
+    case string:split(Rest, " ") of
+        ["global", R2] ->
+            case string:split(R2, " ") of
+                [IdStr, Text] -> Edit(IdStr, Text, fun(Id, T) -> chat_room:edit_global(Id, Name, T) end);
+                _ -> ws_send_json(Socket, "error", Usage)
+            end;
+        ["dm", R2] ->
+            case string:split(R2, " ") of
+                [Other, R3] ->
+                    case string:split(R3, " ") of
+                        [IdStr, Text] -> Edit(IdStr, Text, fun(Id, T) -> chat_room:edit_dm(Id, Name, Other, T) end);
+                        _ -> ws_send_json(Socket, "error", Usage)
+                    end;
+                _ -> ws_send_json(Socket, "error", Usage)
+            end;
+        ["group", R2] ->
+            case split_group(R2) of
+                [GroupName, R3] ->
+                    case string:split(R3, " ") of
+                        [IdStr, Text] -> Edit(IdStr, Text, fun(Id, T) -> chat_groups:edit(GroupName, Id, Name, T) end);
+                        _ -> ws_send_json(Socket, "error", Usage)
+                    end;
+                _ -> ws_send_json(Socket, "error", Usage)
+            end;
+        _ -> ws_send_json(Socket, "error", Usage)
     end;
 handle_line(Socket, Name, "/creategroup " ++ Rest) ->
     %% Spaces are fine inside a name ("design team"); runs of spaces collapse to one.
@@ -1340,7 +1462,7 @@ handle_line(_Socket, _Name, Text) when
     Text =:= "/msg"; Text =:= "/reply"; Text =:= "/replydm"; Text =:= "/history";
     Text =:= "/typing"; Text =:= "/read"; Text =:= "/pubkey"; Text =:= "/getpubkey";
     Text =:= "/setavatar"; Text =:= "/setstatus"; Text =:= "/getprofile";
-    Text =:= "/react"; Text =:= "/delete"; Text =:= "/creategroup";
+    Text =:= "/react"; Text =:= "/delete"; Text =:= "/edit"; Text =:= "/creategroup";
     Text =:= "/addmember"; Text =:= "/leavegroup"; Text =:= "/groupmsg";
     Text =:= "/replygroup"; Text =:= "/hostmsg" ->
     ok;
@@ -1528,7 +1650,7 @@ ws_send_groups(Socket, Groups) ->
 %% Scope is "global" | "dm" | "group" | "host"; ExtraFields identify which
 %% conversation (e.g. [{"with", Username}] for a dm, [{"group", Name}] for
 %% a group, [{"host", HostKey}] for a host -- [] for global); Items are
-%% {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted}
+%% {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted, EditedTs}
 %% tuples from chat_store:load_history/1 (Preview/ReplyTo are [] if none).
 %% Ts (epoch milliseconds) is what lets the client render "Date & time"
 %% and group threads by month, per the boss's spec.
@@ -1538,9 +1660,10 @@ send_history_payload(Socket, Scope, ExtraFields, Items) ->
          {"from", {str, From}}, {"text", {str, Text}},
          {"private", {raw, bool_str(Private)}}, {"reactions", {raw, reactions_json(Reactions)}},
          {"deleted", {raw, bool_str(Deleted)}},
+         {"editedTs", {raw, case Edited of 0 -> "null"; E -> integer_to_list(E) end}},
          reply_field(ReplyTo)]
         ++ preview_fields(Preview))
-                 || {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted} <- Items],
+                 || {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted, Edited} <- Items],
     ListJson = "[" ++ string:join(ItemsJson, ",") ++ "]",
     Fields = [{"type", {str, "history"}}, {"scope", {str, Scope}}] ++
              [{K, {str, V}} || {K, V} <- ExtraFields] ++

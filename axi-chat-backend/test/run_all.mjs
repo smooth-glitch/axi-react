@@ -53,6 +53,7 @@ const SUITES = [
   { name: "connectum_catalog_test", db: 20, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "connectum_onboarding_test", db: 21, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "connectum_wizard_test", db: 22, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_FILES_DIR: path.join(os.tmpdir(), "sd-files-wizard") } },
+  { name: "connectum_chat_test", db: 25, arg: "url", env: { CHAT_RATE_LIMIT_MAX: "1000", CHAT_EDIT_WINDOW_SEC: "3" } },
   { name: "connectum_cmdx_test", db: 24, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "connectum_option_run_test", db: 23, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_PAY_WEBHOOK_SECRET: "whsecret-123" } },
   { name: "sec_impersonation_test", db: 5, arg: "url", env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_REQUIRE_SESSION: "1" } },
