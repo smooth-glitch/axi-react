@@ -24,7 +24,8 @@ export default function Composer({
   disabled = false,
   pushToast,
   userCategory = "employee",
-  options = [],
+  optionCategories = [],
+  onOpenOptionCategory,
   onOpenSubmissions,
   currentUser = null,
   onlineUsers = [],
@@ -71,7 +72,6 @@ export default function Composer({
   const audioChunksRef = useRef([]);
 
   const hasText = text.trim().length > 0;
-  const activePrompts = options;
 
   // Sync initialText if supplied externally (e.g. from #help modal)
   useEffect(() => {
@@ -610,7 +610,7 @@ export default function Composer({
           <span className="material-icons prompt-icon">bolt</span> Smart Prompts:
         </span>
         <div className="prompts-chips-scroll">
-          {activePrompts.length === 0 && (
+          {optionCategories.length === 0 && (
             <span className="section-note" style={{ padding: "0 8px" }}>
               No options set up for you yet.{" "}
               {currentUser?.isAdmin
@@ -618,19 +618,18 @@ export default function Composer({
                 : "Ask an administrator, or make your own under Org Structs → Options."}
             </span>
           )}
-          {activePrompts.map((p) => (
+          {optionCategories.map((c) => (
             <button
-              key={p.id}
+              key={c.id}
               type="button"
               className="sandesh-prompt-chip-3d"
-              onClick={() => !disabled && onOpenSmartPromptModal?.(p)}
-              title={p.type === "data_input" ? p.caption : `${p.caption} (${p.type})`}
+              onClick={() => !disabled && onOpenOptionCategory?.(c)}
+              title={c.executable === false ? `${c.label} (not wired yet)` : c.label}
               disabled={disabled}
             >
-              <span className="material-icons prompt-chip-icon">
-                {p.type === "data_input" ? "edit_note" : p.type === "download" ? "download" : p.type === "upload" ? "upload" : p.type === "pay" ? "payments" : "widgets"}
-              </span>
-              <span>{p.caption}</span>
+              <span className="material-icons prompt-chip-icon">{c.icon}</span>
+              <span>{c.label}</span>
+              <span className="prompt-chip-badge">{c.count}</span>
             </button>
           ))}
           <button

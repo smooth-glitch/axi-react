@@ -2543,6 +2543,15 @@
   transition: all 0.15s ease;
 }
 
+.prompt-chip-badge {
+  background: var(--sandesh-coral-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 9999px;
+}
+
 .sandesh-prompt-chip-3d:hover {
   background: #ffffff;
   color: var(--sandesh-coral-accent);
