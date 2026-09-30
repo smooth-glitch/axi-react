@@ -103,6 +103,19 @@ as `hint`); `#dm`/`#profile`/`#connect`… → online users; group args → the 
 groups; `#host` → department hosts. Suggestions are empty for free-text arguments
 (`kind:"text"`).
 
+**Two bugs in `Composer.jsx` that stop `#tstruct` (and multi-word names) from listing today**
+(the server side is verified end to end: listing, paging, multi-word captions):
+1. `const argIndex = parts.length - 2` counts *words*. For `#tstruct Leave Re` that gives
+   argument index 1, which doesn't exist, so the menu closes. For arguments that take a
+   multi-word name (`tstruct*` name, group, host) the argument index and `currentToken`
+   must come from the server reply (`event.arg.index`, `event.token`), not from splitting on
+   spaces. Simplest: always send `/cmdcomplete` with the full text and let the reply decide.
+2. `setShowCmdMenu(locals.length > 0)` hides the menu when there are no *local* suggestions
+   (there are none for tstructs), and the `cmd_suggestions` handler only calls
+   `setArgSuggestions` — it never re-opens the menu. In that handler also call
+   `setShowCmdMenu(true)` when `items.length > 0`, and set `currentArgSpec` from `event.arg`.
+   Also handle an empty `items` reply by clearing the stale list.
+
 Note: `computeLocalArgSuggestions` (instant local suggestions) will not know about
 paging. Either drop it for `phrase`-style args (tstruct/group/host) or only use it as
 a placeholder until the server reply arrives.
