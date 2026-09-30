@@ -23,7 +23,7 @@
 -export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_categories/0, option_categories_for/2, options_page/2, option_types/0,
          list_appconns/0, save_appconn/1, delete_appconn/1, appconn_raw/1, safe_path/1,
-         tstruct_for_user/2, submit/4, list_submissions/2,
+         tstruct_for_user/2, submit/4, list_submissions/2, search_records/2,
          update_submission/3, delete_submission/2,
          list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
          delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2, validate_applicable/1,
@@ -737,6 +737,50 @@ list_submissions(User, Args) ->
         undefined -> Subs; %% sd:subs:u:<user> is already correctly scoped
         _ -> [S || S <- Subs, can_see_submission(User, S)]
     end.
+
+%% #list: records of one structure, newest first, with text search, date range, scope and paging.
+%%   tstruct (required), q (matches any value, case-insensitive), from/to (ms since epoch), scope "mine" | "all"
+%%   ("all" = everything the caller may see), limit (1..100, default 20), offset.
+%% Looks at the newest 1000 records of the structure at most, so one call stays cheap.
+search_records(User, Args) ->
+    case sd_util:get(<<"tstruct">>, Args, undefined) of
+        T when is_binary(T), T =/= <<>> ->
+            Me = maps:get(<<"username">>, User),
+            Ids = sd_db:zrevrange("sd:subs:t:" ++ key(T), 0, 999),
+            All = [S || B <- Ids, S <- [sd_db:hget_json("sd:subs", binary_to_list(B))], is_map(S), can_see_submission(User, S)],
+            Scoped = case sd_util:get(<<"scope">>, Args, <<"all">>) of
+                         <<"mine">> -> [S || S <- All, maps:get(<<"by">>, S) =:= Me];
+                         _ -> All
+                     end,
+            Q = case sd_util:get(<<"q">>, Args, <<>>) of Qb when is_binary(Qb) -> string:lowercase(string:trim(Qb)); _ -> <<>> end,
+            From = num_arg(sd_util:get(<<"from">>, Args, undefined)),
+            To = num_arg(sd_util:get(<<"to">>, Args, undefined)),
+            Hits = [S || S <- Scoped, in_range(maps:get(<<"ts">>, S, 0), From, To), matches_text(S, Q)],
+            Limit = clamp(num_arg(sd_util:get(<<"limit">>, Args, undefined)), 1, 100, 20),
+            Offset = clamp(num_arg(sd_util:get(<<"offset">>, Args, undefined)), 0, 100000, 0),
+            Page = lists:sublist(safe_nthtail(Offset, Hits), Limit),
+            {ok, #{<<"records">> => Page, <<"total">> => length(Hits), <<"offset">> => Offset,
+                   <<"limit">> => Limit, <<"hasMore">> => Offset + length(Page) < length(Hits)}};
+        _ -> {error, invalid, <<"tstruct is required.">>}
+    end.
+
+num_arg(N) when is_integer(N) -> N;
+num_arg(N) when is_float(N) -> trunc(N);
+num_arg(_) -> undefined.
+clamp(undefined, _, _, D) -> D;
+clamp(N, Lo, Hi, _) -> max(Lo, min(Hi, N)).
+safe_nthtail(N, L) when N >= length(L) -> [];
+safe_nthtail(N, L) -> lists:nthtail(N, L).
+in_range(Ts, From, To) -> (From =:= undefined orelse Ts >= From) andalso (To =:= undefined orelse Ts =< To).
+matches_text(_, <<>>) -> true;
+matches_text(#{<<"values">> := V} = S, Q) when is_map(V) ->
+    Texts = [value_text(X) || X <- maps:values(V)] ++ [maps:get(<<"ref">>, S, <<>>)],
+    lists:any(fun(T) -> is_binary(T) andalso binary:match(string:lowercase(T), Q) =/= nomatch end, Texts);
+matches_text(_, _) -> false.
+value_text(V) when is_binary(V) -> V;
+value_text(V) when is_integer(V) -> integer_to_binary(V);
+value_text(V) when is_float(V) -> float_to_binary(V, [{decimals, 6}, compact]);
+value_text(_) -> <<>>.
 
 can_see_submission(User, Sub) ->
     Username = maps:get(<<"username">>, User),

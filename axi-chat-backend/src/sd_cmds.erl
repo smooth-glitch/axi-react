@@ -161,7 +161,7 @@ user_actions() ->
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
      <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
      <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
-     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -460,6 +460,8 @@ do(<<"tstruct.submit">>, Args, #{user := User}) ->
     end);
 do(<<"submissions.list">>, Args, #{user := User}) ->
     {ok, #{<<"submissions">> => sd_config:list_submissions(User, Args)}};
+do(<<"records.list">>, Args, #{user := User}) ->
+    sd_config:search_records(User, Args);
 do(<<"submissions.update">>, Args, #{user := User}) ->
     case maps:get(<<"id">>, Args, undefined) of
         Id when is_integer(Id) ->
