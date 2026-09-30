@@ -235,6 +235,54 @@ class SandeshSocketService {
     return this.send(`/hostmsg ${key} ${text}`);
   }
 
+  sendReply(msgId, text) {
+    return this.send(`/reply ${msgId} ${text}`);
+  }
+
+  sendReplyDM(toUser, msgId, text) {
+    const target = (toUser || '').trim().toLowerCase();
+    return this.send(`/replydm ${target} ${msgId} ${text}`);
+  }
+
+  sendReplyGroup(group, msgId, text) {
+    const target = (group || '').trim();
+    return this.send(`/replygroup ${target} ${msgId} ${text}`);
+  }
+
+  sendSetAvatar(url) {
+    const cleanUrl = (url || '').trim();
+    if (!cleanUrl) return false;
+    if (cleanUrl.startsWith('/uploads/') || cleanUrl.startsWith('https://')) {
+      return this.send(`/setavatar ${cleanUrl}`);
+    }
+    console.warn('[SandeshSocket] Invalid avatar URL (must be /uploads/... or https://):', cleanUrl);
+    return false;
+  }
+
+  sendRemoveAvatar() {
+    return this.send('/removeavatar');
+  }
+
+  sendSetStatus(status) {
+    const cleanStatus = (status || '').replace(/[\x00-\x1F\x7F]/g, '').trim().slice(0, 140);
+    return this.send(`/setstatus ${cleanStatus}`);
+  }
+
+  sendGetProfile(username) {
+    const u = (username || '').trim().toLowerCase();
+    return this.send(`/getprofile ${u}`);
+  }
+
+  sendGifSearch(query) {
+    const q = (query || '').trim();
+    return this.send(q ? `/gifsearch ${q}` : '/gifsearch');
+  }
+
+  sendStickerSearch(query) {
+    const q = (query || '').trim();
+    return this.send(q ? `/stickersearch ${q}` : '/stickersearch');
+  }
+
   sendReaction(scope, target, msgId, emoji) {
     if (scope === 'dm') {
       const u = (target || '').trim().toLowerCase();
@@ -313,6 +361,32 @@ class SandeshSocketService {
 
   sendConversations() {
     return this.send('/conversations');
+  }
+
+  // ── My Workspace Notification Feed Actions ───────────────────────────────
+
+  feedList(params = {}) {
+    return this.sd('feed.list', params);
+  }
+
+  feedSummary() {
+    return this.sd('feed.summary');
+  }
+
+  feedRead(args = {}) {
+    return this.sd('feed.read', args);
+  }
+
+  feedResolve(id) {
+    return this.sd('feed.resolve', { id });
+  }
+
+  feedDismiss(id) {
+    return this.sd('feed.dismiss', { id });
+  }
+
+  feedClear() {
+    return this.sd('feed.clear');
   }
 
   disconnect() {

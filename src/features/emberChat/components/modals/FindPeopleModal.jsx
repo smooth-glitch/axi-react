@@ -100,7 +100,7 @@ export default function FindPeopleModal({
               return (
                 <div key={u.username} className="directory-user-card">
                   <div className="directory-user-avatar-wrap">
-                    <Avatar initials={u.initials || u.name?.slice(0, 2).toUpperCase() || "US"} color={u.color || "#007aff"} />
+                    <Avatar initials={u.initials || u.name?.slice(0, 2).toUpperCase() || "US"} color={u.color || "#007aff"} imageUrl={u.avatar || u.imageUrl} />
                   </div>
 
                   <div className="directory-user-info">

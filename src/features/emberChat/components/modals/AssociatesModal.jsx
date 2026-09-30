@@ -109,7 +109,7 @@ export default function AssociatesModal({
             {filtered.map((a) => (
               <div key={a.username} className="directory-user-card">
                 <div className="directory-user-avatar-wrap">
-                  <Avatar initials={a.initials || a.name?.slice(0, 2).toUpperCase() || "AS"} color={a.color || "#34c759"} />
+                  <Avatar initials={a.initials || a.name?.slice(0, 2).toUpperCase() || "AS"} color={a.color || "#34c759"} imageUrl={a.avatar || a.imageUrl} />
                   <span className="online-beacon-dot" />
                 </div>
 

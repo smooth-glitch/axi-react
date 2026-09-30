@@ -50,6 +50,16 @@ export default function Composer({
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
   const [currentCommand, setCurrentCommand] = useState(null);
   const [currentArgSpec, setCurrentArgSpec] = useState(null);
+  const [currentArgIndex, setCurrentArgIndex] = useState(0);
+  const [cmdPagination, setCmdPagination] = useState({
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    totalPages: 1,
+    hasMore: false,
+    token: "",
+    command: "",
+  });
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -94,7 +104,20 @@ export default function Composer({
   useEffect(() => {
     const unsub = sandeshSocket.subscribe((event) => {
       if (event.type === "cmd_suggestions" && event.reqId === cmdReqIdRef.current) {
-        if (event.items && Array.isArray(event.items) && event.items.length > 0) {
+        if (event.kind === "text") {
+          // Free text: close menu
+          setShowCmdMenu(false);
+          setArgSuggestions([]);
+          return;
+        }
+
+        if (event.arg) {
+          const argIdx = typeof event.arg.index === "number" ? event.arg.index : 0;
+          setCurrentArgIndex(argIdx);
+          setCurrentArgSpec(event.arg);
+        }
+
+        if (event.items && Array.isArray(event.items)) {
           setArgSuggestions(
             event.items.map((it) => ({
               value: it.value,
@@ -103,7 +126,26 @@ export default function Composer({
               sub: it.usage || "",
             }))
           );
+          if (event.items.length > 0) {
+            setShowCmdMenu(true);
+            setCmdMenuMode("args");
+          } else {
+            setShowCmdMenu(false);
+          }
+        } else {
+          setShowCmdMenu(false);
         }
+
+        setCmdPagination({
+          page: event.page || 1,
+          pageSize: event.pageSize || 10,
+          total: event.total ?? (event.items?.length || 0),
+          totalPages: event.totalPages || 1,
+          hasMore: !!event.hasMore,
+          token: event.token ?? "",
+          command: event.command || "",
+        });
+        setSelectedCmdIndex(0);
       }
     });
     return unsub;
@@ -200,6 +242,10 @@ export default function Composer({
     (currentVal, caretPos) => {
       const trimmedStart = currentVal.trimStart();
       if (!trimmedStart.startsWith("#")) {
+        // Nothing to suggest for: drop any in-flight suggestion request so a late reply cannot
+        // re-open the menu over an empty / non-# composer.
+        cmdReqIdRef.current += 1;
+        if (cmdDebounceTimer.current) clearTimeout(cmdDebounceTimer.current);
         setShowCmdMenu(false);
         setCmdSearchQuery("");
         return;
@@ -223,8 +269,8 @@ export default function Composer({
       }
 
       // 2. Space exists: user is typing arguments!
-      const parts = before.split(/\s+/);
-      const cmdWord = parts[0].slice(1).toLowerCase();
+      const firstSpaceIdx = before.indexOf(" ");
+      const cmdWord = before.slice(1, firstSpaceIdx).toLowerCase();
       const matched = DEFAULT_COMMANDS_CATALOG.find(
         (c) => c.name === cmdWord || (c.aliases || []).includes(cmdWord)
       );
@@ -236,46 +282,78 @@ export default function Composer({
       }
 
       setCurrentCommand(matched);
-      const argIndex = parts.length - 2; // parts: ["#cmd", "arg0", "arg1", ...]
-      const currentToken = parts[parts.length - 1] || "";
-      const argSpec = matched.args ? matched.args[argIndex] : null;
 
-      if (!argSpec || argSpec.type === "text") {
-        // Free text: close menu
+      // If the command explicitly takes no arguments, close the menu
+      if (matched.args && matched.args.length === 0) {
         setShowCmdMenu(false);
         setCmdSearchQuery("");
         return;
       }
 
-      setCmdSearchQuery(currentToken);
-      setCurrentArgSpec(argSpec);
       setCmdMenuMode("args");
-      setSelectedCmdIndex(0);
 
-      // Local instant suggestions
-      const locals = computeLocalArgSuggestions(argSpec, currentToken);
+      // Reset page to 1 on input text changes
+      setCmdPagination((p) => ({
+        ...p,
+        page: 1,
+        totalPages: 1,
+        hasMore: false,
+      }));
+
+      // Immediate local suggestions placeholder if available
+      const afterCmd = before.slice(firstSpaceIdx + 1);
+      const initialArgSpec = currentArgSpec || matched.args?.[0];
+      // Always reset the list for the new text: otherwise suggestions from a previous command (or an
+      // earlier word) stay on screen until the server answers (~150 ms + round trip), and pressing
+      // Enter in that window "chooses" a stale item instead of running what was typed.
+      const locals =
+        initialArgSpec && initialArgSpec.type !== "text"
+          ? computeLocalArgSuggestions(initialArgSpec, afterCmd)
+          : [];
       setArgSuggestions(locals);
       setShowCmdMenu(locals.length > 0);
 
-      // Debounce call to backend /cmdcomplete
+      // Always debounce call to backend /cmdcomplete with the full text
       if (cmdDebounceTimer.current) {
         clearTimeout(cmdDebounceTimer.current);
       }
       cmdDebounceTimer.current = setTimeout(() => {
         cmdReqIdRef.current += 1;
         sandeshSocket.send(
-          `/cmdcomplete ${JSON.stringify({ input: before, reqId: cmdReqIdRef.current })}`
+          `/cmdcomplete ${JSON.stringify({
+            input: before,
+            page: 1,
+            pageSize: 10,
+            reqId: cmdReqIdRef.current,
+          })}`
         );
       }, 150);
     },
-    [currentUser, computeLocalArgSuggestions]
+    [currentUser, computeLocalArgSuggestions, currentArgSpec]
   );
+
+  const handlePageChange = (newPage) => {
+    const caret = textareaRef.current?.selectionEnd ?? text.length;
+    const before = text.slice(0, caret);
+    cmdReqIdRef.current += 1;
+    sandeshSocket.send(
+      `/cmdcomplete ${JSON.stringify({
+        input: before,
+        page: newPage,
+        pageSize: 10,
+        reqId: cmdReqIdRef.current,
+      })}`
+    );
+  };
 
   const handleSend = () => {
     if (!hasText || disabled) return;
     const trimmed = text.trim();
     onSend?.(trimmed);
     setText("");
+    // ignore suggestion replies that are still on their way for the text we just sent
+    cmdReqIdRef.current += 1;
+    if (cmdDebounceTimer.current) clearTimeout(cmdDebounceTimer.current);
     setShowCmdMenu(false);
     setCmdSearchQuery("");
     if (textareaRef.current) {
@@ -312,11 +390,25 @@ export default function Composer({
     const before = text.slice(0, caret);
     const after = text.slice(caret);
 
-    const parts = before.split(" ");
-    parts[parts.length - 1] = item.value;
-    const newBefore = parts.join(" ") + " ";
-    const combined = newBefore + after;
+    const token = cmdPagination.token ?? "";
+    let newBefore = "";
+    if (token && before.endsWith(token)) {
+      newBefore = before.slice(0, before.length - token.length) + item.value;
+    } else {
+      const parts = before.split(" ");
+      parts[parts.length - 1] = item.value;
+      newBefore = parts.join(" ");
+    }
 
+    const requiresNextArg =
+      currentCommand?.args &&
+      currentCommand.args.length > (currentArgIndex + 1);
+
+    if (requiresNextArg) {
+      newBefore += " ";
+    }
+
+    const combined = newBefore + after;
     setText(combined);
     setShowCmdMenu(false);
     setCmdSearchQuery("");
@@ -586,6 +678,8 @@ export default function Composer({
             onSelectArg={handleSelectArg}
             currentCommand={currentCommand}
             currentArgSpec={currentArgSpec}
+            pagination={cmdMenuMode === "args" ? cmdPagination : null}
+            onPageChange={handlePageChange}
           />
         )}
 

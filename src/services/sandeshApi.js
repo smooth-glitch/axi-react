@@ -83,6 +83,54 @@ class SandeshApiService {
     }
   }
 
+  getServerOrigin() {
+    const base = this.getBaseUrl();
+    return base.replace(/\/api\/sd\/?$/i, '');
+  }
+
+  async uploadAvatar(file) {
+    if (!file) throw new Error("No file selected.");
+    const MAX_SIZE = 8 * 1024 * 1024; // 8 MB limit per wire contract
+    if (file.size > MAX_SIZE) {
+      throw new Error("File too large. Maximum avatar size is 8 MB.");
+    }
+    const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
+    if (file.type && !validTypes.includes(file.type.toLowerCase())) {
+      throw new Error("Invalid image type. Supported formats are PNG, JPEG, GIF, and WebP.");
+    }
+
+    const fd = new FormData();
+    fd.append("file", file);
+
+    const uploadUrl = `${this.getServerOrigin()}/upload`;
+    let res;
+    try {
+      res = await fetch(uploadUrl, {
+        method: "POST",
+        body: fd,
+      });
+    } catch (err) {
+      throw new Error("Unable to connect to upload service: " + (err.message || "network error"));
+    }
+
+    if (!res.ok) {
+      let errText = `Upload failed (${res.status})`;
+      try {
+        const json = await res.json();
+        if (json.error) errText = json.error;
+      } catch {}
+      if (res.status === 400) throw new Error(errText || "Bad request / no file provided.");
+      if (res.status === 413) throw new Error("File too large. Maximum size is 8 MB.");
+      if (res.status === 415) throw new Error("Not a supported image type or file byte mismatch.");
+      if (res.status === 429) throw new Error("Upload rate limit exceeded. Please wait a moment.");
+      throw new Error(errText);
+    }
+
+    const data = await res.json();
+    if (!data.url) throw new Error("Upload succeeded but server did not return image URL.");
+    return data; // { url: "/uploads/<name>" }
+  }
+
   /**
    * Device ID generation and persistence.
    * "The every 2 weeks re-check is now per DEVICE, not per account.
@@ -360,6 +408,71 @@ class SandeshApiService {
       body: { password, code },
       token,
     });
+  }
+
+  // ── My Workspace Notification Feed (/api/sd/feed) ───────────────────────
+
+  /**
+   * GET /api/sd/feed (Bearer)
+   * { priority?, category?, unreadOnly?, limit?, before? }
+   * Returns { notifications: [item], counts: { high, medium, low, resolved, unread, total }, hasMore }
+   */
+  async getFeed(params = {}, token) {
+    const qs = new URLSearchParams();
+    if (params.priority && params.priority !== 'all') qs.set('priority', params.priority);
+    if (params.category) qs.set('category', params.category);
+    if (params.unreadOnly !== undefined) qs.set('unreadOnly', String(params.unreadOnly));
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.before !== undefined) qs.set('before', String(params.before));
+
+    const queryStr = qs.toString();
+    const endpoint = queryStr ? `feed?${queryStr}` : 'feed';
+    return this.request(endpoint, { token });
+  }
+
+  /**
+   * GET /api/sd/feed/summary (Bearer)
+   * Returns { high, medium, low, resolved, unread, total }
+   */
+  async getFeedSummary(token) {
+    return this.request('feed/summary', { token });
+  }
+
+  /**
+   * POST /api/sd/feed/read (Bearer)
+   * { ids?: string[], all?: boolean, read?: boolean }
+   * Returns { updated: number, counts }
+   */
+  async feedRead({ ids, all, read = true } = {}, token) {
+    const body = all ? { all: true } : { ids: Array.isArray(ids) ? ids : (ids ? [ids] : []) };
+    if (read === false) body.read = false;
+    return this.request('feed/read', { method: 'POST', body, token });
+  }
+
+  /**
+   * POST /api/sd/feed/resolve (Bearer)
+   * { id: string }
+   * Returns { notification, counts }
+   */
+  async feedResolve(id, token) {
+    return this.request('feed/resolve', { method: 'POST', body: { id }, token });
+  }
+
+  /**
+   * POST /api/sd/feed/dismiss (Bearer)
+   * { id: string }
+   * Returns { dismissed: true, counts }
+   */
+  async feedDismiss(id, token) {
+    return this.request('feed/dismiss', { method: 'POST', body: { id }, token });
+  }
+
+  /**
+   * POST /api/sd/feed/clear (Bearer)
+   * Returns { cleared: number, counts }
+   */
+  async feedClear(token) {
+    return this.request('feed/clear', { method: 'POST', body: {}, token });
   }
 }
 

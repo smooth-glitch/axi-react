@@ -44,7 +44,7 @@ export default function UserProfileViewModal({
       <div className="sandesh-modal-body" style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
         {/* User Hero Card */}
         <div className="profile-hero-card">
-          <Avatar initials={initials} color={color} className="large-avatar" />
+          <Avatar initials={initials} color={color} imageUrl={user.avatar || user.imageUrl} className="large-avatar" />
           <div className="profile-hero-text">
             <h4 className="profile-hero-name">{displayName}</h4>
             <span className="profile-hero-handle">@{user.username || displayName.toLowerCase()}</span>

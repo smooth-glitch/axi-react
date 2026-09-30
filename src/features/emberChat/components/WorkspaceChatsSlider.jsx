@@ -133,12 +133,12 @@ export default function WorkspaceChatsSlider({
       {/* User Status Bar */}
       <div className="wcs-user-bar">
         <div className="wcs-user-avatar">
-          <Avatar initials={me?.initials || "U"} color={me?.color || "#ff7a59"} size={34} />
+          <Avatar initials={me?.initials || "U"} color={me?.color || "#ff7a59"} size={34} imageUrl={me?.avatar || me?.imageUrl} />
           <span className="wcs-status-indicator" />
         </div>
         <div className="wcs-user-meta">
-          <div className="wcs-user-name">{me?.name || "User"}</div>
-          <div className="wcs-user-role">@{me?.username || "user"} • {me?.role || "User"}</div>
+          <div className="wcs-user-name">{me?.username || me?.name || "User"}</div>
+          <div className="wcs-user-role">{me?.role || "User"}</div>
         </div>
         <div className="wcs-live-sync-dot" title={socketStatus === "connected" ? "Live Sync Connected" : "Connecting..."}>
           <span className={`sync-dot ${socketStatus === "connected" ? "online" : "offline"}`} />
@@ -242,6 +242,7 @@ export default function WorkspaceChatsSlider({
                         (c.isHost ? "#ff7a59" : c.isGroup ? "#ff9472" : "#34c759")
                       }
                       group={c.isGroup}
+                      imageUrl={c.id === "workspace" ? me?.avatar : (c.avatar || c.imageUrl)}
                       size={40}
                     />
                     {online && <span className="wcs-online-dot" title="Online now" />}

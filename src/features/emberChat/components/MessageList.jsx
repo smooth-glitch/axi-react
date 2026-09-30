@@ -152,12 +152,12 @@ function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMe
         msg.grouped ? (
           <span className="sandesh-avatar-spacer" />
         ) : (
-          <Avatar initials={msg.initials} color={msg.color || "#ff7a59"} />
+          <Avatar initials={msg.initials} color={msg.color || "#ff7a59"} imageUrl={msg.avatar || msg.imageUrl} />
         )
       )}
 
       <div
-        className={`sandesh-bubble-3d ${isOut ? "bubble-out" : "bubble-in"}${msg.kind === "card" ? " bubble-card" : ""}`}
+        className={`sandesh-bubble-3d ${isOut ? "bubble-out" : "bubble-in"}${msg.kind === "card" ? " bubble-card" : ""}${msg.forwarded || msg.forwardedBy ? " is-forwarded" : ""}`}
         onContextMenu={(e) => {
           e.preventDefault();
           onOpenActionMenu?.(msg, { x: e.clientX, y: e.clientY });
@@ -167,11 +167,18 @@ function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMe
         onPointerLeave={cancelLongPress}
         onPointerMove={cancelLongPress}
       >
-        {/* WhatsApp-style Forwarded Indicator */}
-        {msg.forwarded && (
-          <div className="sandesh-forwarded-pill">
+        {/* Forwarded Message Header Badge with Forwarder Attribution */}
+        {(msg.forwarded || msg.forwardedBy) && (
+          <div className="sandesh-forwarded-banner">
             <span className="material-icons forwarded-icon" style={{ transform: "scaleX(-1)" }}>reply</span>
-            <span>Forwarded</span>
+            <div className="forwarded-meta">
+              <span className="forwarded-title">
+                Forwarded by <strong className="forwarder-name">{msg.forwardedBy || msg.from}</strong>
+              </span>
+              {msg.originalFrom && msg.originalFrom !== (msg.forwardedBy || msg.from) && (
+                <span className="forwarded-origin">• original from {msg.originalFrom}</span>
+              )}
+            </div>
           </div>
         )}
 
@@ -268,6 +275,53 @@ function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMe
         {/* 6. Normal Text Message */}
         {(!msg.kind || msg.kind === "text") && (
           <div className="sandesh-text-body">{msg.text}</div>
+        )}
+
+        {/* Link Preview Card */}
+        {(msg.previewUrl || msg.previewTitle) && (
+          <a
+            href={msg.previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="sandesh-link-preview-card"
+            style={{
+              display: "block",
+              marginTop: "8px",
+              background: "rgba(0, 0, 0, 0.04)",
+              borderRadius: "10px",
+              overflow: "hidden",
+              border: "1px solid rgba(0, 0, 0, 0.08)",
+              textDecoration: "none",
+              color: "inherit",
+              maxWidth: "320px",
+            }}
+          >
+            {msg.previewImage && (
+              <img
+                src={msg.previewImage}
+                alt={msg.previewTitle || "Link preview"}
+                loading="lazy"
+                style={{ width: "100%", maxHeight: "160px", objectFit: "cover", display: "block" }}
+              />
+            )}
+            <div style={{ padding: "8px 10px" }}>
+              {msg.previewTitle && (
+                <div style={{ fontWeight: 600, fontSize: "13px", marginBottom: "4px" }}>
+                  {msg.previewTitle}
+                </div>
+              )}
+              {msg.previewDescription && (
+                <div style={{ fontSize: "11px", color: "var(--sandesh-text-muted)", lineHeight: 1.3 }}>
+                  {msg.previewDescription}
+                </div>
+              )}
+              {msg.previewUrl && (
+                <div style={{ fontSize: "10px", color: "var(--sandesh-coral-accent)", marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {msg.previewUrl}
+                </div>
+              )}
+            </div>
+          </a>
         )}
 
         {/* Timestamp and Ticks */}

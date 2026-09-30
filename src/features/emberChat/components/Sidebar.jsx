@@ -15,7 +15,6 @@ export default function Sidebar({
   onNewGroup,
   onOpenAiChat,
   onOpenAdminConsole,
-  onOpenCommandsHelp,
   onOpenWorkspace,
   onSignOut,
   socketStatus,
@@ -128,27 +127,18 @@ export default function Sidebar({
         <div className="sandesh-user-glass-card">
           <div className="user-info-left" onClick={onEditProfile} role="button" tabIndex={0}>
             <div className="avatar-wrapper">
-              <Avatar initials={me.initials || "AS"} color={me.color || "#ff7a59"} />
+              <Avatar initials={me.initials || "AS"} color={me.color || "#ff7a59"} imageUrl={me.avatar || me.imageUrl} />
               <span className="online-presence-dot" title="Active (You)" />
             </div>
             <div className="user-details">
               <div className="user-name-line">
-                <span className="user-name">{me.name}</span>
+                <span className="user-name">{me.username || me.name}</span>
                 {me.isAdmin && <span className="admin-tag">Admin</span>}
               </div>
-              <span className="user-role">{me.username ? `@${me.username} • ` : ""}{me.designation || me.role}</span>
+              <span className="user-role">{me.designation || me.role}</span>
             </div>
           </div>
           <div className="user-actions-right">
-            <button
-              type="button"
-              className="sandesh-icon-btn-3d"
-              onClick={onOpenCommandsHelp}
-              title="# Commands Guide & Directory"
-              aria-label="Commands guide"
-            >
-              <span className="material-icons">terminal</span>
-            </button>
             {me.isAdmin && (
               <>
                 <button
@@ -282,6 +272,7 @@ export default function Sidebar({
                     initials={chat.id === "workspace" ? "WS" : chat.initials || chat.name[0]}
                     color={chat.id === "workspace" ? "#ff7a59" : chat.color || (chat.isHost ? "#ff7a59" : chat.isGroup ? "#ff9472" : "#f2709c")}
                     group={chat.isGroup}
+                    imageUrl={chat.id === "workspace" ? me?.avatar : (chat.avatar || chat.imageUrl)}
                   />
                   {isOnline && (
                     <span className="online-presence-dot" title="Online now" />

@@ -108,6 +108,7 @@ export default function ChatScreen({
     <main id="sandesh-main-panel" className="sandesh-main-panel-3d">
       <TopBar
         chat={chat}
+        currentUser={currentUser}
         activeView={activeView}
         onChangeView={setActiveView}
         onMenuClick={chat.id === "workspace" || chat.isWorkspace ? onToggleChatsSlider : onMenuClick}
@@ -121,6 +122,9 @@ export default function ChatScreen({
         onlineUsers={onlineUsers}
         onOpenApprovals={onOpenApprovals}
         pendingApprovalsCount={pendingApprovalsCount}
+        onToggleNotifications={onToggleNotifications}
+        notificationsOpen={notificationsOpen}
+        priorityCounts={priorityCounts}
         onSignOut={onSignOut}
       />
 
@@ -280,6 +284,7 @@ export default function ChatScreen({
         isOpen={notificationsOpen}
         onClose={onToggleNotifications}
         notifications={priorityNotifications || []}
+        counts={priorityCounts}
         onResolve={onResolveNotification}
         onMarkRead={onMarkReadNotification}
         onMarkAllRead={onMarkAllReadNotifications}

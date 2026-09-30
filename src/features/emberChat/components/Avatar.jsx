@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { sandeshApi } from "../../../services/sandeshApi.js";
+
 export default function Avatar({
   initials = "",
   color,
@@ -6,8 +9,15 @@ export default function Avatar({
   size = 40,
   className = "",
 }) {
+  const [imgError, setImgError] = useState(false);
   const pixelSize = typeof size === "number" ? `${size}px` : size;
   const cleanInitials = typeof initials === "string" ? initials.slice(0, 2).toUpperCase() : "";
+
+  const resolvedUrl = imageUrl && !imgError
+    ? (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")
+      ? imageUrl
+      : `${sandeshApi.getServerOrigin()}${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`)
+    : null;
 
   return (
     <div
@@ -30,10 +40,12 @@ export default function Avatar({
       }}
       title={cleanInitials}
     >
-      {imageUrl ? (
+      {resolvedUrl ? (
         <img
-          src={imageUrl}
+          src={resolvedUrl}
           alt={cleanInitials || "DP"}
+          loading="lazy"
+          onError={() => setImgError(true)}
           style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
         />
       ) : (

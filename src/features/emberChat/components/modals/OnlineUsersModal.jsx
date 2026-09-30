@@ -124,7 +124,7 @@ export default function OnlineUsersModal({
             {filteredUsers.map((u) => (
               <div key={u.username} className="directory-user-card">
                 <div className="directory-user-avatar-wrap">
-                  <Avatar initials={u.initials || u.name?.slice(0, 2).toUpperCase() || "US"} color={u.color || "#34c759"} />
+                  <Avatar initials={u.initials || u.name?.slice(0, 2).toUpperCase() || "US"} color={u.color || "#34c759"} imageUrl={u.avatar || u.imageUrl} />
                   {u.isOnline && <span className="online-beacon-dot" title="Online now" />}
                 </div>
 

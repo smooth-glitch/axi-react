@@ -160,6 +160,7 @@ export default function NewGroupModal({
                     <Avatar
                       initials={u.initials || u.name.slice(0, 2).toUpperCase()}
                       color={u.color || "#ff7a59"}
+                      imageUrl={u.avatar || u.imageUrl}
                     />
                     <div className="participant-info">
                       <div className="participant-name-row">

@@ -147,8 +147,8 @@ export default function CardsModal({
       </div>
 
       <div className="sandesh-modal-actions" style={{ padding: "14px 22px" }}>
-        <span style={{ fontSize: "12px", color: "var(--sandesh-text-muted)" }}>
-          Command: <code style={{ color: "var(--sandesh-coral-accent)" }}>#cards [section]</code> or <code style={{ color: "var(--sandesh-coral-accent)" }}>#remind &lt;text&gt;</code>
+        <span style={{ fontSize: "12px", color: "var(--sandesh-coral-accent)", fontWeight: 500 }}>
+          Command: <code>#remind &lt;text&gt;</code>
         </span>
         <button
           type="button"

@@ -91,7 +91,7 @@ export default function InboxModal({
                 }}
               >
                 <div className="directory-user-avatar-wrap">
-                  <Avatar initials={c.initials || c.name.slice(0, 2).toUpperCase()} color={c.color || "#34c759"} />
+                  <Avatar initials={c.initials || c.name.slice(0, 2).toUpperCase()} color={c.color || "#34c759"} imageUrl={c.avatar || c.imageUrl} />
                   {c.unread > 0 && <span className="unread-dot-badge" />}
                 </div>
 

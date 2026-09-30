@@ -269,8 +269,17 @@ async function main() {
     console.log("=== #reject and #ignore ===");
     m = await S.hash("connect", ravi);
     const req2 = m.data.request.id;
+    let sug = await R.complete({ input: "#accept " });
+    ok("#accept <nothing> suggests the pending request ids, with who/what in the hint",
+        sug.kind === "arg" && sug.arg.name === "requestId" && sug.items.some(i => i.value === String(req2) && /wants to connect/.test(i.hint)), sug);
+    sug = await R.complete({ input: "#reject " });
+    ok("#reject suggests the same pending requests", sug.items.some(i => i.value === String(req2)), sug.items);
+    sug = await S.complete({ input: "#accept " });
+    ok("...only requests waiting on YOU: the sender sees none", sug.items.length === 0, sug.items);
     m = await R.hash("reject", String(req2));
     ok("#reject", m.ok && m.data.request.status === "rejected", m);
+    sug = await R.complete({ input: "#accept " });
+    ok("a resolved request is no longer suggested", !sug.items.some(i => i.value === String(req2)), sug.items);
     m = await R.ask(`#dm ${sam} x`, x => x.type === "error" || x.type === "dm_ack");
     ok("a rejected invitation creates no link", m.type === "error" && m.code === "not_associated", m);
     m = await S.hash("connect", ravi);

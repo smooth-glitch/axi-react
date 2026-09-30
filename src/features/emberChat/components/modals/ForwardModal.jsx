@@ -228,7 +228,7 @@ export default function ForwardModal({
                     }
                   }}
                 >
-                  <Avatar initials={dest.initials} color={dest.color} />
+                  <Avatar initials={dest.initials} color={dest.color} imageUrl={dest.avatar || dest.imageUrl} />
 
                   <div className="forward-dest-info">
                     <div className="dest-name-row">
@@ -267,14 +267,14 @@ export default function ForwardModal({
         <div className="forward-action-buttons">
           <button
             type="button"
-            className="btn-secondary-3d"
+            className="sandesh-btn-secondary-3d forward-cancel-btn"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="btn-primary-3d forward-confirm-btn"
+            className="sandesh-btn-primary-3d forward-confirm-btn"
             disabled={selectedIds.length === 0}
             onClick={handleForwardSubmit}
           >

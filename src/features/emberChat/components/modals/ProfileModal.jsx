@@ -2,10 +2,14 @@ import { useState, useEffect } from "react";
 import Avatar from "../Avatar.jsx";
 import { statusPresets } from "../../data/sampleData.js";
 import { sandeshApi } from "../../../../services/sandeshApi.js";
+import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 import { Shield, KeyRound, RefreshCw, AlertTriangle, Check, Copy } from "lucide-react";
 
-export default function ProfileModal({ me, onCancel, onSave }) {
+export default function ProfileModal({ me, onCancel, onSave, onAvatarUpdated }) {
   const [status, setStatus] = useState(me.status ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(me.avatar || me.avatarUrl || "");
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
 
   // 2FA Management State
   const [mfaInfo, setMfaInfo] = useState(null);
@@ -110,6 +114,55 @@ export default function ProfileModal({ me, onCancel, onSave }) {
     setTimeout(() => setCopiedCodes(false), 2000);
   };
 
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarError("");
+    setUploadingAvatar(true);
+    try {
+      const res = await sandeshApi.uploadAvatar(file);
+      if (res?.url) {
+        const newUrl = res.url;
+        setAvatarUrl(newUrl);
+        sandeshSocket.sendSetAvatar(newUrl);
+        onAvatarUpdated?.(newUrl);
+        try {
+          const saved = localStorage.getItem("sandesh_session_user");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            localStorage.setItem(
+              "sandesh_session_user",
+              JSON.stringify({ ...parsed, avatar: newUrl })
+            );
+          }
+        } catch {}
+      } else {
+        setAvatarError(res?.error || "Failed to upload photo.");
+      }
+    } catch (err) {
+      setAvatarError(err?.message || "Error uploading image.");
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setAvatarUrl("");
+    sandeshSocket.sendRemoveAvatar();
+    onAvatarUpdated?.(null);
+    try {
+      const saved = localStorage.getItem("sandesh_session_user");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        localStorage.setItem(
+          "sandesh_session_user",
+          JSON.stringify({ ...parsed, avatar: null })
+        );
+      }
+    } catch {}
+  };
+
   return (
     <div id="ember-profile-modal" className="sandesh-modal-card-3d" style={{ maxWidth: "480px" }}>
       <div className="sandesh-modal-header">
@@ -132,40 +185,72 @@ export default function ProfileModal({ me, onCancel, onSave }) {
 
       <div className="sandesh-modal-body" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         {/* User Card */}
-        <div
-          id="ember-profile-avatar-row"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "16px",
-            background: "rgba(255,255,255,0.7)",
-            padding: "12px 16px",
-            borderRadius: "14px",
-            border: "1px solid var(--sandesh-glass-border)",
-          }}
-        >
-          <Avatar initials={me.initials} color={me.color} className="" />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--sandesh-text-main)" }}>
-              {me.name}
+        <div>
+          <div
+            id="ember-profile-avatar-row"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              background: "rgba(255,255,255,0.7)",
+              padding: "12px 16px",
+              borderRadius: "14px",
+              border: "1px solid var(--sandesh-glass-border)",
+            }}
+          >
+            <Avatar initials={me.initials} color={me.color} imageUrl={avatarUrl} size={48} className="" />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--sandesh-text-main)" }}>
+                {me.username || me.name}
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--sandesh-text-muted)" }}>
+                {me.designation || me.role}
+              </div>
             </div>
-            <div style={{ fontSize: "12px", color: "var(--sandesh-text-muted)" }}>
-              {me.designation || me.role} • @{me.username}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  className="sandesh-btn-secondary-3d"
+                  id="ember-profile-remove-photo-btn"
+                  onClick={handleRemovePhoto}
+                  style={{
+                    fontSize: "11px",
+                    padding: "6px 12px",
+                    color: "#ef4444",
+                    cursor: "pointer",
+                  }}
+                >
+                  Remove Photo
+                </button>
+              )}
+              <label
+                className="sandesh-btn-secondary-3d"
+                id="ember-profile-photo-label"
+                style={{
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                  cursor: uploadingAvatar ? "not-allowed" : "pointer",
+                  opacity: uploadingAvatar ? 0.7 : 1,
+                }}
+              >
+                {uploadingAvatar ? "Uploading..." : "Change Photo"}
+                <input
+                  type="file"
+                  id="ember-profile-photo-input"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  className="hidden"
+                  disabled={uploadingAvatar}
+                  onChange={handlePhotoSelect}
+                />
+              </label>
             </div>
           </div>
-          <label
-            className="sandesh-btn-secondary-3d"
-            id="ember-profile-photo-label"
-            style={{ fontSize: "11px", padding: "6px 12px", cursor: "pointer" }}
-          >
-            Photo
-            <input
-              type="file"
-              id="ember-profile-photo-input"
-              accept="image/png,image/jpeg,image/gif,image/webp"
-              className="hidden"
-            />
-          </label>
+          {avatarError && (
+            <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "4px", paddingLeft: "4px" }}>
+              {avatarError}
+            </div>
+          )}
         </div>
 
         {/* Status Message */}
@@ -179,10 +264,12 @@ export default function ProfileModal({ me, onCancel, onSave }) {
               id="ember-profile-status-input"
               type="text"
               className="new-group-input"
-              placeholder="What's on your mind?"
-              maxLength={80}
+              placeholder="What's on your mind? (max 140 chars)"
+              maxLength={140}
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) =>
+                setStatus(e.target.value.replace(/[\x00-\x1F\x7F]/g, "").slice(0, 140))
+              }
             />
           </div>
         </div>
@@ -386,7 +473,7 @@ export default function ProfileModal({ me, onCancel, onSave }) {
         <button
           className="sandesh-btn-primary-3d"
           id="ember-profile-save-btn"
-          onClick={() => onSave?.({ status })}
+          onClick={() => onSave?.({ status, avatar: avatarUrl })}
           type="button"
         >
           Save Changes

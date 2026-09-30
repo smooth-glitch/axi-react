@@ -31,6 +31,8 @@ export default function CommandMenuPopup({
   onSelectArg,
   currentCommand = null,
   currentArgSpec = null,
+  pagination = null,
+  onPageChange = null,
 }) {
   const listRef = useRef(null);
 
@@ -181,6 +183,69 @@ export default function CommandMenuPopup({
           })
         )}
       </div>
+
+      {pagination && pagination.totalPages > 1 && (
+        <div
+          className="cmd-menu-pagination-bar"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "8px 14px",
+            borderTop: "1px solid var(--sandesh-glass-border, rgba(0,0,0,0.08))",
+            fontSize: "11px",
+            background: "rgba(255, 255, 255, 0.8)",
+            backdropFilter: "blur(6px)",
+          }}
+        >
+          <button
+            type="button"
+            className="cmd-page-btn"
+            disabled={pagination.page <= 1}
+            onClick={(e) => {
+              e.preventDefault();
+              onPageChange?.(pagination.page - 1);
+            }}
+            style={{
+              cursor: pagination.page <= 1 ? "not-allowed" : "pointer",
+              opacity: pagination.page <= 1 ? 0.4 : 1,
+              padding: "3px 10px",
+              borderRadius: "6px",
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: "white",
+              fontWeight: "600",
+              color: "var(--sandesh-text-main)",
+            }}
+          >
+            ‹ Prev
+          </button>
+          <span className="cmd-page-info" style={{ color: "var(--sandesh-text-muted)", fontWeight: "500" }}>
+            {pagination.page} / {pagination.totalPages}
+            {pagination.total > 0 && ` • ${pagination.total} ${pagination.command === "tstruct" ? "forms" : "items"}`}
+          </span>
+          <button
+            type="button"
+            className="cmd-page-btn"
+            disabled={pagination.page >= pagination.totalPages}
+            onClick={(e) => {
+              e.preventDefault();
+              onPageChange?.(pagination.page + 1);
+            }}
+            style={{
+              cursor: pagination.page >= pagination.totalPages ? "not-allowed" : "pointer",
+              opacity: pagination.page >= pagination.totalPages ? 0.4 : 1,
+              padding: "3px 10px",
+              borderRadius: "6px",
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: "white",
+              fontWeight: "600",
+              color: "var(--sandesh-text-main)",
+            }}
+          >
+            Next ›
+          </button>
+        </div>
+      )}
     </div>
   );
 }

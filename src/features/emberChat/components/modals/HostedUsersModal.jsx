@@ -59,7 +59,7 @@ export default function HostedUsersModal({
             {hostedUsers.map((u) => (
               <div key={u.username} className="directory-user-card">
                 <div className="directory-user-avatar-wrap">
-                  <Avatar initials={u.initials || u.name?.slice(0, 2).toUpperCase() || "HU"} color={u.color || "#af52de"} />
+                  <Avatar initials={u.initials || u.name?.slice(0, 2).toUpperCase() || "HU"} color={u.color || "#af52de"} imageUrl={u.avatar || u.imageUrl} />
                 </div>
 
                 <div className="directory-user-info">
@@ -139,8 +139,8 @@ export default function HostedUsersModal({
       </div>
 
       <div className="sandesh-modal-actions" style={{ padding: "14px 22px" }}>
-        <span style={{ fontSize: "12px", color: "var(--sandesh-text-muted)" }}>
-          Command: <code style={{ color: "var(--sandesh-coral-accent)" }}>#myusers</code> or <code style={{ color: "var(--sandesh-coral-accent)" }}>#transfer &lt;user&gt; &lt;toHost&gt;</code>
+        <span style={{ fontSize: "12px", color: "var(--sandesh-coral-accent)", fontWeight: 500 }}>
+          Command: <code>#transfer &lt;user&gt; &lt;toHost&gt;</code>
         </span>
         <button
           type="button"
