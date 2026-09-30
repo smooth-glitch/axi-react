@@ -125,7 +125,29 @@ function onSend(text) {
   line, so a bare `/cmdcomplete #dm ` would lose the trailing space that means
   "now on the first argument". Max 512 bytes.
 - Suggestions come only from data the user can already see (`/list`, `/groups`,
-  `/hosts`) — this is not a directory search. Max 10 per reply (25 for commands).
+  `/hosts`, and for `#tstruct*` the structures they may open) — this is not a
+  directory search.
+
+**Pagination.** Add `"page"` (1-based, default 1) and `"pageSize"` (default 10 for
+arguments, 25 for command names; capped at 25) to the request:
+`/cmdcomplete {"input":"#tstruct ","page":2,"pageSize":10,"reqId":9}`. Every
+`command` and `arg` reply then also carries `page`, `pageSize`, `total`,
+`totalPages` and `hasMore`. An out-of-range `page` is clamped to the last page and a
+junk value falls back to the default, so the client never gets an error for paging.
+With nothing typed after the command (`"#tstruct "`) you get *every* available
+item, page by page; typing narrows the list (prefix matches first, then
+"contains") and paging restarts at page 1 — send `page:1` when the text changes.
+
+**Multi-word names.** T-Struct captions ("Leave Request"), group names ("design
+team") and host names may contain spaces. While the user types one, `token` is the
+whole name typed so far (`"Leave Re"`), not just the last word; the argument
+advances only once a complete known name is followed by a space. `#tstruct` accepts
+the caption or the technical name, in any letter case. The last word of
+`#tstruct-edit` / `#tstruct-delete` is the record id, and the last word of
+`#addmember` is the user.
+
+**Groups.** Whoever creates a group is its admin; only they can `#addmember`
+(everyone else gets a `not_allowed` error).
 
 ### `#help [command]`
 

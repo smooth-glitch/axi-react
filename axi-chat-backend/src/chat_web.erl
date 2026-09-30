@@ -672,6 +672,43 @@ validate_connect_fields(Name, Token, ArmSessionId) ->
 %% A username (or group name) with a space in it can never be addressed:
 %% "/msg a b hi" splits into user "a" + text "b hi", and "/groupmsg" splits
 %% the same way. Reject at the door instead of creating an unreachable name.
+%% "design team hello" -> ["design team", "hello"] when a group called "design team"
+%% exists (longest existing name wins); otherwise the old first-word split.
+split_group(Rest) ->
+    case chat_names:longest([{G, G} || G <- chat_groups:all_names()], Rest, true) of
+        {ok, Group, Remainder} -> [Group, Remainder];
+        none -> string:split(Rest, " ")
+    end.
+
+add_member_checked(Socket, Name, GroupName, NewMember) ->
+    %% Sandesh: in strict mode a group invite for someone outside your
+    %% own users waits for THEIR host's approval (see sd_policy).
+    case sd_policy:group_add(GroupName, Name, NewMember) of
+        {deny, Why} ->
+            ws_send_error(Socket, "not_allowed", Why);
+        {pending, View} ->
+            ws_send(Socket, binary_to_list(sd_util:jenc(#{
+                <<"type">> => <<"group_invite_pending">>,
+                <<"group">> => sd_util:b(GroupName), <<"user">> => sd_util:b(NewMember),
+                <<"request">> => View})));
+        allow ->
+            case chat_groups:add_member(GroupName, Name, NewMember) of
+                {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
+                {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
+                {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group");
+                {error, not_owner} -> ws_send_json(Socket, "error", "Only the group admin can add members");
+                {error, already_member} -> ws_send_json(Socket, "error", NewMember ++ " is already in the group");
+                {error, user_offline} -> ws_send_json(Socket, "error", NewMember ++ " isn't online right now")
+            end
+    end.
+
+has_control(Str) ->
+    lists:any(fun(C) ->
+        C < 32 orelse C =:= 127 orelse (C >= 16#80 andalso C =< 16#A0)
+            orelse (C >= 16#2000 andalso C =< 16#200F)
+            orelse (C >= 16#2028 andalso C =< 16#202F) orelse C =:= 16#3000
+    end, Str).
+
 has_whitespace_or_control(Str) ->
     lists:any(fun(C) ->
         C =< 32 orelse C =:= 127 orelse (C >= 16#80 andalso C =< 16#A0)
@@ -1109,7 +1146,9 @@ handle_line(_Socket, Name, "/react " ++ Rest) ->
             with_int(MsgIdStr, fun(Id) -> chat_room:react_global(Id, Name, Emoji) end);
         ["dm", Other, MsgIdStr, Emoji] ->
             with_int(MsgIdStr, fun(Id) -> chat_room:react_dm(Id, Name, Emoji, Other) end);
-        ["group", GroupName, MsgIdStr, Emoji] ->
+        ["group" | GroupToks] when length(GroupToks) >= 3 ->
+            {NameToks, [MsgIdStr, Emoji]} = lists:split(length(GroupToks) - 2, GroupToks),
+            GroupName = string:join(NameToks, " "),
             with_int(MsgIdStr, fun(Id) -> chat_groups:react(GroupName, Id, Name, Emoji) end);
         _ ->
             ok
@@ -1120,56 +1159,56 @@ handle_line(_Socket, Name, "/delete " ++ Rest) ->
             with_int(MsgIdStr, fun(Id) -> chat_room:delete_global(Id, Name) end);
         ["dm", Other, MsgIdStr] ->
             with_int(MsgIdStr, fun(Id) -> chat_room:delete_dm(Id, Name, Other) end);
-        ["group", GroupName, MsgIdStr] ->
+        ["group" | GroupToks] when length(GroupToks) >= 2 ->
+            {NameToks, [MsgIdStr]} = lists:split(length(GroupToks) - 1, GroupToks),
+            GroupName = string:join(NameToks, " "),
             with_int(MsgIdStr, fun(Id) -> chat_groups:delete(GroupName, Id, Name) end);
         _ ->
             ok
     end;
 handle_line(Socket, Name, "/creategroup " ++ Rest) ->
-    case string:trim(Rest) of
+    %% Spaces are fine inside a name ("design team"); runs of spaces collapse to one.
+    GroupName = string:join(string:tokens(Rest, " "), " "),
+    case GroupName of
         "" ->
             ws_send_json(Socket, "error", "Usage: /creategroup <name>");
-        GroupName when length(GroupName) > ?MAX_GROUP_NAME_LEN ->
+        _ when length(GroupName) > ?MAX_GROUP_NAME_LEN ->
             ws_send_json(Socket, "error",
                 io_lib:format("Group name too long (max ~p chars)", [?MAX_GROUP_NAME_LEN]));
-        GroupName ->
-            case has_whitespace_or_control(GroupName) of
+        _ ->
+            case has_control(GroupName) of
                 true ->
-                    ws_send_json(Socket, "error",
-                        "Group name cannot contain spaces (use e.g. design_team)");
+                    ws_send_json(Socket, "error", "Group name cannot contain control characters");
                 false ->
-                    case sd_policy:can_create_group(Name) of
-                        {false, Why} ->
-                            ws_send_error(Socket, "not_allowed", Why);
+                    case chat_names:group_conflict(GroupName, chat_groups:all_names()) of
                         true ->
-                            case chat_groups:create_group(GroupName, Name) of
-                                {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
-                                {error, exists} -> ws_send_json(Socket, "error", "A group with that name already exists")
+                            case lists:member(GroupName, chat_groups:all_names()) of
+                                true -> ws_send_json(Socket, "error", "A group with that name already exists");
+                                false -> ws_send_json(Socket, "error",
+                                             "That name is too close to an existing group's name (one starts with the other)")
+                            end;
+                        false ->
+                            case sd_policy:can_create_group(Name) of
+                                {false, Why} ->
+                                    ws_send_error(Socket, "not_allowed", Why);
+                                true ->
+                                    case chat_groups:create_group(GroupName, Name) of
+                                        {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
+                                        {error, exists} -> ws_send_json(Socket, "error", "A group with that name already exists")
+                                    end
                             end
                     end
             end
     end;
 handle_line(Socket, Name, "/addmember " ++ Rest) ->
-    case string:split(Rest, " ") of
+    case split_group(Rest) of
         [GroupName, NewMember] when NewMember =/= "" ->
-            %% Sandesh: in strict mode a group invite for someone outside your
-            %% own users waits for THEIR host's approval (see sd_policy).
-            case sd_policy:group_add(GroupName, Name, NewMember) of
-                {deny, Why} ->
-                    ws_send_error(Socket, "not_allowed", Why);
-                {pending, View} ->
-                    ws_send(Socket, binary_to_list(sd_util:jenc(#{
-                        <<"type">> => <<"group_invite_pending">>,
-                        <<"group">> => sd_util:b(GroupName), <<"user">> => sd_util:b(NewMember),
-                        <<"request">> => View})));
-                allow ->
-                    case chat_groups:add_member(GroupName, Name, NewMember) of
-                        {ok, Members} -> ws_send_group_created(Socket, GroupName, Members);
-                        {error, not_found} -> ws_send_json(Socket, "error", "No such group: " ++ GroupName);
-                        {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group");
-                        {error, already_member} -> ws_send_json(Socket, "error", NewMember ++ " is already in the group");
-                        {error, user_offline} -> ws_send_json(Socket, "error", NewMember ++ " isn't online right now")
-                    end
+            %% Only the group's creator (its admin) can add members.
+            case chat_groups:owner(GroupName) of
+                {ok, Owner} when Owner =/= Name ->
+                    ws_send_error(Socket, "not_allowed", "Only the group admin (" ++ Owner ++ ") can add members");
+                _ ->
+                    add_member_checked(Socket, Name, GroupName, NewMember)
             end;
         _ ->
             ws_send_json(Socket, "error", "Usage: /addmember <group> <username>")
@@ -1182,7 +1221,7 @@ handle_line(Socket, Name, "/leavegroup " ++ Rest) ->
         {error, not_member} -> ws_send_json(Socket, "error", "You're not in that group")
     end;
 handle_line(Socket, Name, "/groupmsg " ++ Rest) ->
-    case string:split(Rest, " ") of
+    case split_group(Rest) of
         [_GroupName, Text] when length(Text) > ?MAX_MESSAGE_LEN ->
             ws_send_json(Socket, "error",
                 io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));
@@ -1200,7 +1239,7 @@ handle_line(Socket, Name, "/groupmsg " ++ Rest) ->
             ws_send_json(Socket, "error", "Usage: /groupmsg <group> <message>")
     end;
 handle_line(Socket, Name, "/replygroup " ++ Rest) ->
-    case string:split(Rest, " ") of
+    case split_group(Rest) of
         [GroupName, Rest2] ->
             case string:split(Rest2, " ") of
                 [_IdStr, Text] when length(Text) > ?MAX_MESSAGE_LEN ->

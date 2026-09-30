@@ -101,103 +101,6 @@ export const DEFAULT_COMMANDS_CATALOG = [
     available: true,
     requires: "none",
   },
-  {
-    name: "react",
-    aliases: [],
-    category: "messaging",
-    summary: "React to a global-room message (toggles)",
-    usage: "#react <messageId> <emoji>",
-    args: [
-      { name: "messageId", type: "msgid", required: true },
-      { name: "emoji", type: "emoji", required: true },
-    ],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "reactdm",
-    aliases: [],
-    category: "messaging",
-    summary: "React to a message in a direct conversation",
-    usage: "#reactdm <user> <messageId> <emoji>",
-    args: [
-      { name: "user", type: "user", required: true },
-      { name: "messageId", type: "msgid", required: true },
-      { name: "emoji", type: "emoji", required: true },
-    ],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "reactgroup",
-    aliases: [],
-    category: "messaging",
-    summary: "React to a message in a group",
-    usage: "#reactgroup <group> <messageId> <emoji>",
-    args: [
-      { name: "group", type: "group", required: true },
-      { name: "messageId", type: "msgid", required: true },
-      { name: "emoji", type: "emoji", required: true },
-    ],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "delete",
-    aliases: [],
-    category: "messaging",
-    summary: "Delete your own global-room message",
-    usage: "#delete <messageId>",
-    args: [{ name: "messageId", type: "msgid", required: true }],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "deletedm",
-    aliases: [],
-    category: "messaging",
-    summary: "Delete your own message in a direct conversation",
-    usage: "#deletedm <user> <messageId>",
-    args: [
-      { name: "user", type: "user", required: true },
-      { name: "messageId", type: "msgid", required: true },
-    ],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "deletegroup",
-    aliases: [],
-    category: "messaging",
-    summary: "Delete your own message in a group",
-    usage: "#deletegroup <group> <messageId>",
-    args: [
-      { name: "group", type: "group", required: true },
-      { name: "messageId", type: "msgid", required: true },
-    ],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "gif",
-    aliases: [],
-    category: "messaging",
-    summary: "Search & send GIFs",
-    usage: "#gif [query...]",
-    args: [{ name: "query", type: "text", required: false, rest: true }],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "sticker",
-    aliases: [],
-    category: "messaging",
-    summary: "Search & send stickers",
-    usage: "#sticker [query...]",
-    args: [{ name: "query", type: "text", required: false, rest: true }],
-    available: true,
-    requires: "none",
-  },
 
   // 2. Look things up
   {
@@ -281,16 +184,6 @@ export const DEFAULT_COMMANDS_CATALOG = [
     requires: "none",
   },
   {
-    name: "read",
-    aliases: [],
-    category: "lookup",
-    summary: "Mark a direct conversation as read",
-    usage: "#read <user>",
-    args: [{ name: "user", type: "user", required: true }],
-    available: true,
-    requires: "none",
-  },
-  {
     name: "profile",
     aliases: [],
     category: "lookup",
@@ -306,7 +199,7 @@ export const DEFAULT_COMMANDS_CATALOG = [
     name: "creategroup",
     aliases: ["newgroup"],
     category: "groups",
-    summary: "Create a group (no spaces in the name)",
+    summary: "Create a group (the name can have spaces)",
     usage: "#creategroup <name>",
     args: [{ name: "name", type: "word", required: true }],
     available: true,
@@ -337,26 +230,6 @@ export const DEFAULT_COMMANDS_CATALOG = [
   },
 
   // 4. Your profile
-  {
-    name: "status",
-    aliases: [],
-    category: "profile",
-    summary: "Set your status line",
-    usage: "#status <status...>",
-    args: [{ name: "status", type: "text", required: true, rest: true }],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "avatar",
-    aliases: [],
-    category: "profile",
-    summary: "Set your avatar (http(s) link or /uploads/ path)",
-    usage: "#avatar <url>",
-    args: [{ name: "url", type: "url", required: true }],
-    available: true,
-    requires: "none",
-  },
 
   // 5. People and approvals (Sandesh)
   {
@@ -447,26 +320,6 @@ export const DEFAULT_COMMANDS_CATALOG = [
     requires: "none",
   },
   {
-    name: "ignore",
-    aliases: [],
-    category: "people",
-    summary: "Ignore a request or invitation",
-    usage: "#ignore <requestId>",
-    args: [{ name: "requestId", type: "msgid", required: true }],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "myusers",
-    aliases: [],
-    category: "people",
-    summary: "Users you host (department hosts only)",
-    usage: "#myusers",
-    args: [],
-    available: true,
-    requires: "host",
-  },
-  {
     name: "transfer",
     aliases: [],
     category: "people",
@@ -495,36 +348,6 @@ export const DEFAULT_COMMANDS_CATALOG = [
         required: false,
       },
     ],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "markread",
-    aliases: [],
-    category: "notifs",
-    summary: "Mark notifications as read",
-    usage: "#markread <category>",
-    args: [{ name: "category", type: "word", required: true }],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "cards",
-    aliases: [],
-    category: "notifs",
-    summary: "Your message cards (optionally one section)",
-    usage: "#cards [section]",
-    args: [{ name: "section", type: "word", required: false }],
-    available: true,
-    requires: "none",
-  },
-  {
-    name: "dismiss",
-    aliases: [],
-    category: "notifs",
-    summary: "Dismiss a card (or 'all')",
-    usage: "#dismiss <cardId>",
-    args: [{ name: "cardId", type: "word", required: true }],
     available: true,
     requires: "none",
   },
@@ -675,6 +498,23 @@ export const DEFAULT_COMMANDS_CATALOG = [
 export const IGNORED_COMMANDS = new Set(["forms", "options", "form", "submissions"]);
 
 /**
+ * Commands offered in the # menu and the help modal. Everything else (message-id based
+ * reply/react/delete/history, admin, T-Struct, ...) still works if typed in full, but is
+ * kept out of the menu so it stays short and easy to read.
+ */
+export const FRIENDLY_COMMAND_NAMES = new Set([
+  "dm", "host", "groupmsg",
+  "users", "hosts", "groups", "inbox", "profile",
+  "creategroup", "addmember", "leavegroup",
+  "me",
+  "associates", "find", "connect", "disconnect", "requests", "accept", "reject",
+  "notifications", "remind",
+  "help",
+]);
+
+export const isFriendlyCommand = (cmd) => FRIENDLY_COMMAND_NAMES.has((cmd.name || "").toLowerCase());
+
+/**
  * Filter and rank catalog commands matching user input for every letter typed
  */
 export function filterCatalogCommands(catalog = DEFAULT_COMMANDS_CATALOG, query = "", user = null) {
@@ -685,6 +525,7 @@ export function filterCatalogCommands(catalog = DEFAULT_COMMANDS_CATALOG, query 
       // Strictly ignore forms commands as requested
       if (IGNORED_COMMANDS.has(cmd.name.toLowerCase())) return false;
       if ((cmd.aliases || []).some((a) => IGNORED_COMMANDS.has(a.toLowerCase()))) return false;
+      if (!isFriendlyCommand(cmd)) return false;
 
       // Check permission advisory
       const meetsAdmin = cmd.requires !== "admin" || (user && user.isAdmin);

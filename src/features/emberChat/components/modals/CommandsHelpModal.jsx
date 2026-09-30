@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { COMMAND_CATEGORIES, DEFAULT_COMMANDS_CATALOG } from "../../data/hashCommandsCatalog.js";
+import { COMMAND_CATEGORIES, DEFAULT_COMMANDS_CATALOG, isFriendlyCommand } from "../../data/hashCommandsCatalog.js";
 
 export default function CommandsHelpModal({
   initialCommand = null,
@@ -11,7 +11,7 @@ export default function CommandsHelpModal({
 
   const query = searchQuery.trim().toLowerCase().replace(/^#/, "");
 
-  const filteredCommands = DEFAULT_COMMANDS_CATALOG.filter((cmd) => {
+  const filteredCommands = DEFAULT_COMMANDS_CATALOG.filter(isFriendlyCommand).filter((cmd) => {
     if (selectedCategory !== "all" && cmd.category !== selectedCategory) {
       return false;
     }
@@ -82,7 +82,7 @@ export default function CommandsHelpModal({
             className={`cmd-cat-pill ${selectedCategory === "all" ? "active" : ""}`}
             onClick={() => setSelectedCategory("all")}
           >
-            All Commands ({DEFAULT_COMMANDS_CATALOG.length})
+            All Commands ({DEFAULT_COMMANDS_CATALOG.filter(isFriendlyCommand).length})
           </button>
           {COMMAND_CATEGORIES.map((cat) => (
             <button

@@ -149,6 +149,8 @@ handle_line(Socket, Name, "/addmember " ++ Rest) ->
                     gen_tcp:send(Socket, io_lib:format("No such group: ~s~n", [GroupName]));
                 {error, not_member} ->
                     gen_tcp:send(Socket, "You're not in that group.\n");
+                {error, not_owner} ->
+                    gen_tcp:send(Socket, "Only the group admin can add members.\n");
                 {error, already_member} ->
                     gen_tcp:send(Socket, io_lib:format("~s is already in the group.~n", [NewMember]));
                 {error, user_offline} ->
