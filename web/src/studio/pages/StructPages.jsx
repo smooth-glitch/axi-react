@@ -32,7 +32,7 @@ export function NewStruct() {
       const { structId } = await createStruct(payload);
       refresh();
       toast.show({ title: 'Struct saved', message: `${payload.name} created — try filling it in.` });
-      navigate(`/structs/${structId}/form`, { replace: true });
+      navigate(`/structs/${encodeURIComponent(structId)}/form`, { replace: true });
     } catch (e) {
       setError(e.message);
       setSaving(false);

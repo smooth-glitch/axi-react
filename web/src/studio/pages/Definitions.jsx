@@ -44,7 +44,7 @@ export default function Definitions() {
           ) : null}
           {shown.map((s) => (
             <motion.div key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: t.motion.s(t.motion.base) }} style={{ marginBottom: t.spacing.md }}>
-              <HoverCard testID={`def-${s.name}`} onPress={() => navigate(`/structs/${s.id}/records`)}>
+              <HoverCard testID={`def-${s.name}`} onPress={() => navigate(`/structs/${encodeURIComponent(s.id)}/records`)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: t.spacing.md, padding: t.spacing.lg, flexWrap: 'wrap' }}>
                   <Avatar name={s.name} size={40} />
                   <div style={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', gap: t.spacing.xs }}>
@@ -62,9 +62,9 @@ export default function Definitions() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: t.spacing.sm }} onClick={(e) => e.stopPropagation()}>
-                    <Button title="Records" size="sm" variant="ghost" icon={Table2} onPress={() => navigate(`/structs/${s.id}/records`)} />
+                    <Button title="Records" size="sm" variant="ghost" icon={Table2} onPress={() => navigate(`/structs/${encodeURIComponent(s.id)}/records`)} />
                     {isMine(s.createdBy) ? (
-                      <Button title="Edit" size="sm" variant="secondary" icon={Pencil} onPress={() => navigate(`/structs/${s.id}/edit`)} testID={`edit-${s.name}`} />
+                      <Button title="Edit" size="sm" variant="secondary" icon={Pencil} onPress={() => navigate(`/structs/${encodeURIComponent(s.id)}/edit`)} testID={`edit-${s.name}`} />
                     ) : null}
                     {isMine(s.createdBy) ? (
                       <Button title="Delete" size="sm" variant="secondary" icon={Trash2} onPress={() => setConfirm(s)} testID={`delete-${s.name}`} />

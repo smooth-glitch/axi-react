@@ -135,7 +135,7 @@ export default function Home() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: t.spacing.lg }}>
             {structs.map((s, i) => (
               <motion.div key={s.id} {...pop(0.3 + Math.min(i, 8) * 0.06)}>
-                <HoverCard testID={`home-struct-${s.name}`} onPress={() => navigate(`/structs/${s.id}/records`)}>
+                <HoverCard testID={`home-struct-${s.name}`} onPress={() => navigate(`/structs/${encodeURIComponent(s.id)}/records`)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: t.spacing.md, padding: t.spacing.lg }}>
                     <Avatar name={s.name} size={40} />
                     <div style={{ flex: 1, minWidth: 0 }}>

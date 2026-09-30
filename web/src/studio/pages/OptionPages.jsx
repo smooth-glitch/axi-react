@@ -58,7 +58,7 @@ export function OptionRunPage() {
   const navigate = useNavigate();
   const [caption, setCaption] = useState(null);
   // dataInput: open the linked struct's form (replace, so Back returns to the options list)
-  const openStruct = useCallback((s) => navigate(`/structs/${s.id}/form`, { replace: true }), [navigate]);
+  const openStruct = useCallback((s) => navigate(`/structs/${encodeURIComponent(s.id)}/form`, { replace: true }), [navigate]);
   return (
     <Page title={caption || 'Run option'} subtitle="Running an option" onBack={() => navigate('/options')} width="form">
       <OptionRun optionId={optionId} onLoaded={(o) => setCaption(o.caption)} onOpenStruct={openStruct} onEdit={(o) => navigate(`/options/${o.id}/edit`)} />
