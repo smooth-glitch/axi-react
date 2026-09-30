@@ -161,7 +161,7 @@ user_actions() ->
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
      <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
      <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
-     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"catalog.get">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"onboarding.get">>, <<"catalog.get">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -838,6 +838,18 @@ do(<<"admin.catalog.save">>, Args, _Ctx) ->
     case sd_catalog:save(Args) of {ok, I} -> {ok, #{<<"item">> => I}}; Err -> Err end;
 do(<<"admin.catalog.delete">>, Args, _Ctx) ->
     case sd_catalog:delete(sd_util:get(<<"kind">>, Args, <<>>), sd_util:get(<<"id">>, Args, <<>>)) of
+        ok -> {ok, #{<<"deleted">> => true}};
+        Err -> Err
+    end;
+
+do(<<"onboarding.get">>, Args, _Ctx) ->
+    {ok, #{<<"process">> => sd_onboarding:get(sd_util:get(<<"category">>, Args, <<>>))}};
+do(<<"admin.onboarding.list">>, _Args, _Ctx) ->
+    {ok, #{<<"processes">> => sd_onboarding:list(), <<"fields">> => sd_onboarding:fields()}};
+do(<<"admin.onboarding.save">>, Args, _Ctx) ->
+    case sd_onboarding:save(Args) of {ok, P} -> {ok, #{<<"process">> => P}}; Err -> Err end;
+do(<<"admin.onboarding.delete">>, Args, _Ctx) ->
+    case sd_onboarding:delete(sd_util:get(<<"category">>, Args, <<>>)) of
         ok -> {ok, #{<<"deleted">> => true}};
         Err -> Err
     end;

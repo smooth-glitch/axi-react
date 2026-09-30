@@ -51,6 +51,7 @@ const SUITES = [
   { name: "connectum_data_test", db: 18, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "100000", SANDESH_DS_TIMEOUT_MS: "1500" } },
   { name: "connectum_records_test", db: 19, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "connectum_catalog_test", db: 20, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
+  { name: "connectum_onboarding_test", db: 21, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "sec_impersonation_test", db: 5, arg: "url", env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_REQUIRE_SESSION: "1" } },
   { name: "sandesh_user_options_test", db: 12, arg: "url", timeoutMs: 180000, env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_MAX_FILE_MB: "1", SANDESH_FILES_DIR: path.join(os.tmpdir(), "sd-files-runall") } },
   // Open mode (the default). Two shared backends: the first two TEST the rate limiter so they need the default

@@ -161,23 +161,38 @@ self_register(Body, Ip) ->
         {false, _, _} -> {error, not_ready, <<"This organisation hasn't been set up yet.">>};
         {_, limited, _} -> {error, rate_limited, <<"Too many registrations from here; try later.">>};
         {_, _, {error, _, _} = CodeErr} -> CodeErr;
-        _ ->
-            Password = sd_util:get(<<"password">>, Body),
-            Username0 = sd_util:get(<<"username">>, Body, <<>>),
-            case sd_auth:check_password_policy(Username0, Password) of
-                {error, _, _} = Err -> Err;
-                ok ->
-                    case sd_users:create(Body, #{mode => register, actor => <<"self">>,
-                                                 status => <<"pending">>}) of
-                        {ok, User} ->
-                            sd_auth:set_initial_password(maps:get(<<"username">>, User), Password),
-                            {ok, Req} = sd_reqs:create_onboarding(User),
-                            {ok, #{<<"registered">> => true, <<"status">> => <<"pending">>,
-                                   <<"username">> => maps:get(<<"username">>, User),
+        {_, _, ok} ->
+            case sd_onboarding:check_registration(Body) of
+                {error, _, _} = E -> E;
+                ok -> register_checked(Body)
+            end
+    end.
+
+register_checked(Body) ->
+    Password = sd_util:get(<<"password">>, Body),
+    Username0 = sd_util:get(<<"username">>, Body, <<>>),
+    case sd_auth:check_password_policy(Username0, Password) of
+        {error, _, _} = Err -> Err;
+        ok ->
+            case sd_users:create(Body, #{mode => register, actor => <<"self">>, status => <<"pending">>}) of
+                {ok, User} ->
+                    sd_auth:set_initial_password(maps:get(<<"username">>, User), Password),
+                    Name = maps:get(<<"username">>, User),
+                    Welcome = maps:get(<<"welcome">>, sd_onboarding:get(sd_util:b(sd_util:get(<<"category">>, User)))),
+                    case sd_onboarding:approvers(User) of
+                        none ->
+                            {ok, _} = sd_users:set_status(Name, <<"active">>),
+                            {ok, #{<<"registered">> => true, <<"status">> => <<"active">>, <<"username">> => Name,
+                                   <<"requestId">> => null, <<"awaitingApprovalFrom">> => 0,
+                                   <<"welcome">> => Welcome}};
+                        {approvers, As} ->
+                            {ok, Req} = sd_reqs:create_onboarding(User, As),
+                            {ok, #{<<"registered">> => true, <<"status">> => <<"pending">>, <<"username">> => Name,
                                    <<"requestId">> => maps:get(<<"id">>, Req),
-                                   <<"awaitingApprovalFrom">> => length(maps:get(<<"approvers">>, Req))}};
-                        Err -> Err
-                    end
+                                   <<"awaitingApprovalFrom">> => length(maps:get(<<"approvers">>, Req)),
+                                   <<"welcome">> => Welcome}}
+                    end;
+                Err -> Err
             end
     end.
 

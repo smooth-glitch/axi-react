@@ -17,7 +17,7 @@
 %%% Everything is durable: an approver who is offline simply finds the
 %%% request waiting when they next connect (a live push is only a bonus).
 -module(sd_reqs).
--export([create_onboarding/1, create_associate/2, create_host_transfer/3,
+-export([create_onboarding/1, create_onboarding/2, create_associate/2, create_host_transfer/3,
          create_group_invite/3, respond/3, list_for/2, get/1, approvers_for/1,
          view/1, pending_count/1]).
 
@@ -30,6 +30,10 @@
 %% Called right after a self-registration. Returns {ok, Request}.
 create_onboarding(NewUser) ->
     Approvers = approvers_for(NewUser),
+    make(<<"onboarding">>, maps:get(<<"username">>, NewUser), maps:get(<<"username">>, NewUser),
+         Approvers, #{}).
+
+create_onboarding(NewUser, Approvers) ->
     make(<<"onboarding">>, maps:get(<<"username">>, NewUser), maps:get(<<"username">>, NewUser),
          Approvers, #{}).
 
@@ -219,7 +223,10 @@ on_accept(<<"onboarding">>, Req, Responder) ->
         undefined -> {error, not_found, <<"That user no longer exists.">>};
         _ ->
             {ok, _} = sd_users:set_status(Subject, <<"active">>),
-            {ok, _} = sd_users:set_host(Subject, Responder),
+            case sd_users:is_host(sd_users:get(Responder)) orelse sd_users:is_admin(sd_users:get(Responder)) of
+                true -> {ok, _} = sd_users:set_host(Subject, Responder);
+                false -> ok      %% approved by a role holder who isn't a host: no host link
+            end,
             welcome(Subject, Responder),
             ok
     end;

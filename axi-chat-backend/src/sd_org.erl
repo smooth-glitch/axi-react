@@ -167,7 +167,8 @@ public() ->
       <<"branches">> => Names(branches),
       <<"departments">> => Names(departments),
       <<"designations">> => Names(designations),
-      <<"affiliates">> => Aff}.
+      <<"affiliates">> => Aff,
+      <<"onboarding">> => sd_onboarding:public()}.
 
 %% ---- master lists --------------------------------------------------------------
 
