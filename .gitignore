@@ -16,3 +16,8 @@ node_modules
 # Local-only ops docs: VM access details, credentials, infra notes.
 # NEVER commit this — contains live secrets. See ops/VM_ACCESS.md.
 ops/
+
+# Build output. CI runs `npm run build` before every deploy (deploy-frontend.yml and
+# preview-deploy.yml), so it never needs to be committed. Committing rebuilt bundles made
+# `git pull` fail with "local changes would be overwritten" for whoever had built locally.
+dist/
