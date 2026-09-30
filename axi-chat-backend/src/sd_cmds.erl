@@ -155,7 +155,7 @@ user_actions() ->
      <<"sections.delete">>, <<"reminder.add">>,
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
      <<"feed.list">>, <<"feed.summary">>, <<"feed.read">>, <<"feed.resolve">>, <<"feed.dismiss">>, <<"feed.clear">>,
-     <<"options.list">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
+     <<"options.list">>, <<"options.categories">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -423,8 +423,18 @@ do(<<"cfg.lookups">>, _Args, _Ctx) ->
            <<"affiliates">>   => Affiliates}};
 
 %% ---- options / forms -------------------------------------------------------------------------
-do(<<"options.list">>, _Args, #{user := User}) ->
-    {ok, #{<<"options">> => sd_config:options_for(User)}};
+%% Without arguments: every option that applies to the caller (unchanged). With any of category / q / page /
+%% pageSize: one searchable page of them (see sd_config:options_page/2).
+do(<<"options.list">>, Args, #{user := User}) ->
+    case lists:any(fun(K) -> maps:is_key(K, Args) end, [<<"category">>, <<"q">>, <<"page">>, <<"pageSize">>]) of
+        false -> {ok, #{<<"options">> => sd_config:options_for(User)}};
+        true -> sd_config:options_page(User, Args)
+    end;
+%% The Smart Prompts pills: a category per pill with how many options the caller has in it.
+do(<<"options.categories">>, Args, #{user := User}) ->
+    Cats = sd_config:option_categories_for(User, maps:get(<<"includeEmpty">>, Args, false) =:= true),
+    {ok, #{<<"categories">> => Cats,
+           <<"total">> => length(sd_config:options_for(User))}};
 do(<<"tstruct.get">>, Args, #{user := User}) ->
     with_bin(<<"name">>, Args, fun(Name) ->
         case sd_config:tstruct_for_user(User, Name) of
