@@ -15,6 +15,8 @@ const Frame = styled.div`
 `;
 
 const Main = styled.main`
+  position: relative; /* side panels render inside the content pane, leaving the menu visible */
+  overflow: hidden;
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -59,9 +61,9 @@ export default function Shell({ onClose }) {
   return (
     <MenuContext.Provider value={ctx}>
       <SheetHostContext.Provider value={host}>
-      <Frame ref={setHost}>
+      <Frame>
         {visible ? <Sidebar variant="sidebar" /> : null}
-        <Main>
+        <Main ref={setHost}>
           <Outlet />
         </Main>
         <AnimatePresence>

@@ -160,7 +160,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
     <Root $fixed={fixed}>
       <Brand>
         <Logo>
-          <img src={tstructIcon} width={22} height={22} alt="" />
+          <img src={tstructIcon} width={20} height={20} alt="" />
         </Logo>
         <div style={{ flex: 1 }}>
           <Text $variant="title" style={{ color: t.navText }}>
