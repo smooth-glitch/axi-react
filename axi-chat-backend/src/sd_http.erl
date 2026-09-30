@@ -76,6 +76,13 @@ route(Socket, "OPTIONS", _Path, _Headers, _BodyStart) ->
     send(Socket, 204, <<>>);
 route(Socket, "GET", "/api/sd/public", _H, _B) ->
     ok_(Socket, sd_org:public());
+%% A scanned / typed enterprise code -> the enterprise card. No sign-in; rate limited per address, and a personal
+%% code answers exactly like an unknown one.
+route(Socket, "GET", "/api/sd/connect/" ++ Code, H, _B) ->
+    case sd_db:rate(["connect:", client_ip(Socket, H)], 60, 60) of
+        limited -> send(Socket, 429, error_body(rate_limited, <<"Too many lookups; try again in a minute.">>, null));
+        ok -> respond(Socket, sd_connect:public_lookup(sd_util:b(http_uri_decode(Code))))
+    end;
 route(Socket, "GET", "/api/sd/2fa/totp", H, _B) ->
     respond(Socket, sd_totp:status(bearer(H)));
 route(Socket, "GET", "/api/sd/session", H, _B) ->
@@ -150,9 +157,10 @@ post(Socket, _Path, _Body, _H) ->
 %% checked with the same policy as a password change. TOTP enrollment still
 %% happens at their first login after approval, same as everyone else.
 self_register(Body, Ip) ->
-    case {sd_org:setup_done(), sd_db:rate(["register:", Ip], 10, 3600)} of
-        {false, _} -> {error, not_ready, <<"This organisation hasn't been set up yet.">>};
-        {_, limited} -> {error, rate_limited, <<"Too many registrations from here; try later.">>};
+    case {sd_org:setup_done(), sd_db:rate(["register:", Ip], 10, 3600), sd_connect:check_registration_code(Body)} of
+        {false, _, _} -> {error, not_ready, <<"This organisation hasn't been set up yet.">>};
+        {_, limited, _} -> {error, rate_limited, <<"Too many registrations from here; try later.">>};
+        {_, _, {error, _, _} = CodeErr} -> CodeErr;
         _ ->
             Password = sd_util:get(<<"password">>, Body),
             Username0 = sd_util:get(<<"username">>, Body, <<>>),
@@ -172,6 +180,9 @@ self_register(Body, Ip) ->
                     end
             end
     end.
+
+http_uri_decode(S) ->
+    try uri_string:percent_decode(S) catch _:_ -> S end.
 
 %% ---- files (upload / download options) ------------------------------------------------------------------
 

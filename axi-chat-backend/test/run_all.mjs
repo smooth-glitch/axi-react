@@ -43,6 +43,9 @@ const SUITES = [
   { name: "hash_commands_strict_test", db: 8, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "sandesh_feed_test", db: 11, arg: "url", timeoutMs: 120000, env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_SCHEDULER_TICK_MS: "500" } },
   { name: "options_categories_test", db: 4, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
+  { name: "connectum_codes_test", db: 3, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_PUBLIC_URL: "https://ent.example" } },
+  // the /sd lane: test-only sleeping actions prove the connection is never blocked (SANDESH_TEST_ACTIONS is ignored in production)
+  { name: "sd_lane_test", db: 1, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "100000", SANDESH_TEST_ACTIONS: "1", SANDESH_SLOW_LIMIT_MS: "1500" } },
   { name: "sec_impersonation_test", db: 5, arg: "url", env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_REQUIRE_SESSION: "1" } },
   { name: "sandesh_user_options_test", db: 12, arg: "url", timeoutMs: 180000, env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_MAX_FILE_MB: "1", SANDESH_FILES_DIR: path.join(os.tmpdir(), "sd-files-runall") } },
   // Open mode (the default). Two shared backends: the first two TEST the rate limiter so they need the default
@@ -131,7 +134,7 @@ async function main() {
   }
   fs.rmSync(path.join(os.tmpdir(), "sd-files-runall"), { recursive: true, force: true });
 
-  const redis = spawn(REDIS_SERVER, ["--port", String(REDIS_PORT), "--save", "", "--appendonly", "no", "--bind", "127.0.0.1"], { stdio: "ignore" });
+  const redis = spawn(REDIS_SERVER, ["--port", String(REDIS_PORT), "--save", "", "--appendonly", "no", "--bind", "127.0.0.1", "--databases", "64"], { stdio: "ignore" });
   const results = [];
   let port = BASE;
   try {

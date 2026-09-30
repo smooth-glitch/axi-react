@@ -99,10 +99,24 @@ do_setup_start(Body) ->
         {<<>>, _} -> {error, invalid, <<"org (organisation name) is required.">>};
         {_, {error, _, _} = Err} -> Err;
         {_, {ok, Profile}} ->
-            Pending = Profile#{<<"org">> => Org},
-            sd_db:setex_json("sd:setup:pending", 900, Pending),
-            Result = send_otp(setup, <<"first">>, Profile),
-            {ok, Result#{<<"username">> => maps:get(<<"username">>, Profile)}}
+            case org_profile(Body) of
+                {error, _, _} = PErr -> PErr;
+                {ok, OrgProfile} ->
+                    Pending = maps:merge(Profile#{<<"org">> => Org}, OrgProfile),
+                    sd_db:setex_json("sd:setup:pending", 900, Pending),
+                    Result = send_otp(setup, <<"first">>, Profile),
+                    {ok, Result#{<<"username">> => maps:get(<<"username">>, Profile)}}
+            end
+    end.
+
+%% The enterprise's location and contact person from the sign-up form (both optional).
+org_profile(Body) ->
+    Loc = sd_org:validate_location(sd_util:get(<<"location">>, Body, #{})),
+    Con = sd_org:validate_contact(sd_util:get(<<"contact">>, Body, #{})),
+    case {Loc, Con} of
+        {{error, _, _} = E, _} -> E;
+        {_, {error, _, _} = E} -> E;
+        {{ok, L}, {ok, C}} -> {ok, #{<<"location">> => L, <<"contact">> => C}}
     end.
 
 setup_verify(Body, _Ip) ->
@@ -119,7 +133,7 @@ setup_verify(Body, _Ip) ->
 finish_setup(Pending) ->
     Org = maps:get(<<"org">>, Pending),
     Username = maps:get(<<"username">>, Pending),
-    case sd_org:finish_setup(Org, Username) of
+    case sd_org:finish_setup(Org, Username, maps:with([<<"location">>, <<"contact">>], Pending)) of
         {error, already_setup} ->
             {error, already_setup, <<"This organisation has already been set up.">>};
         ok ->

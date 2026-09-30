@@ -9,7 +9,8 @@
 %%% that is still referenced can't be deleted (categories can only be
 %%% deactivated, per the spec).
 -module(sd_org).
--export([info/0, setup_done/0, finish_setup/2, set_name/1, seed_defaults/0,
+-export([info/0, setup_done/0, finish_setup/2, finish_setup/3, set_name/1, set_profile/1, seed_defaults/0, ensure_defaults/0,
+         validate_location/1, validate_contact/1,
          public/0, list/1, get/2, exists/2, active/2, save/2, delete/2, kinds/0]).
 
 -define(ORG, "sd:org").
@@ -20,7 +21,8 @@
 %% be added & the existing categories can be deactivated."
 -define(DEFAULT_CATEGORIES, [<<"Customer">>, <<"Vendor">>, <<"Consultant">>, <<"Patient">>,
                              <<"Student">>, <<"Citizen">>, <<"Shareholder">>, <<"Doctor">>,
-                             <<"Professional">>]).
+                             <<"Professional">>, <<"Service provider">>, <<"Contract employee">>,
+                             <<"Gig worker">>, <<"Freelancer">>, <<"Candidate">>]).
 %% Pseudo-categories used by option applicability, never stored as items.
 -define(RESERVED, [<<"employee">>, <<"affiliate">>]).
 
@@ -30,8 +32,15 @@ kinds() -> ?KINDS.
 
 info() ->
     Map = maps:from_list(sd_db:hgetall(?ORG)),
+    Json = fun(K) -> case maps:find(K, Map) of
+                         {ok, B} -> case sd_util:jdec(B) of {ok, M} when is_map(M) -> M; _ -> null end;
+                         error -> null
+                     end end,
     #{<<"name">> => maps:get(<<"name">>, Map, null),
       <<"setupDone">> => maps:get(<<"setup_done">>, Map, <<"0">>) =:= <<"1">>,
+      <<"location">> => Json(<<"location">>),
+      <<"contact">> => Json(<<"contact">>),
+      <<"code">> => maps:get(<<"code">>, Map, null),
       <<"createdTs">> => case maps:find(<<"created_ts">>, Map) of
                              {ok, T} -> binary_to_integer(T);
                              error -> null
@@ -42,16 +51,91 @@ setup_done() -> sd_db:hget(?ORG, "setup_done") =:= <<"1">>.
 %% Atomic claim of the one-time first-run setup: only the caller that flips
 %% setup_done from unset to "1" wins, so two simultaneous "first users"
 %% can't both become administrator.
-finish_setup(OrgName, Admin) ->
+finish_setup(OrgName, Admin) -> finish_setup(OrgName, Admin, #{}).
+
+%% Profile: optional #{<<"location">> => Map, <<"contact">> => Map} (already validated).
+finish_setup(OrgName, Admin, Profile) ->
     case sd_db:q(["HSETNX", ?ORG, "setup_done", "1"]) of
         <<"1">> ->
             sd_db:q(["HSET", ?ORG, "name", OrgName, "created_ts",
                      integer_to_list(sd_util:now_ms()), "created_by", Admin]),
+            lists:foreach(fun(K) ->
+                              case maps:get(K, Profile, undefined) of
+                                  M when is_map(M), map_size(M) > 0 -> sd_db:hset(?ORG, binary_to_list(K), sd_util:jenc(M));
+                                  _ -> ok
+                              end
+                          end, [<<"location">>, <<"contact">>]),
             seed_defaults(),
             ok;
         _ ->
             {error, already_setup}
     end.
+
+%% Called at boot: an older deployment picks up categories added to the defaults later. Never re-adds one that
+%% exists (categories can only be deactivated, so an admin's choice is kept).
+ensure_defaults() ->
+    case setup_done() of
+        true -> seed_defaults();
+        false -> ok
+    end.
+
+%% Change the organisation's own profile: any of name, location, contact (each validated).
+set_profile(Args) when is_map(Args) ->
+    Name = case sd_util:get(<<"name">>, Args) of B when is_binary(B) -> string:trim(B); _ -> undefined end,
+    Loc = case maps:is_key(<<"location">>, Args) of true -> validate_location(maps:get(<<"location">>, Args)); false -> skip end,
+    Con = case maps:is_key(<<"contact">>, Args) of true -> validate_contact(maps:get(<<"contact">>, Args)); false -> skip end,
+    case {Name, Loc, Con} of
+        {<<>>, _, _} -> {error, invalid, <<"name can't be empty.">>};
+        {_, {error, _, _} = E, _} -> E;
+        {_, _, {error, _, _} = E} -> E;
+        _ ->
+            case Name of undefined -> ok; _ -> sd_db:hset(?ORG, "name", Name) end,
+            case Loc of {ok, L} -> sd_db:hset(?ORG, "location", sd_util:jenc(L)); _ -> ok end,
+            case Con of {ok, C} -> sd_db:hset(?ORG, "contact", sd_util:jenc(C)); _ -> ok end,
+            ok
+    end.
+
+%% ---- profile parts ------------------------------------------------------------------------------------------
+%% location: {address, country, city, pin}, every part optional text; contact: {name, email, mobile}.
+validate_location(M) when is_map(M) ->
+    text_fields(M, [{<<"address">>, 200}, {<<"country">>, 60}, {<<"city">>, 60}, {<<"pin">>, 12}], <<"location">>);
+validate_location(null) -> {ok, #{}};
+validate_location(_) -> {error, invalid, <<"location must be an object {address, country, city, pin}.">>}.
+
+validate_contact(M) when is_map(M) ->
+    case text_fields(M, [{<<"name">>, 80}, {<<"email">>, 120}, {<<"mobile">>, 20}], <<"contact">>) of
+        {ok, C} ->
+            case {maps:get(<<"email">>, C, <<>>), maps:get(<<"mobile">>, C, <<>>)} of
+                {E, _} when E =/= <<>>, not is_binary(E) -> {error, invalid, <<"contact.email is not valid.">>};
+                {E, _} when E =/= <<>> ->
+                    case sd_util:valid_email(E) of
+                        true -> {ok, C};
+                        false -> {error, invalid, <<"contact.email is not valid.">>}
+                    end;
+                _ -> {ok, C}
+            end;
+        Err -> Err
+    end;
+validate_contact(null) -> {ok, #{}};
+validate_contact(_) -> {error, invalid, <<"contact must be an object {name, email, mobile}.">>}.
+
+text_fields(M, Specs, What) ->
+    lists:foldl(
+      fun({K, Max}, {ok, Acc}) ->
+              case maps:get(K, M, undefined) of
+                  undefined -> {ok, Acc};
+                  null -> {ok, Acc};
+                  V when is_binary(V) ->
+                      Clean = string:trim(<< <<C>> || <<C>> <= V, C >= 32, C =/= 127 >>),
+                      case {byte_size(Clean) =< Max, unicode:characters_to_binary(Clean, utf8, utf8)} of
+                          {true, Clean} -> case Clean of <<>> -> {ok, Acc}; _ -> {ok, Acc#{K => Clean}} end;
+                          {false, _} -> {error, invalid, iolist_to_binary([What, ".", K, " is too long (max ", integer_to_binary(Max), ")."])};
+                          _ -> {error, invalid, iolist_to_binary([What, ".", K, " is not valid text."])}
+                      end;
+                  _ -> {error, invalid, iolist_to_binary([What, ".", K, " must be text."])}
+              end;
+         (_, Err) -> Err
+      end, {ok, #{}}, Specs).
 
 set_name(Name) -> sd_db:hset(?ORG, "name", Name).
 
@@ -75,6 +159,10 @@ public() ->
     Info = info(),
     #{<<"org">> => maps:get(<<"name">>, Info),
       <<"setupDone">> => maps:get(<<"setupDone">>, Info),
+      <<"location">> => case maps:get(<<"location">>, Info) of
+                            L when is_map(L) -> maps:with([<<"city">>, <<"country">>], L);
+                            _ -> null
+                        end,
       <<"categories">> => Names(categories),
       <<"branches">> => Names(branches),
       <<"departments">> => Names(departments),

@@ -1310,18 +1310,20 @@ handle_line(Socket, Name, "/groups") ->
 %% #commands (docs/HASH_COMMANDS.md): "/cmds [prefix]" lists them, and
 %% "/cmdcomplete {json}" suggests as the user types. Read-only; the
 %% "#command" lines themselves are handled further down.
-handle_line(Socket, _Name, "/cmds") ->
-    gen_tcp:send(Socket, ws_encode(1, chat_cmds:catalog_json("")));
-handle_line(Socket, _Name, "/cmds " ++ Query) ->
-    gen_tcp:send(Socket, ws_encode(1, chat_cmds:catalog_json(string:trim(Query))));
-handle_line(Socket, Name, "/cmdcomplete " ++ Body) ->
-    gen_tcp:send(Socket, ws_encode(1, chat_cmds:complete_json(Body, Name)));
-handle_line(Socket, Name, "/cmdcomplete") ->
-    gen_tcp:send(Socket, ws_encode(1, chat_cmds:complete_json("", Name)));
-handle_line(Socket, Name, "/sd " ++ Rest) ->
-    gen_tcp:send(Socket, ws_encode(1, sd_cmds:handle(Name, Rest)));
-handle_line(Socket, Name, "/sd") ->
-    gen_tcp:send(Socket, ws_encode(1, sd_cmds:handle(Name, "me")));
+%% These read our own store (and may call other servers), so none of them runs in this process: each is handed to
+%% sd_lane, which writes the reply back through the {sd_push, _} message this loop already handles.
+handle_line(_Socket, _Name, "/cmds") ->
+    sd_lane:aux(fun() -> chat_cmds:catalog_json("") end);
+handle_line(_Socket, _Name, "/cmds " ++ Query) ->
+    sd_lane:aux(fun() -> chat_cmds:catalog_json(string:trim(Query)) end);
+handle_line(_Socket, Name, "/cmdcomplete " ++ Body) ->
+    sd_lane:aux(fun() -> chat_cmds:complete_json(Body, Name) end);
+handle_line(_Socket, Name, "/cmdcomplete") ->
+    sd_lane:aux(fun() -> chat_cmds:complete_json("", Name) end);
+handle_line(_Socket, Name, "/sd " ++ Rest) ->
+    sd_lane:submit(Name, Rest);
+handle_line(_Socket, Name, "/sd") ->
+    sd_lane:submit(Name, "me");
 handle_line(Socket, _Name, Text) when length(Text) > ?MAX_MESSAGE_LEN ->
     ws_send_json(Socket, "error",
         io_lib:format("Message too long (max ~p chars)", [?MAX_MESSAGE_LEN]));

@@ -138,6 +138,9 @@ ctx() ->
 %% ---- access ----------------------------------------------------------------------------------------
 
 access(<<"me">>) -> none;
+%% Test-only actions (SANDESH_TEST_ACTIONS=1): sleep for `ms`, used to prove the connection is never blocked.
+access(A) when A =:= <<"test.sleep">>; A =:= <<"test.slow_sleep">> ->
+    case os:getenv("SANDESH_TEST_ACTIONS") of "1" -> none; _ -> unknown end;
 access(<<"admin.", _/binary>> = A) when A =:= <<"admin.unlock.start">>; A =:= <<"admin.unlock">> -> user;
 access(<<"admin.user.status">>) -> manage;
 access(<<"admin.", _/binary>>) -> admin;
@@ -155,7 +158,8 @@ user_actions() ->
      <<"sections.delete">>, <<"reminder.add">>,
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
      <<"feed.list">>, <<"feed.summary">>, <<"feed.read">>, <<"feed.resolve">>, <<"feed.dismiss">>, <<"feed.clear">>,
-     <<"options.list">>, <<"options.categories">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
+     <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
+     <<"connect.rotate">>, <<"connect.lookup">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -227,6 +231,9 @@ must_change(User) ->
 
 %% ---- actions ------------------------------------------------------------------------------------------
 
+do(A, Args, _Ctx) when A =:= <<"test.sleep">>; A =:= <<"test.slow_sleep">> ->
+    timer:sleep(min(maps:get(<<"ms">>, Args, 0), 60000)),
+    {ok, #{<<"slept">> => maps:get(<<"ms">>, Args, 0), <<"n">> => maps:get(<<"n">>, Args, null)}};
 do(<<"me">>, _Args, #{user := undefined} = Ctx) ->
     {ok, #{<<"authenticated">> => false, <<"mode">> => mode(),
            <<"sessionExpired">> => maps:get(expired, Ctx, false)}};
@@ -575,13 +582,50 @@ do(<<"admin.unlock">>, Args, #{token := Token}) ->
 
 %% ---- admin: organisation & master data ---------------------------------------------------------------------------------
 do(<<"admin.org.get">>, _Args, _Ctx) ->
+    _ = sd_connect:org_code(),                    %% older deployments get their Connectum code the first time it is asked for
     {ok, #{<<"org">> => sd_org:info(),
            <<"counts">> => #{<<"users">> => length(sd_users:list()),
                              <<"admins">> => length(sd_users:admins()),
                              <<"pendingApprovals">> => length([U || U <- sd_users:list(),
                                                                     maps:get(<<"status">>, U) =:= <<"pending">>])}}};
+%% name (as before) and now also location {address,country,city,pin} and contact {name,email,mobile}.
 do(<<"admin.org.set">>, Args, _Ctx) ->
-    with_bin(<<"name">>, Args, fun(Name) -> sd_org:set_name(Name), {ok, #{<<"org">> => sd_org:info()}} end);
+    case lists:any(fun(K) -> maps:is_key(K, Args) end, [<<"name">>, <<"location">>, <<"contact">>]) of
+        false -> {error, invalid, <<"Give at least one of name, location, contact.">>};
+        true ->
+            case sd_org:set_profile(Args) of
+                ok -> {ok, #{<<"org">> => sd_org:info()}};
+                Err -> Err
+            end
+    end;
+
+%% ---- Connectum codes (QR) ----
+%% connect.my      -> {person:{code,display,payload,url,name,username}, enterprise:{...card...}}
+%% connect.scan    {code}  a personal code makes the two of you associates at once; an enterprise code returns its card
+%% connect.rotate  -> a new personal code (the old one stops working)
+%% connect.lookup  {code}  -> what a code belongs to, without connecting (enterprise card, or a person's public profile)
+do(<<"connect.my">>, _Args, #{user := User}) ->
+    {ok, sd_connect:my(User)};
+do(<<"connect.rotate">>, _Args, #{user := User}) ->
+    Code = sd_connect:rotate_user_code(maps:get(<<"username">>, User)),
+    {ok, #{<<"person">> => (maps:get(<<"person">>, sd_connect:my(User)))#{<<"code">> => Code}}};
+do(<<"connect.scan">>, Args, #{user := User}) ->
+    with_bin(<<"code">>, Args, fun(Code) -> sd_connect:scan(User, Code) end);
+do(<<"connect.lookup">>, Args, #{user := User}) ->
+    with_bin(<<"code">>, Args, fun(Code) ->
+        case sd_connect:lookup(Code) of
+            invalid -> {error, invalid_code, <<"That isn't a valid Connectum code.">>};
+            not_found -> {error, not_found, <<"No one has that code.">>};
+            org -> {ok, #{<<"type">> => <<"enterprise">>, <<"enterprise">> => sd_connect:enterprise_card()}};
+            {user, U} ->
+                case sd_users:get(U) of
+                    #{<<"status">> := <<"active">>} = T ->
+                        {ok, #{<<"type">> => <<"person">>, <<"user">> => sd_users:public(T),
+                               <<"connected">> => sd_users:associated(maps:get(<<"username">>, User), U)}};
+                    _ -> {error, not_found, <<"No one has that code.">>}
+                end
+        end
+    end);
 do(<<"admin.cfg.list">>, Args, _Ctx) ->
     with_kind(Args, fun(Kind) -> {ok, #{<<"items">> => sd_org:list(Kind)}} end);
 do(<<"admin.cfg.save">>, Args, _Ctx) ->
