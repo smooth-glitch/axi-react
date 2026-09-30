@@ -5,6 +5,7 @@ import styled, { useTheme } from 'styled-components';
 import { LayoutDashboard, PanelLeftClose, Plus, Search, Settings2, SlidersHorizontal, Table2, X } from 'lucide-react';
 import { Button, IconButton, Skeleton, Text } from '../ui/kit';
 import { useMenu } from './MenuContext';
+import tstructIcon from '../assets/tstruct-icon.svg';
 import { useStructs } from './StructsContext';
 
 const Root = styled.aside`
@@ -44,13 +45,6 @@ const Logo = styled.div`
   background: ${(p) => p.theme.surface};
   border: 1.5px solid ${(p) => p.theme.peachDeep};
 `;
-
-// Material "table_chart" glyph (same icon as the Org Structs button in the host app).
-const TableChart = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M10 10.02h5V21h-5zM17 21h3c1.1 0 2-.9 2-2v-9h-5v11zm3-18H5c-1.1 0-2 .9-2 2v3h19V5c0-1.1-.9-2-2-2zM3 19c0 1.1.9 2 2 2h3V10H3v9z" />
-  </svg>
-);
 
 const SearchBox = styled.label`
   display: flex;
@@ -166,7 +160,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
     <Root $fixed={fixed}>
       <Brand>
         <Logo>
-          <TableChart />
+          <img src={tstructIcon} width={22} height={22} alt="" />
         </Logo>
         <div style={{ flex: 1 }}>
           <Text $variant="title" style={{ color: t.navText }}>

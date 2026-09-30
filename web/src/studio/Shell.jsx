@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import styled, { useTheme } from 'styled-components';
+import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './Sidebar';
 import { useWindowWidth } from '../ui/hooks';
 import { MenuContext, SheetHostContext } from './MenuContext';
@@ -19,23 +20,27 @@ const Main = styled.main`
   height: 100%;
 `;
 
-const Backdrop = styled.div`
+const Backdrop = styled(motion.div)`
   position: absolute;
   inset: 0;
   z-index: 20;
-  background: ${(p) => p.theme.overlay};
+  background: rgba(31, 41, 55, 0.28);
 `;
 
-const Drawer = styled.div`
+const Drawer = styled(motion.div)`
   position: absolute;
   inset: 0 auto 0 0;
   z-index: 21;
   width: min(320px, 88%);
+  background: ${(p) => p.theme.surface};
   box-shadow: ${(p) => p.theme.shadow.lg};
+  border-radius: 0 ${(p) => p.theme.radius.xl}px ${(p) => p.theme.radius.xl}px 0;
+  overflow: hidden;
 `;
 
 // Wide: struct menu on the left (collapsible) + routed centre pane. Narrow: routes only; the menu opens as a drawer.
-export default function Shell() {
+// onClose: set when the studio is shown in a modal - pages then render a close button inside the app.
+export default function Shell({ onClose }) {
   const t = useTheme();
   const { pathname } = useLocation();
   const wide = useWindowWidth() >= t.layout.wideBreakpoint;
@@ -47,8 +52,8 @@ export default function Shell() {
 
   const visible = wide && !collapsed;
   const ctx = useMemo(
-    () => ({ visible, toggle: () => (wide ? setCollapsed((c) => !c) : setDrawer((d) => !d)) }),
-    [visible, wide]
+    () => ({ visible, close: onClose || null, toggle: () => (wide ? setCollapsed((c) => !c) : setDrawer((d) => !d)) }),
+    [visible, wide, onClose]
   );
 
   return (
@@ -59,14 +64,22 @@ export default function Shell() {
         <Main>
           <Outlet />
         </Main>
-        {!wide && drawer ? (
-          <>
-            <Backdrop onClick={() => setDrawer(false)} />
-            <Drawer onClick={(e) => e.target.closest('a') && setDrawer(false)}>
-              <Sidebar variant="screen" />
-            </Drawer>
-          </>
-        ) : null}
+        <AnimatePresence>
+          {!wide && drawer ? (
+            <React.Fragment key="drawer">
+              <Backdrop initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={() => setDrawer(false)} />
+              <Drawer
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 320, mass: 0.9 }}
+                onClick={(e) => e.target.closest('a') && setDrawer(false)}
+              >
+                <Sidebar variant="screen" />
+              </Drawer>
+            </React.Fragment>
+          ) : null}
+        </AnimatePresence>
       </Frame>
       </SheetHostContext.Provider>
     </MenuContext.Provider>

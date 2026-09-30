@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { ArrowLeft, PanelLeft } from 'lucide-react';
+import { ArrowLeft, PanelLeft, X } from 'lucide-react';
 import { IconButton, Text } from '../ui/kit';
 import { useWindowWidth } from '../ui/hooks';
 import { useMenu } from './MenuContext';
@@ -85,6 +85,7 @@ export default function Page({ title, subtitle, onBack, actions, children, foote
             ) : null}
           </div>
           {actions}
+          {menu.close ? <IconButton icon={X} label="Close" onPress={menu.close} testID="close-studio" /> : null}
         </HeaderInner>
         <Accent />
       </Header>

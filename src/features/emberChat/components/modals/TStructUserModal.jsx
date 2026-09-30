@@ -38,27 +38,6 @@ export default function TStructUserModal({ onClose, currentUser, initialPath }) 
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <button
-        onClick={onClose}
-        aria-label="Close"
-        style={{
-          position: "absolute",
-          top: 2,
-          right: "max(8px, calc((100vw - min(1100px, 96vw)) / 2))",
-          width: 28,
-          height: 28,
-          borderRadius: "50%",
-          border: "none",
-          background: "#fff",
-          color: "#000",
-          fontSize: 18,
-          lineHeight: 1,
-          cursor: "pointer",
-          zIndex: 1,
-        }}
-      >
-        ×
-      </button>
       <div
         style={{
           margin: "32px auto",
@@ -79,7 +58,7 @@ export default function TStructUserModal({ onClose, currentUser, initialPath }) 
               <StructsProvider>
                 <ToastProvider>
                   <Routes>
-                    <Route element={<Shell />}>
+                    <Route element={<Shell onClose={onClose} />}>
                       <Route index element={<Home />} />
                       <Route path="options" element={<OptionsPage />} />
                       <Route path="options/new" element={<OptionBuilderPage mode="new" />} />

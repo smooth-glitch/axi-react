@@ -2,7 +2,7 @@ import React, { useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { X } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
 import { Text, Divider } from './Text';
 import { IconButton } from './Button';
 import { useWindowWidth } from '../hooks';
@@ -60,7 +60,10 @@ export function Sheet({ visible, onClose, title, subtitle, children, footer, tes
   const windowWidth = useWindowWidth();
   const host = useContext(SheetHostContext);
   const width = host ? host.clientWidth : windowWidth; // inside the studio frame, size to the frame, not the window
-  const drawer = width >= t.layout.tableBreakpoint;
+  // Inside the studio frame the panel is a full-pane view (slides in over the page, with a back arrow) - a half-width
+  // drawer plus dimmed backdrop looks cramped inside a modal.
+  const full = !!host;
+  const drawer = !full && width >= t.layout.tableBreakpoint;
 
   useEffect(() => {
     if (!visible) return undefined;
@@ -69,9 +72,11 @@ export function Sheet({ visible, onClose, title, subtitle, children, footer, tes
     return () => window.removeEventListener('keydown', onKey);
   }, [visible, onClose]);
 
-  const hidden = drawer ? { x: t.layout.panelWidth } : { y: '100%' };
-  const shown = drawer ? { x: 0 } : { y: 0 };
-  const panelStyle = drawer
+  const hidden = full ? { x: '100%' } : drawer ? { x: t.layout.panelWidth } : { y: '100%' };
+  const shown = full ? { x: 0 } : drawer ? { x: 0 } : { y: 0 };
+  const panelStyle = full
+    ? { inset: 0 }
+    : drawer
     ? { top: 0, right: 0, bottom: 0, width: t.layout.panelWidth, maxWidth: '100%', borderLeftWidth: 1 }
     : { left: 0, right: 0, bottom: 0, maxHeight: '90%', borderTopWidth: 1, borderTopLeftRadius: t.radius.xl, borderTopRightRadius: t.radius.xl };
 
@@ -79,14 +84,14 @@ export function Sheet({ visible, onClose, title, subtitle, children, footer, tes
     <AnimatePresence>
       {visible ? (
         <Layer key="sheet" $inHost={!!host}>
-          <Backdrop
+          {full ? null : <Backdrop
             aria-label="Close panel"
             onClick={onClose}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: t.motion.s(t.motion.base) }}
-          />
+          />}
           <Panel
             data-testid={testID}
             role="dialog"
@@ -98,6 +103,7 @@ export function Sheet({ visible, onClose, title, subtitle, children, footer, tes
             style={panelStyle}
           >
             <Head>
+              {full ? <IconButton icon={ArrowLeft} label="Back" onPress={onClose} stop={false} /> : null}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Text $variant="heading">{title}</Text>
                 {subtitle ? (
@@ -106,11 +112,11 @@ export function Sheet({ visible, onClose, title, subtitle, children, footer, tes
                   </Text>
                 ) : null}
               </div>
-              <IconButton icon={X} label="Close" onPress={onClose} stop={false} />
+              {full ? null : <IconButton icon={X} label="Close" onPress={onClose} stop={false} />}
             </Head>
             <Divider />
-            <Body>{children}</Body>
-            {footer ? <Foot>{footer}</Foot> : null}
+            <Body>{full ? <div style={{ width: '100%', maxWidth: t.layout.formMaxWidth, margin: '0 auto' }}>{children}</div> : children}</Body>
+            {footer ? <Foot style={full ? { justifyContent: 'center' } : undefined}>{footer}</Foot> : null}
           </Panel>
         </Layer>
       ) : null}
