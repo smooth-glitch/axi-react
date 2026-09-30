@@ -24,7 +24,7 @@
 %%% anything other than "the whole value for this one message/group," so
 %%% there's nothing to gain from decomposing them further.
 -module(chat_store).
--export([init/0, save_message/5, save_message/6, load_history/1, dm_key/2,
+-export([init/0, edit_message/5, save_message/5, save_message/6, load_history/1, dm_key/2,
          register_user/1, user_known/1, record_dm_partners/2, list_dm_conversations/1,
          save_group/3, delete_group/1, load_groups/0, toggle_reaction/3,
          delete_message/2,
@@ -133,7 +133,7 @@ save_message(ConvKey, From, Text, Kind, Private, ReplyTo) ->
     {Id, Ts}.
 
 %% Last ?HISTORY_LIMIT messages for a conversation, oldest first, as plain
-%% {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted}
+%% {Id, Ts, From, Text, Private, Reactions, Preview, ReplyTo, Deleted, EditedTs}
 %% tuples -- callers never need to know these came from Redis hashes.
 %% Ts is epoch milliseconds. Reactions is a [{User, Emoji}] list; Preview
 %% is [] (none yet, or never will be) or {Url, Title, Description, Image};
@@ -153,7 +153,35 @@ read_message(Id) ->
      decode_reactions(maps:get(<<"reactions">>, Map)),
      decode_preview(maps:get(<<"preview">>, Map)),
      decode_reply_to(maps:get(<<"reply_to">>, Map)),
-     flag_to_bool(maps:get(<<"deleted">>, Map))}.
+     flag_to_bool(maps:get(<<"deleted">>, Map)),
+     edited_ts(Map)}.
+
+%% 0 = never edited (older messages have no such field).
+edited_ts(Map) ->
+    case maps:get(<<"edited_ts">>, Map, undefined) of
+        undefined -> 0;
+        B -> try list_to_integer(b2l(B)) catch _:_ -> 0 end
+    end.
+
+%% Edits a message's text -- only its sender, only while it exists and only within WindowMs of sending
+%% (WhatsApp-style). The row keeps its id and place in history; `edited_ts` marks it edited and a stored link
+%% preview is dropped (it belonged to the old text). -> {ok, EditedTs} | {error, not_found | forbidden | deleted | expired}
+edit_message(MessageId, User, ConvKey, NewText, WindowMs) ->
+    Key = msg_key(MessageId),
+    case q_ok(["HMGET", Key, "from", "deleted", "ts", "conv_key"]) of
+        [undefined, _, _, _] -> {error, not_found};
+        [FromBin, Del, TsBin, Conv] ->
+            Now = erlang:system_time(millisecond),
+            case {b2l(Conv) =:= ConvKey andalso b2l(FromBin) =:= User, flag_to_bool(Del), Now - list_to_integer(b2l(TsBin)) =< WindowMs} of
+                {false, _, _} -> {error, forbidden};     %% not theirs, or not in this conversation
+                {_, true, _} -> {error, deleted};
+                {_, _, false} -> {error, expired};
+                _ ->
+                    q_ok(["HSET", Key, "text", encrypt_text(NewText), "edited_ts", integer_to_list(Now),
+                          "preview", encode_preview([])]),
+                    {ok, Now}
+            end
+    end.
 
 %% Deletes a message for everyone -- only the original sender may delete
 %% their own message (enforced here, not just client-side). The row stays

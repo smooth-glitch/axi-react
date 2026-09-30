@@ -73,7 +73,8 @@ read(User, Id) ->
         Meta ->
             Allowed = maps:get(<<"by">>, Meta) =:= maps:get(<<"username">>, User)
                 orelse sd_users:is_admin(User)
-                orelse sd_config:option_targets_file(Id, User),
+                orelse sd_config:option_targets_file(Id, User)
+                orelse sd_wizard:file_visible(Id, User),
             case Allowed of
                 false -> {error, forbidden, <<"That file isn't available to you.">>};
                 true ->

@@ -21,6 +21,8 @@ start_link() ->
 
 init([]) ->
     schedule(),
+    %% Older deployments pick up categories added to the defaults later. Done by a worker: start-up never waits on Redis.
+    _ = spawn(fun() -> try sd_org:ensure_defaults() catch _:_ -> ok end, try sd_cmdx:refresh_cache() catch _:_ -> ok end end),
     {ok, #{}}.
 
 handle_call(_Msg, _From, State) -> {reply, ok, State}.

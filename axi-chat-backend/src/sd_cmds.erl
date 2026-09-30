@@ -22,7 +22,7 @@
 %%% a bare chat connection with an invented token never gets Sandesh powers,
 %%% even in open mode.
 -module(sd_cmds).
--export([handle/2, rate_limited/1, caller/0, availability/2]).
+-export([handle/2, rate_limited/1, caller/0, availability/2, run/3]).
 -include_lib("kernel/include/logger.hrl").
 
 %% For the #command catalog (chat_cmds): who is this connection, and may they
@@ -138,6 +138,9 @@ ctx() ->
 %% ---- access ----------------------------------------------------------------------------------------
 
 access(<<"me">>) -> none;
+%% Test-only actions (SANDESH_TEST_ACTIONS=1): sleep for `ms`, used to prove the connection is never blocked.
+access(A) when A =:= <<"test.sleep">>; A =:= <<"test.slow_sleep">> ->
+    case os:getenv("SANDESH_TEST_ACTIONS") of "1" -> none; _ -> unknown end;
 access(<<"admin.", _/binary>> = A) when A =:= <<"admin.unlock.start">>; A =:= <<"admin.unlock">> -> user;
 access(<<"admin.user.status">>) -> manage;
 access(<<"admin.", _/binary>>) -> admin;
@@ -155,7 +158,10 @@ user_actions() ->
      <<"sections.delete">>, <<"reminder.add">>,
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
      <<"feed.list">>, <<"feed.summary">>, <<"feed.read">>, <<"feed.resolve">>, <<"feed.dismiss">>, <<"feed.clear">>,
-     <<"options.list">>, <<"options.categories">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
+     <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
+     <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
+     <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"cmd.custom">>, <<"cmd.list">>, <<"cmd.save">>, <<"cmd.delete">>, <<"option.run">>, <<"pay.create">>, <<"pay.confirm">>, <<"pay.status">>, <<"pay.cancel">>, <<"pay.list">>, <<"wizard.list">>, <<"wizard.get">>, <<"wizard.start">>, <<"wizard.current">>, <<"wizard.step">>, <<"wizard.cancel">>, <<"wizard.runs">>, <<"wizard.run">>, <<"onboarding.get">>, <<"catalog.get">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -227,6 +233,9 @@ must_change(User) ->
 
 %% ---- actions ------------------------------------------------------------------------------------------
 
+do(A, Args, _Ctx) when A =:= <<"test.sleep">>; A =:= <<"test.slow_sleep">> ->
+    timer:sleep(min(maps:get(<<"ms">>, Args, 0), 60000)),
+    {ok, #{<<"slept">> => maps:get(<<"ms">>, Args, 0), <<"n">> => maps:get(<<"n">>, Args, null)}};
 do(<<"me">>, _Args, #{user := undefined} = Ctx) ->
     {ok, #{<<"authenticated">> => false, <<"mode">> => mode(),
            <<"sessionExpired">> => maps:get(expired, Ctx, false)}};
@@ -451,6 +460,8 @@ do(<<"tstruct.submit">>, Args, #{user := User}) ->
     end);
 do(<<"submissions.list">>, Args, #{user := User}) ->
     {ok, #{<<"submissions">> => sd_config:list_submissions(User, Args)}};
+do(<<"records.list">>, Args, #{user := User}) ->
+    sd_config:search_records(User, Args);
 do(<<"submissions.update">>, Args, #{user := User}) ->
     case maps:get(<<"id">>, Args, undefined) of
         Id when is_integer(Id) ->
@@ -575,13 +586,61 @@ do(<<"admin.unlock">>, Args, #{token := Token}) ->
 
 %% ---- admin: organisation & master data ---------------------------------------------------------------------------------
 do(<<"admin.org.get">>, _Args, _Ctx) ->
+    _ = sd_connect:org_code(),                    %% older deployments get their Connectum code the first time it is asked for
     {ok, #{<<"org">> => sd_org:info(),
            <<"counts">> => #{<<"users">> => length(sd_users:list()),
                              <<"admins">> => length(sd_users:admins()),
                              <<"pendingApprovals">> => length([U || U <- sd_users:list(),
                                                                     maps:get(<<"status">>, U) =:= <<"pending">>])}}};
+%% name (as before) and now also location {address,country,city,pin} and contact {name,email,mobile}.
 do(<<"admin.org.set">>, Args, _Ctx) ->
-    with_bin(<<"name">>, Args, fun(Name) -> sd_org:set_name(Name), {ok, #{<<"org">> => sd_org:info()}} end);
+    case lists:any(fun(K) -> maps:is_key(K, Args) end, [<<"name">>, <<"location">>, <<"contact">>]) of
+        false -> {error, invalid, <<"Give at least one of name, location, contact.">>};
+        true ->
+            case sd_org:set_profile(Args) of
+                ok -> {ok, #{<<"org">> => sd_org:info()}};
+                Err -> Err
+            end
+    end;
+
+%% ---- a person's own details ----
+%% profile.get     -> {profile:{...everything about me, incl. address / gender / dob / education / skills / roles}}
+%% profile.update  {address, gender, dob, education, skills, city, country, pin}  (any of them; nothing else can be changed here)
+do(<<"profile.get">>, _Args, #{user := User}) ->
+    {ok, #{<<"profile">> => sd_users:full(User)}};
+do(<<"profile.update">>, Args, #{user := User}) ->
+    case sd_users:update_person(maps:get(<<"username">>, User), Args) of
+        {ok, New} -> {ok, #{<<"profile">> => sd_users:full(New)}};
+        Err -> Err
+    end;
+
+%% ---- Connectum codes (QR) ----
+%% connect.my      -> {person:{code,display,payload,url,name,username}, enterprise:{...card...}}
+%% connect.scan    {code}  a personal code makes the two of you associates at once; an enterprise code returns its card
+%% connect.rotate  -> a new personal code (the old one stops working)
+%% connect.lookup  {code}  -> what a code belongs to, without connecting (enterprise card, or a person's public profile)
+do(<<"connect.my">>, _Args, #{user := User}) ->
+    {ok, sd_connect:my(User)};
+do(<<"connect.rotate">>, _Args, #{user := User}) ->
+    Code = sd_connect:rotate_user_code(maps:get(<<"username">>, User)),
+    {ok, #{<<"person">> => (maps:get(<<"person">>, sd_connect:my(User)))#{<<"code">> => Code}}};
+do(<<"connect.scan">>, Args, #{user := User}) ->
+    with_bin(<<"code">>, Args, fun(Code) -> sd_connect:scan(User, Code) end);
+do(<<"connect.lookup">>, Args, #{user := User}) ->
+    with_bin(<<"code">>, Args, fun(Code) ->
+        case sd_connect:lookup(Code) of
+            invalid -> {error, invalid_code, <<"That isn't a valid Connectum code.">>};
+            not_found -> {error, not_found, <<"No one has that code.">>};
+            org -> {ok, #{<<"type">> => <<"enterprise">>, <<"enterprise">> => sd_connect:enterprise_card()}};
+            {user, U} ->
+                case sd_users:get(U) of
+                    #{<<"status">> := <<"active">>} = T ->
+                        {ok, #{<<"type">> => <<"person">>, <<"user">> => sd_users:public(T),
+                               <<"connected">> => sd_users:associated(maps:get(<<"username">>, User), U)}};
+                    _ -> {error, not_found, <<"No one has that code.">>}
+                end
+        end
+    end);
 do(<<"admin.cfg.list">>, Args, _Ctx) ->
     with_kind(Args, fun(Kind) -> {ok, #{<<"items">> => sd_org:list(Kind)}} end);
 do(<<"admin.cfg.save">>, Args, _Ctx) ->
@@ -710,6 +769,131 @@ do(<<"admin.appconn.delete">>, Args, _Ctx) ->
         case sd_config:delete_appconn(N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
     end);
 
+%% ---- connected applications (#Applications) ----
+%% applications.list      -> the applications connected to this enterprise: {name, commandLine} (no addresses or credentials)
+%% applications.commands  {name}  (slow) -> the # commands an application offers ("command line", Axpert)
+do(<<"applications.list">>, _Args, _Ctx) ->
+    {ok, #{<<"applications">> => [maps:with([<<"name">>, <<"commandLine">>], C) || C <- sd_config:list_appconns()]}};
+do(Action, Args, _Ctx) when Action =:= <<"applications.commands">>; Action =:= <<"admin.appconn.commands">> ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_datasource:commands(N) of
+            {ok, L} -> {ok, #{<<"commands">> => L}};
+            Err -> Err
+        end
+    end);
+do(<<"admin.appconn.test">>, Args, _Ctx) ->
+    with_bin(<<"name">>, Args, fun(N) -> sd_datasource:ping(N) end);
+
+%% ---- data sources (#datasources) ----
+%% datasource.list  -> what this person may use: administrator-made ones that apply to them + their own
+%% datasource.get   {name}
+%% datasource.save  {name,type:"sql"|"api",connection,sql|path[,method],params:[{name,default}],description[,applicable (admins)]}
+%% datasource.delete {name}
+%% datasource.run   {name, values:{...}, limit}  (slow) -> {columns, rows, total, truncated}
+do(<<"datasource.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"datasources">> => sd_datasource:list_for(User)}};
+do(<<"datasource.get">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case [D || D <- sd_datasource:list_for(User), maps:get(<<"name">>, D) =:= N orelse
+                                                     string:lowercase(maps:get(<<"name">>, D)) =:= string:lowercase(N)] of
+            [D | _] -> {ok, #{<<"datasource">> => D}};
+            [] -> {error, not_found, <<"No such data source.">>}
+        end
+    end);
+do(<<"datasource.save">>, Args, #{user := User}) ->
+    case sd_datasource:save(User, Args) of {ok, D} -> {ok, #{<<"datasource">> => D}}; Err -> Err end;
+do(<<"datasource.delete">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_datasource:delete(User, N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+    end);
+do(<<"datasource.run">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) -> sd_datasource:run_for(User, N, Args) end);
+do(<<"admin.datasource.list">>, _Args, _Ctx) ->
+    {ok, #{<<"datasources">> => sd_datasource:all_described()}};
+
+%% ---- global variables (#globalvars) ----
+%% globals.list     -> {builtins:[names], custom:[{name,default,datasource,column,description}], values:{...mine, instant}}
+%% globals.resolve  (slow) -> {values} including the ones a data source supplies
+%% admin.globals.save {name, default | datasource+column, description} / admin.globals.delete {name}
+do(<<"globals.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"builtins">> => [N || {N, _} <- sd_globals:builtins()], <<"custom">> => sd_globals:list(),
+           <<"values">> => sd_globals:values(User)}};
+do(<<"globals.resolve">>, _Args, #{user := User}) ->
+    {ok, #{<<"values">> => sd_globals:resolve(User, #{})}};
+do(<<"admin.globals.save">>, Args, _Ctx) ->
+    case sd_globals:save(Args) of {ok, G} -> {ok, #{<<"variable">> => G}}; Err -> Err end;
+do(<<"admin.globals.delete">>, Args, _Ctx) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_globals:delete(N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+    end);
+
+do(<<"catalog.list">>, Args, #{user := User}) ->
+    {ok, sd_catalog:list(sd_users:is_admin(User), Args)};
+do(<<"catalog.get">>, Args, _Ctx) ->
+    case sd_catalog:get(sd_util:get(<<"kind">>, Args, <<>>), sd_util:get(<<"id">>, Args, <<>>)) of
+        #{<<"active">> := true} = I -> {ok, #{<<"item">> => I}};
+        _ -> {error, not_found, <<"No such item.">>}
+    end;
+do(<<"admin.catalog.save">>, Args, _Ctx) ->
+    case sd_catalog:save(Args) of {ok, I} -> {ok, #{<<"item">> => I}}; Err -> Err end;
+do(<<"admin.catalog.delete">>, Args, _Ctx) ->
+    case sd_catalog:delete(sd_util:get(<<"kind">>, Args, <<>>), sd_util:get(<<"id">>, Args, <<>>)) of
+        ok -> {ok, #{<<"deleted">> => true}};
+        Err -> Err
+    end;
+
+do(<<"onboarding.get">>, Args, _Ctx) ->
+    {ok, #{<<"process">> => sd_onboarding:get(sd_util:get(<<"category">>, Args, <<>>))}};
+do(<<"admin.onboarding.list">>, _Args, _Ctx) ->
+    {ok, #{<<"processes">> => sd_onboarding:list(), <<"fields">> => sd_onboarding:fields()}};
+do(<<"admin.onboarding.save">>, Args, _Ctx) ->
+    case sd_onboarding:save(Args) of {ok, P} -> {ok, #{<<"process">> => P}}; Err -> Err end;
+do(<<"admin.onboarding.delete">>, Args, _Ctx) ->
+    case sd_onboarding:delete(sd_util:get(<<"category">>, Args, <<>>)) of
+        ok -> {ok, #{<<"deleted">> => true}};
+        Err -> Err
+    end;
+
+do(<<"wizard.list">>, _Args, #{user := User}) -> {ok, #{<<"wizards">> => sd_wizard:list_for(User)}};
+do(<<"wizard.get">>, Args, #{user := User}) ->
+    case sd_wizard:get_for(User, sd_util:get(<<"name">>, Args, <<>>)) of
+        {ok, W} -> {ok, #{<<"wizard">> => W}};
+        Err -> Err
+    end;
+do(<<"wizard.start">>, Args, #{user := User}) -> sd_wizard:start(User, sd_util:get(<<"name">>, Args, <<>>));
+do(<<"wizard.current">>, Args, #{user := User}) -> sd_wizard:current(User, sd_util:get(<<"runId">>, Args));
+do(<<"wizard.step">>, Args, #{user := User}) -> sd_wizard:step(User, sd_util:get(<<"runId">>, Args), Args);
+do(<<"wizard.cancel">>, Args, #{user := User}) ->
+    case sd_wizard:cancel(User, sd_util:get(<<"runId">>, Args)) of {ok, R} -> {ok, #{<<"run">> => R}}; Err -> Err end;
+do(<<"wizard.runs">>, _Args, #{user := User}) -> {ok, #{<<"runs">> => sd_wizard:runs(User)}};
+do(<<"wizard.run">>, Args, #{user := User}) -> sd_wizard:run_view(User, sd_util:get(<<"runId">>, Args));
+do(<<"admin.wizard.list">>, _Args, _Ctx) -> {ok, #{<<"wizards">> => sd_wizard:list_defs(), <<"stepTypes">> => sd_wizard:step_types()}};
+do(<<"admin.wizard.save">>, Args, _Ctx) ->
+    case sd_wizard:save_def(Args) of {ok, W} -> {ok, #{<<"wizard">> => W}}; Err -> Err end;
+do(<<"admin.wizard.delete">>, Args, _Ctx) ->
+    case sd_wizard:delete_def(sd_util:get(<<"name">>, Args, <<>>)) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end;
+
+do(<<"option.run">>, Args, #{user := User}) ->
+    sd_config:run_option(User, sd_util:get(<<"id">>, Args, <<>>), Args);
+do(<<"pay.create">>, Args, #{user := User}) ->
+    sd_config:run_option(User, sd_util:get(<<"option">>, Args, <<>>), Args);
+do(<<"pay.confirm">>, Args, #{user := User}) ->
+    sd_pay:confirm(User, sd_util:get(<<"id">>, Args), sd_util:get(<<"reference">>, Args));
+do(<<"pay.status">>, Args, #{user := User}) -> sd_pay:status(User, sd_util:get(<<"id">>, Args));
+do(<<"pay.cancel">>, Args, #{user := User}) -> sd_pay:cancel(User, sd_util:get(<<"id">>, Args));
+do(<<"pay.list">>, Args, #{user := User}) -> {ok, sd_pay:list(User, Args)};
+do(<<"admin.pay.mark">>, Args, _Ctx) ->
+    sd_pay:mark(sd_util:get(<<"id">>, Args), sd_util:get(<<"status">>, Args), sd_util:get(<<"reference">>, Args));
+
+do(<<"cmd.custom">>, Args, #{user := User} = Ctx) ->
+    sd_cmdx:execute(User, sd_util:get(<<"name">>, Args, <<>>), sd_util:get(<<"input">>, Args, <<>>), Ctx);
+do(<<"cmd.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"commands">> => sd_cmdx:list_for(User), <<"kinds">> => sd_cmdx:kinds()}};
+do(<<"cmd.save">>, Args, #{user := User}) ->
+    case sd_cmdx:save(User, Args) of {ok, C} -> {ok, #{<<"command">> => C}}; Err -> Err end;
+do(<<"cmd.delete">>, Args, #{user := User}) ->
+    case sd_cmdx:delete(User, sd_util:get(<<"name">>, Args, <<>>)) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end;
+
 do(Action, _, _) ->
     {error, unknown_action, <<"Unknown sd action: ", Action/binary>>}.
 
@@ -785,7 +969,8 @@ with_kind(Args, Fun) ->
         <<"designations">> -> Fun(designations);
         <<"categories">> -> Fun(categories);
         <<"affiliates">> -> Fun(affiliates);
-        _ -> {error, invalid, <<"kind must be one of: branches, departments, designations, categories, affiliates">>}
+        <<"roles">> -> Fun(roles);
+        _ -> {error, invalid, <<"kind must be one of: branches, departments, designations, categories, affiliates, roles">>}
     end.
 
 %% "Other users can be invited by providing ...": an administrator or a host
@@ -807,7 +992,9 @@ invite_user(Args, Actor) ->
                                true -> Opts0;
                                false -> Opts0#{scope_host => HostUser}
                            end,
-                    case sd_users:create(Args, Opts) of
+                    %% Only an administrator may give someone roles (they decide who may approve what).
+                    ArgsOk = case IsAdmin of true -> Args; false -> maps:remove(<<"roles">>, Args) end,
+                    case sd_users:create(ArgsOk, Opts) of
                         {ok, User} ->
                             Username = maps:get(<<"username">>, User),
                             %% Every account needs a password now (mandatory TOTP

@@ -18,7 +18,7 @@
 
 -export([start_link/0]).
 -export([create_group/2, add_member/3, force_add/3, leave_group/2, list_groups_for/1,
-         list_members/1, list_groups_detailed/1, all_names/0, owner/1, group_message/3, group_message/4, typing/2, react/4, delete/3]).
+         list_members/1, list_groups_detailed/1, all_names/0, owner/1, group_message/3, group_message/4, typing/2, react/4, delete/3, edit/4]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(group, {owner :: string(), members :: [string()]}).
@@ -70,6 +70,7 @@ group_message(GroupName, From, Text, ReplyTo) ->
 typing(GroupName, From) -> gen_server:cast(?MODULE, {typing, GroupName, From}).
 react(GroupName, MessageId, User, Emoji) -> gen_server:cast(?MODULE, {react, GroupName, MessageId, User, Emoji}).
 delete(GroupName, MessageId, User) -> gen_server:cast(?MODULE, {delete, GroupName, MessageId, User}).
+edit(GroupName, MessageId, User, Text) -> gen_server:cast(?MODULE, {edit, GroupName, MessageId, User, Text}).
 
 %% A short-lived worker does the slow (Redis) part and answers the caller; a failure becomes ErrReply.
 offload_reply(From, Fun, ErrReply) ->
@@ -240,6 +241,26 @@ handle_cast({react, GroupName, MessageId, User, Emoji}, State = #state{groups = 
                 end;
             error ->
                 ok
+        end
+    end),
+    {noreply, State};
+handle_cast({edit, GroupName, MessageId, User, Text}, State = #state{groups = Groups}) ->
+    chat_writer:run_async(fun() ->
+        case maps:find(GroupName, Groups) of
+            {ok, #group{members = Members}} ->
+                case lists:member(User, Members) of
+                    false -> ok;
+                    true ->
+                        case chat_store:edit_message(MessageId, User, "group:" ++ GroupName, Text, chat_room:edit_window_ms()) of
+                            {ok, Ts} -> notify_members(Members, [], {group_edited, GroupName, MessageId, Text, Ts});
+                            {error, Reason} ->
+                                case chat_room:get_pid(User) of
+                                    {ok, Pid} -> Pid ! {edit_denied, MessageId, Reason};
+                                    error -> ok
+                                end
+                        end
+                end;
+            error -> ok
         end
     end),
     {noreply, State};

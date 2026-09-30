@@ -76,6 +76,13 @@ route(Socket, "OPTIONS", _Path, _Headers, _BodyStart) ->
     send(Socket, 204, <<>>);
 route(Socket, "GET", "/api/sd/public", _H, _B) ->
     ok_(Socket, sd_org:public());
+%% A scanned / typed enterprise code -> the enterprise card. No sign-in; rate limited per address, and a personal
+%% code answers exactly like an unknown one.
+route(Socket, "GET", "/api/sd/connect/" ++ Code, H, _B) ->
+    case sd_db:rate(["connect:", client_ip(Socket, H)], 60, 60) of
+        limited -> send(Socket, 429, error_body(rate_limited, <<"Too many lookups; try again in a minute.">>, null));
+        ok -> respond(Socket, sd_connect:public_lookup(sd_util:b(http_uri_decode(Code))))
+    end;
 route(Socket, "GET", "/api/sd/2fa/totp", H, _B) ->
     respond(Socket, sd_totp:status(bearer(H)));
 route(Socket, "GET", "/api/sd/session", H, _B) ->
@@ -116,6 +123,9 @@ post(Socket, "/api/sd/setup/start", Body, H) ->
     respond(Socket, sd_auth:setup_start(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/setup/verify", Body, H) ->
     respond(Socket, sd_auth:setup_verify(Body, client_ip(Socket, H)));
+post(Socket, "/api/sd/pay/webhook", Body, H) ->
+    Given = case maps:get("x-webhook-secret", H, undefined) of undefined -> undefined; V -> list_to_binary(V) end,
+    respond(Socket, sd_pay:webhook(Given, Body));
 post(Socket, "/api/sd/register", Body, H) ->
     respond(Socket, self_register(Body, client_ip(Socket, H)));
 post(Socket, "/api/sd/login", Body, H) ->
@@ -150,28 +160,47 @@ post(Socket, _Path, _Body, _H) ->
 %% checked with the same policy as a password change. TOTP enrollment still
 %% happens at their first login after approval, same as everyone else.
 self_register(Body, Ip) ->
-    case {sd_org:setup_done(), sd_db:rate(["register:", Ip], 10, 3600)} of
-        {false, _} -> {error, not_ready, <<"This organisation hasn't been set up yet.">>};
-        {_, limited} -> {error, rate_limited, <<"Too many registrations from here; try later.">>};
-        _ ->
-            Password = sd_util:get(<<"password">>, Body),
-            Username0 = sd_util:get(<<"username">>, Body, <<>>),
-            case sd_auth:check_password_policy(Username0, Password) of
-                {error, _, _} = Err -> Err;
-                ok ->
-                    case sd_users:create(Body, #{mode => register, actor => <<"self">>,
-                                                 status => <<"pending">>}) of
-                        {ok, User} ->
-                            sd_auth:set_initial_password(maps:get(<<"username">>, User), Password),
-                            {ok, Req} = sd_reqs:create_onboarding(User),
-                            {ok, #{<<"registered">> => true, <<"status">> => <<"pending">>,
-                                   <<"username">> => maps:get(<<"username">>, User),
-                                   <<"requestId">> => maps:get(<<"id">>, Req),
-                                   <<"awaitingApprovalFrom">> => length(maps:get(<<"approvers">>, Req))}};
-                        Err -> Err
-                    end
+    case {sd_org:setup_done(), sd_db:rate(["register:", Ip], 10, 3600), sd_connect:check_registration_code(Body)} of
+        {false, _, _} -> {error, not_ready, <<"This organisation hasn't been set up yet.">>};
+        {_, limited, _} -> {error, rate_limited, <<"Too many registrations from here; try later.">>};
+        {_, _, {error, _, _} = CodeErr} -> CodeErr;
+        {_, _, ok} ->
+            case sd_onboarding:check_registration(Body) of
+                {error, _, _} = E -> E;
+                ok -> register_checked(Body)
             end
     end.
+
+register_checked(Body) ->
+    Password = sd_util:get(<<"password">>, Body),
+    Username0 = sd_util:get(<<"username">>, Body, <<>>),
+    case sd_auth:check_password_policy(Username0, Password) of
+        {error, _, _} = Err -> Err;
+        ok ->
+            case sd_users:create(Body, #{mode => register, actor => <<"self">>, status => <<"pending">>}) of
+                {ok, User} ->
+                    sd_auth:set_initial_password(maps:get(<<"username">>, User), Password),
+                    Name = maps:get(<<"username">>, User),
+                    Welcome = maps:get(<<"welcome">>, sd_onboarding:get(sd_util:b(sd_util:get(<<"category">>, User)))),
+                    case sd_onboarding:approvers(User) of
+                        none ->
+                            {ok, _} = sd_users:set_status(Name, <<"active">>),
+                            {ok, #{<<"registered">> => true, <<"status">> => <<"active">>, <<"username">> => Name,
+                                   <<"requestId">> => null, <<"awaitingApprovalFrom">> => 0,
+                                   <<"welcome">> => Welcome}};
+                        {approvers, As} ->
+                            {ok, Req} = sd_reqs:create_onboarding(User, As),
+                            {ok, #{<<"registered">> => true, <<"status">> => <<"pending">>, <<"username">> => Name,
+                                   <<"requestId">> => maps:get(<<"id">>, Req),
+                                   <<"awaitingApprovalFrom">> => length(maps:get(<<"approvers">>, Req)),
+                                   <<"welcome">> => Welcome}}
+                    end;
+                Err -> Err
+            end
+    end.
+
+http_uri_decode(S) ->
+    try uri_string:percent_decode(S) catch _:_ -> S end.
 
 %% ---- files (upload / download options) ------------------------------------------------------------------
 

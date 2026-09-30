@@ -22,11 +22,11 @@
 -module(sd_config).
 -export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_categories/0, option_categories_for/2, options_page/2, option_types/0,
-         list_appconns/0, save_appconn/1, delete_appconn/1,
-         tstruct_for_user/2, submit/4, list_submissions/2,
+         list_appconns/0, save_appconn/1, delete_appconn/1, appconn_raw/1, safe_path/1,
+         tstruct_for_user/2, submit/4, list_submissions/2, search_records/2, check_values/2, validate_fields/1, get_option/1, run_option/3,
          update_submission/3, delete_submission/2,
          list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
-         delete_user_tstruct/2, submit_user_tstruct/4, applies/2,
+         delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2, validate_applicable/1,
          list_user_options/1, save_user_option/2, delete_user_option/2, option_targets_file/2]).
 
 -define(TSTRUCTS, "sd:tstructs").
@@ -200,7 +200,7 @@ valid_cond(undefined, _) -> true;
 valid_cond(#{<<"all">> := L}, Names) when is_list(L) -> lists:all(fun(C) -> valid_cond(C, Names) end, L);
 valid_cond(#{<<"any">> := L}, Names) when is_list(L) -> lists:all(fun(C) -> valid_cond(C, Names) end, L);
 valid_cond(#{<<"field">> := F, <<"op">> := Op} = C, Names) ->
-    lists:member(F, Names) andalso lists:member(Op, ?OPS) andalso
+    (Names =:= any orelse lists:member(F, Names)) andalso lists:member(Op, ?OPS) andalso
         (Op =:= <<"notempty">> orelse maps:is_key(<<"value">>, C)) andalso
         (Op =/= <<"in">> orelse is_list(maps:get(<<"value">>, C)));
 valid_cond(_, _) -> false.
@@ -254,9 +254,13 @@ do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
                     Target = text(sd_util:get(<<"target">>, Raw), <<>>),
                     case check_target(Type, Target, Actor) of
                         {ok, Scope} ->
-                            case validate_applicable(sd_util:get(<<"applicable">>, Raw, #{})) of
-                                {ok, Ap} ->
-                                    Opt = #{<<"id">> => Id, <<"caption">> => Caption, <<"type">> => Type,
+                            case {validate_applicable(sd_util:get(<<"applicable">>, Raw, #{})), option_condition(sd_util:get(<<"condition">>, Raw, null))} of
+                                {_, {error, _, _} = CErr} -> CErr;
+                                {{ok, Ap}, {ok, Cond}} ->
+                                    case sd_pay:config(Type, Raw) of
+                                    {error, _, _} = PErr -> PErr;
+                                    {ok, PayCfg} ->
+                                    Opt = PayCfg#{<<"id">> => Id, <<"caption">> => Caption, <<"type">> => Type,
                                             <<"target">> => Target, <<"targetScope">> => Scope,
                                             <<"owner">> => Owner,
                                             <<"createdTs">> => case Existing of
@@ -266,20 +270,38 @@ do_save_option(Raw, User, OwnerForNew) when is_map(Raw) ->
                                             <<"modifiedTs">> => case Existing of undefined -> null; _ -> sd_util:now_ms() end,
                                             <<"display">> => display(Type, sd_util:get(<<"display">>, Raw)),
                                             <<"applicable">> => Ap,
+                                            <<"condition">> => Cond,
                                             <<"active">> => sd_util:get(<<"active">>, Raw, true) =/= false,
                                             <<"order">> => case sd_util:get(<<"order">>, Raw, 0) of
                                                                Ord when is_integer(Ord) -> Ord;
                                                                _ -> 0
                                                            end},
                                     sd_db:hset_json(?OPTIONS, sd_util:s(string:lowercase(Id)), Opt),
-                                    {ok, Opt};
-                                Err -> Err
+                                    {ok, Opt}
+                                    end;
+                                {{error, _, _} = AErr, _} -> AErr
                             end;
                         Err -> Err
                     end
             end
     end;
 do_save_option(_, _, _) -> {error, bad_request, <<"Expected a JSON object.">>}.
+
+%% An option's own rule: null (always shown) or a condition over the global variables, e.g.
+%% {"all":[{"field":"city","op":"eq","value":"Pune"},{"field":"isHost","op":"eq","value":true}]}.
+option_condition(null) -> {ok, null};
+option_condition(C) when is_map(C) ->
+    Refs = sd_globals:referenced(C),
+    case valid_cond(C, any) andalso length(Refs) =< 50 of
+        false -> {error, invalid, <<"condition is malformed (or too large).">>};
+        true ->
+            Known = sd_globals:known(),
+            case [F || F <- Refs, not lists:member(F, Known)] of
+                [] -> {ok, C};
+                [Bad | _] -> {error, invalid, <<"condition refers to an unknown variable: ", Bad/binary>>}
+            end
+    end;
+option_condition(_) -> {error, invalid, <<"condition must be an object or null.">>}.
 
 %% New id, an administrator, or the option's own creator may save it.
 may_change_option(undefined, _) -> ok;
@@ -328,6 +350,59 @@ display(<<"get_data">>, D) when D =:= <<"table">>; D =:= <<"name_value">>; D =:=
 display(<<"get_data">>, _) -> <<"table">>;
 display(_, _) -> null.
 
+get_option(Id) -> sd_db:hget_json(?OPTIONS, sd_util:s(string:lowercase(sd_util:b(Id)))).
+
+%% Runs an option the person can see. Input = the request arguments (values, amount, ...).
+%%   get_data   asks the data source named in `target`, shaped per `display` (table | name_value | text)
+%%   pay        starts a payment (sd_pay)
+%%   data_input / download / upload   nothing to run: says which existing call to use
+%%   axpert_*   not supported on this deployment
+%% Slow (data sources, payments): sd_lane runs it off the connection.
+run_option(User, Id, Input) ->
+    case get_option(Id) of
+        #{<<"active">> := false} -> {error, not_found, <<"No such option.">>};
+        undefined -> {error, not_found, <<"No such option.">>};
+        Opt ->
+            case applies(Opt, User) of
+                false -> {error, not_found, <<"No such option.">>};
+                true -> do_run_option(maps:get(<<"type">>, Opt), Opt, User, Input)
+            end
+    end.
+
+do_run_option(<<"get_data">>, Opt, User, Input) ->
+    case sd_datasource:run_for(User, maps:get(<<"target">>, Opt, <<>>), Input) of
+        {ok, Data} -> {ok, #{<<"option">> => maps:get(<<"id">>, Opt), <<"display">> => maps:get(<<"display">>, Opt, <<"table">>),
+                             <<"result">> => shape(maps:get(<<"display">>, Opt, <<"table">>), Data)}};
+        {error, not_found, _} -> {error, not_configured, <<"This option isn't connected to a data source yet.">>};
+        Err -> Err
+    end;
+do_run_option(<<"pay">>, Opt, User, Input) ->
+    sd_pay:create(User, #{option => Opt, input => Input});
+do_run_option(<<"data_input">>, Opt, _User, _) ->
+    {ok, #{<<"option">> => maps:get(<<"id">>, Opt), <<"open">> => <<"tstruct">>, <<"target">> => maps:get(<<"target">>, Opt)}};
+do_run_option(Type, Opt, _User, _) when Type =:= <<"download">>; Type =:= <<"upload">> ->
+    {ok, #{<<"option">> => maps:get(<<"id">>, Opt), <<"open">> => Type, <<"target">> => maps:get(<<"target">>, Opt, <<>>)}};
+do_run_option(_Axpert, _Opt, _User, _) ->
+    {error, not_supported, <<"Axpert options need the Axpert connection, which isn't set up on this deployment.">>}.
+
+%% table: as returned. name_value: the first row as [{name,value}]. text: one "column: value" line per cell.
+shape(<<"name_value">>, #{<<"rows">> := [Row | _]} = D) when is_map(Row) ->
+    Cols = maps:get(<<"columns">>, D, maps:keys(Row)),
+    #{<<"pairs">> => [#{<<"name">> => C, <<"value">> => maps:get(C, Row, null)} || C <- Cols]};
+shape(<<"name_value">>, _) -> #{<<"pairs">> => []};
+shape(<<"text">>, #{<<"rows">> := Rows} = D) ->
+    Cols = maps:get(<<"columns">>, D, []),
+    Lines = [iolist_to_binary(lists:join(<<"\n">>, [<<C/binary, ": ", (cell(maps:get(C, R, null)))/binary>> || C <- Cols])) || R <- Rows, is_map(R)],
+    #{<<"text">> => iolist_to_binary(lists:join(<<"\n\n">>, Lines))};
+shape(_, Data) -> Data.
+
+cell(V) when is_binary(V) -> V;
+cell(V) when is_integer(V) -> integer_to_binary(V);
+cell(V) when is_float(V) -> float_to_binary(V, [{decimals, 6}, compact]);
+cell(true) -> <<"true">>;
+cell(false) -> <<"false">>;
+cell(_) -> <<>>.
+
 delete_option(Id) ->
     K = sd_util:s(string:lowercase(sd_util:b(Id))),
     case sd_db:hget(?OPTIONS, K) of
@@ -373,7 +448,8 @@ validate_applicable(Ap) when is_map(Ap) ->
               {<<"affiliates">>, fun(V) -> sd_org:exists(affiliates, V) end},
               {<<"departments">>, fun(V) -> sd_org:exists(departments, V) end},
               {<<"branches">>, fun(V) -> sd_org:exists(branches, V) end},
-              {<<"designations">>, fun(V) -> sd_org:exists(designations, V) end}],
+              {<<"designations">>, fun(V) -> sd_org:exists(designations, V) end},
+              {<<"roles">>, fun(V) -> sd_org:exists(roles, V) end}],
     Res = [check_applicable(K, sd_util:get(K, Ap, <<"all">>), Ok) || {K, Ok} <- Checks],
     case [E || {error, _, _} = E <- Res] of
         [] -> {ok, maps:from_list([R || {K, _} = R <- Res, is_binary(K)])};
@@ -391,7 +467,8 @@ check_applicable(K, _, _) -> {error, invalid, <<"applicable.", K/binary, " must 
 
 %% Options this user should see, in configured order.
 options_for(User) ->
-    [strip(O) || O <- list_options(), maps:get(<<"active">>, O, true) =/= false, applies(O, User)].
+    Vars = sd_globals:values(User),
+    [strip(O) || O <- list_options(), maps:get(<<"active">>, O, true) =/= false, applies(O, User, Vars)].
 
 strip(O) ->
     S = maps:with([<<"id">>, <<"caption">>, <<"type">>, <<"target">>, <<"targetScope">>, <<"owner">>, <<"display">>, <<"order">>], O),
@@ -480,7 +557,11 @@ sort_key(O) ->
 clamp_int(V, _Default, Min, Max) when is_integer(V) -> max(Min, min(Max, V));
 clamp_int(_, Default, Min, Max) -> max(Min, min(Max, Default)).
 
-applies(Option, User) ->
+applies(Option, User) -> applies(Option, User, sd_globals:values(User)).
+
+%% "Applicable to" (category / affiliate / department / branch / designation / roles) and then the option's own
+%% condition, evaluated over the user's global variables (e.g. {"field":"city","op":"eq","value":"Pune"}).
+applies(Option, User, Vars) ->
     Ap = maps:get(<<"applicable">>, Option, #{}),
     Cat = sd_users:effective_category(User),
     In = fun(Key, Value) ->
@@ -492,16 +573,24 @@ applies(Option, User) ->
                  _ -> false
              end
          end,
+    RoleOk = case maps:get(<<"roles">>, Ap, <<"all">>) of
+                 <<"all">> -> true;
+                 Wanted when is_list(Wanted) ->
+                     Have = [string:lowercase(R) || R <- sd_users:roles_of(User)],
+                     lists:any(fun(W) -> is_binary(W) andalso lists:member(string:lowercase(W), Have) end, Wanted);
+                 _ -> false
+             end,
     In(<<"categories">>, Cat) andalso
-    case Cat of
+    (case Cat of
         <<"Employee">> ->
             In(<<"departments">>, sd_util:get(<<"department">>, User)) andalso
             In(<<"branches">>, sd_util:get(<<"branch">>, User)) andalso
-            In(<<"designations">>, sd_util:get(<<"designation">>, User));
+            In(<<"designations">>, sd_util:get(<<"designation">>, User)) andalso RoleOk;
         <<"Affiliate">> ->
-            In(<<"affiliates">>, sd_util:get(<<"affiliate">>, User));
-        _ -> true
-    end.
+            In(<<"affiliates">>, sd_util:get(<<"affiliate">>, User)) andalso RoleOk;
+        _ -> RoleOk
+    end) andalso
+    eval(maps:get(<<"condition">>, Option, null), Vars).
 
 %% =============================================================================
 %% Application connections
@@ -533,11 +622,43 @@ save_appconn(Raw) when is_map(Raw) ->
                            maps:with([<<"credentials">>], Old);
                        _ -> #{}
                    end,
-            Conn = maps:merge(#{<<"name">> => Name, <<"url">> => Url, <<"authType">> => Auth}, Cred),
-            sd_db:hset_json(?APPCONNS, key(Name), Conn),
-            {ok, strip_conn(Conn)}
+            Path = fun(K, Default) ->
+                       case sd_util:get(K, Raw) of
+                           undefined -> maps:get(K, case Old of undefined -> #{}; _ -> Old end, Default);
+                           null -> Default;
+                           P -> P
+                       end
+                   end,
+            QueryPath = Path(<<"queryPath">>, <<"/query">>),
+            CommandsPath = Path(<<"commandsPath">>, <<"/commands">>),
+            Flag = fun(K) -> case sd_util:get(K, Raw) of
+                                 undefined -> maps:get(K, case Old of undefined -> #{}; _ -> Old end, false) =:= true;
+                                 V -> V =:= true
+                             end end,
+            case {safe_path(QueryPath), safe_path(CommandsPath)} of
+                {false, _} -> {error, invalid, <<"queryPath must be a plain path like /query.">>};
+                {_, false} -> {error, invalid, <<"commandsPath must be a plain path like /commands.">>};
+                _ ->
+                    %% commandLine: the spec's "Is command line required" (Axpert applications only);
+                    %% allowUserDatasources: whether people may define their own (SQL) data sources on this connection.
+                    Conn = maps:merge(#{<<"name">> => Name, <<"url">> => Url, <<"authType">> => Auth,
+                                        <<"commandLine">> => Flag(<<"commandLine">>),
+                                        <<"allowUserDatasources">> => Flag(<<"allowUserDatasources">>),
+                                        <<"queryPath">> => QueryPath, <<"commandsPath">> => CommandsPath}, Cred),
+                    sd_db:hset_json(?APPCONNS, key(Name), Conn),
+                    {ok, strip_conn(Conn)}
+            end
     end;
 save_appconn(_) -> {error, bad_request, <<"Expected a JSON object.">>}.
+
+%% The stored connection including its sealed credentials, for server-side calls only (never sent to a client).
+appconn_raw(Name) -> sd_db:hget_json(?APPCONNS, key(Name)).
+
+%% A path we are willing to append to a connection's base URL: starts with one /, no "..", no "//", no query, short.
+safe_path(P) when is_binary(P), byte_size(P) =< 200 ->
+    re:run(P, "^/[A-Za-z0-9._~%/-]*$", [{capture, none}]) =:= match andalso
+        binary:match(P, <<"..">>) =:= nomatch andalso binary:match(P, <<"//">>) =:= nomatch;
+safe_path(_) -> false.
 
 delete_appconn(Name) ->
     case sd_db:hget(?APPCONNS, key(Name)) of
@@ -673,6 +794,50 @@ list_submissions(User, Args) ->
         undefined -> Subs; %% sd:subs:u:<user> is already correctly scoped
         _ -> [S || S <- Subs, can_see_submission(User, S)]
     end.
+
+%% #list: records of one structure, newest first, with text search, date range, scope and paging.
+%%   tstruct (required), q (matches any value, case-insensitive), from/to (ms since epoch), scope "mine" | "all"
+%%   ("all" = everything the caller may see), limit (1..100, default 20), offset.
+%% Looks at the newest 1000 records of the structure at most, so one call stays cheap.
+search_records(User, Args) ->
+    case sd_util:get(<<"tstruct">>, Args, undefined) of
+        T when is_binary(T), T =/= <<>> ->
+            Me = maps:get(<<"username">>, User),
+            Ids = sd_db:zrevrange("sd:subs:t:" ++ key(T), 0, 999),
+            All = [S || B <- Ids, S <- [sd_db:hget_json("sd:subs", binary_to_list(B))], is_map(S), can_see_submission(User, S)],
+            Scoped = case sd_util:get(<<"scope">>, Args, <<"all">>) of
+                         <<"mine">> -> [S || S <- All, maps:get(<<"by">>, S) =:= Me];
+                         _ -> All
+                     end,
+            Q = case sd_util:get(<<"q">>, Args, <<>>) of Qb when is_binary(Qb) -> string:lowercase(string:trim(Qb)); _ -> <<>> end,
+            From = num_arg(sd_util:get(<<"from">>, Args, undefined)),
+            To = num_arg(sd_util:get(<<"to">>, Args, undefined)),
+            Hits = [S || S <- Scoped, in_range(maps:get(<<"ts">>, S, 0), From, To), matches_text(S, Q)],
+            Limit = clamp(num_arg(sd_util:get(<<"limit">>, Args, undefined)), 1, 100, 20),
+            Offset = clamp(num_arg(sd_util:get(<<"offset">>, Args, undefined)), 0, 100000, 0),
+            Page = lists:sublist(safe_nthtail(Offset, Hits), Limit),
+            {ok, #{<<"records">> => Page, <<"total">> => length(Hits), <<"offset">> => Offset,
+                   <<"limit">> => Limit, <<"hasMore">> => Offset + length(Page) < length(Hits)}};
+        _ -> {error, invalid, <<"tstruct is required.">>}
+    end.
+
+num_arg(N) when is_integer(N) -> N;
+num_arg(N) when is_float(N) -> trunc(N);
+num_arg(_) -> undefined.
+clamp(undefined, _, _, D) -> D;
+clamp(N, Lo, Hi, _) -> max(Lo, min(Hi, N)).
+safe_nthtail(N, L) when N >= length(L) -> [];
+safe_nthtail(N, L) -> lists:nthtail(N, L).
+in_range(Ts, From, To) -> (From =:= undefined orelse Ts >= From) andalso (To =:= undefined orelse Ts =< To).
+matches_text(_, <<>>) -> true;
+matches_text(#{<<"values">> := V} = S, Q) when is_map(V) ->
+    Texts = [value_text(X) || X <- maps:values(V)] ++ [maps:get(<<"ref">>, S, <<>>)],
+    lists:any(fun(T) -> is_binary(T) andalso binary:match(string:lowercase(T), Q) =/= nomatch end, Texts);
+matches_text(_, _) -> false.
+value_text(V) when is_binary(V) -> V;
+value_text(V) when is_integer(V) -> integer_to_binary(V);
+value_text(V) when is_float(V) -> float_to_binary(V, [{decimals, 6}, compact]);
+value_text(_) -> <<>>.
 
 can_see_submission(User, Sub) ->
     Username = maps:get(<<"username">>, User),

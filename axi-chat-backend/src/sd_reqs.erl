@@ -17,7 +17,7 @@
 %%% Everything is durable: an approver who is offline simply finds the
 %%% request waiting when they next connect (a live push is only a bonus).
 -module(sd_reqs).
--export([create_onboarding/1, create_associate/2, create_host_transfer/3,
+-export([create_onboarding/1, create_onboarding/2, create_wizard/3, create_associate/2, create_host_transfer/3,
          create_group_invite/3, respond/3, list_for/2, get/1, approvers_for/1,
          view/1, pending_count/1]).
 
@@ -32,6 +32,14 @@ create_onboarding(NewUser) ->
     Approvers = approvers_for(NewUser),
     make(<<"onboarding">>, maps:get(<<"username">>, NewUser), maps:get(<<"username">>, NewUser),
          Approvers, #{}).
+
+create_onboarding(NewUser, Approvers) ->
+    make(<<"onboarding">>, maps:get(<<"username">>, NewUser), maps:get(<<"username">>, NewUser),
+         Approvers, #{}).
+
+%% An approval step of a wizard run: Data = #{runId, stepId, wizard, message}.
+create_wizard(Owner, Approvers, Data) ->
+    make(<<"wizard">>, Owner, Owner, Approvers, Data).
 
 create_associate(From, ToUsername) ->
     F = sd_util:norm_user(From), T = sd_util:norm_user(ToUsername),
@@ -130,6 +138,8 @@ request_text(#{<<"type">> := <<"associate">>, <<"fromName">> := F}) ->
     <<F/binary, " wants to connect with you.">>;
 request_text(#{<<"type">> := <<"host_transfer">>, <<"fromName">> := F, <<"subjectName">> := S}) ->
     <<F/binary, " wants to transfer ", S/binary, " to you as their host.">>;
+request_text(#{<<"type">> := <<"wizard">>, <<"fromName">> := F, <<"data">> := #{<<"wizard">> := W, <<"message">> := M}}) ->
+    <<F/binary, " needs your approval in ", W/binary, ": ", M/binary>>;
 request_text(#{<<"type">> := <<"group_invite">>, <<"fromName">> := F, <<"subjectName">> := S,
                <<"data">> := #{<<"group">> := G}}) ->
     <<F/binary, " wants to add ", S/binary, " to group ", G/binary, ".">>.
@@ -210,6 +220,10 @@ apply_response(Req, Responder, accept) ->
     end;
 apply_response(Req, Responder, Action) ->
     Status = atom_to_binary(case Action of reject -> rejected; ignore -> ignored end, utf8),
+    case maps:get(<<"type">>, Req) of
+        <<"wizard">> -> sd_wizard:approval_done(Req, Responder, rejected);
+        _ -> ok
+    end,
     on_decline(maps:get(<<"type">>, Req), Req),
     {ok, resolve(Req, Status, Responder)}.
 
@@ -219,10 +233,15 @@ on_accept(<<"onboarding">>, Req, Responder) ->
         undefined -> {error, not_found, <<"That user no longer exists.">>};
         _ ->
             {ok, _} = sd_users:set_status(Subject, <<"active">>),
-            {ok, _} = sd_users:set_host(Subject, Responder),
+            case sd_users:is_host(sd_users:get(Responder)) orelse sd_users:is_admin(sd_users:get(Responder)) of
+                true -> {ok, _} = sd_users:set_host(Subject, Responder);
+                false -> ok      %% approved by a role holder who isn't a host: no host link
+            end,
             welcome(Subject, Responder),
             ok
     end;
+on_accept(<<"wizard">>, Req, Responder) ->
+    sd_wizard:approval_done(Req, Responder, accepted);
 on_accept(<<"associate">>, Req, _Responder) ->
     sd_users:assoc_add(maps:get(<<"from">>, Req), maps:get(<<"subject">>, Req), peer),
     ok;
