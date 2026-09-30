@@ -57,6 +57,16 @@ function parseForwardedText(rawText, fallbackSender) {
 }
 
 // Server request objects (see sd_reqs:view/1) -> the shape ApprovalsModal renders.
+// The server sends each associate as { online, relation, user: { name, username, ... } };
+// the screens read name / username / online at the top level.
+function normalizeAssociates(list) {
+  return (Array.isArray(list) ? list : []).map((a) =>
+    a && a.user && typeof a.user === "object"
+      ? { ...a.user, online: a.online, relation: a.relation }
+      : a
+  );
+}
+
 function mapServerRequests(requests, profiles = {}) {
   return (requests || []).map((r) => {
     const profile = profiles[r.subject] || {};
@@ -1200,7 +1210,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
             const who = (inv?.approvers && inv.approvers[0]) || inv?.subjectName || event.data?.user;
             pushToast(who ? `Invitation sent to @${who}. They need to accept it.` : "Invitation sent. They need to accept it.");
             sandeshSocket.sd("assoc.list").then((res) => {
-              if (res.ok && res.data?.associates) setAssociates(res.data.associates);
+              if (res.ok && res.data?.associates) setAssociates(normalizeAssociates(res.data.associates));
             });
           } else {
             pushToast(event.error?.text || event.error?.message || "Failed to connect", true);
@@ -1209,13 +1219,13 @@ export function EmberChatScreen({ onOpenAiChat }) {
           if (event.ok) {
             pushToast(`Disconnected successfully`);
             sandeshSocket.sd("assoc.list").then((res) => {
-              if (res.ok && res.data?.associates) setAssociates(res.data.associates);
+              if (res.ok && res.data?.associates) setAssociates(normalizeAssociates(res.data.associates));
             });
           } else {
             pushToast(event.error?.text || event.error?.message || "Failed to disconnect", true);
           }
         } else if (event.reqId === "#associates" && event.ok && event.data?.associates) {
-          setAssociates(event.data.associates);
+          setAssociates(normalizeAssociates(event.data.associates));
         } else if (event.reqId === "#notifications" && event.ok && event.data?.notifications) {
           setNotifications(event.data.notifications);
         } else if (event.reqId === "#tstruct" && event.ok && event.data?.tstruct) {
