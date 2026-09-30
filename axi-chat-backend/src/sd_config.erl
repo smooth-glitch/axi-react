@@ -22,11 +22,11 @@
 -module(sd_config).
 -export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_categories/0, option_categories_for/2, options_page/2, option_types/0,
-         list_appconns/0, save_appconn/1, delete_appconn/1,
+         list_appconns/0, save_appconn/1, delete_appconn/1, appconn_raw/1, safe_path/1,
          tstruct_for_user/2, submit/4, list_submissions/2,
          update_submission/3, delete_submission/2,
          list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
-         delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2,
+         delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2, validate_applicable/1,
          list_user_options/1, save_user_option/2, delete_user_option/2, option_targets_file/2]).
 
 -define(TSTRUCTS, "sd:tstructs").
@@ -565,11 +565,43 @@ save_appconn(Raw) when is_map(Raw) ->
                            maps:with([<<"credentials">>], Old);
                        _ -> #{}
                    end,
-            Conn = maps:merge(#{<<"name">> => Name, <<"url">> => Url, <<"authType">> => Auth}, Cred),
-            sd_db:hset_json(?APPCONNS, key(Name), Conn),
-            {ok, strip_conn(Conn)}
+            Path = fun(K, Default) ->
+                       case sd_util:get(K, Raw) of
+                           undefined -> maps:get(K, case Old of undefined -> #{}; _ -> Old end, Default);
+                           null -> Default;
+                           P -> P
+                       end
+                   end,
+            QueryPath = Path(<<"queryPath">>, <<"/query">>),
+            CommandsPath = Path(<<"commandsPath">>, <<"/commands">>),
+            Flag = fun(K) -> case sd_util:get(K, Raw) of
+                                 undefined -> maps:get(K, case Old of undefined -> #{}; _ -> Old end, false) =:= true;
+                                 V -> V =:= true
+                             end end,
+            case {safe_path(QueryPath), safe_path(CommandsPath)} of
+                {false, _} -> {error, invalid, <<"queryPath must be a plain path like /query.">>};
+                {_, false} -> {error, invalid, <<"commandsPath must be a plain path like /commands.">>};
+                _ ->
+                    %% commandLine: the spec's "Is command line required" (Axpert applications only);
+                    %% allowUserDatasources: whether people may define their own (SQL) data sources on this connection.
+                    Conn = maps:merge(#{<<"name">> => Name, <<"url">> => Url, <<"authType">> => Auth,
+                                        <<"commandLine">> => Flag(<<"commandLine">>),
+                                        <<"allowUserDatasources">> => Flag(<<"allowUserDatasources">>),
+                                        <<"queryPath">> => QueryPath, <<"commandsPath">> => CommandsPath}, Cred),
+                    sd_db:hset_json(?APPCONNS, key(Name), Conn),
+                    {ok, strip_conn(Conn)}
+            end
     end;
 save_appconn(_) -> {error, bad_request, <<"Expected a JSON object.">>}.
+
+%% The stored connection including its sealed credentials, for server-side calls only (never sent to a client).
+appconn_raw(Name) -> sd_db:hget_json(?APPCONNS, key(Name)).
+
+%% A path we are willing to append to a connection's base URL: starts with one /, no "..", no "//", no query, short.
+safe_path(P) when is_binary(P), byte_size(P) =< 200 ->
+    re:run(P, "^/[A-Za-z0-9._~%/-]*$", [{capture, none}]) =:= match andalso
+        binary:match(P, <<"..">>) =:= nomatch andalso binary:match(P, <<"//">>) =:= nomatch;
+safe_path(_) -> false.
 
 delete_appconn(Name) ->
     case sd_db:hget(?APPCONNS, key(Name)) of

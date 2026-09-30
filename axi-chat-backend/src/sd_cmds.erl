@@ -159,7 +159,9 @@ user_actions() ->
      <<"notifications.summary">>, <<"notifications.list">>, <<"notifications.read">>,
      <<"feed.list">>, <<"feed.summary">>, <<"feed.read">>, <<"feed.resolve">>, <<"feed.dismiss">>, <<"feed.clear">>,
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
-     <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
+     <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
+     <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -763,6 +765,64 @@ do(<<"admin.appconn.save">>, Args, _Ctx) ->
 do(<<"admin.appconn.delete">>, Args, _Ctx) ->
     with_bin(<<"name">>, Args, fun(N) ->
         case sd_config:delete_appconn(N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+    end);
+
+%% ---- connected applications (#Applications) ----
+%% applications.list      -> the applications connected to this enterprise: {name, commandLine} (no addresses or credentials)
+%% applications.commands  {name}  (slow) -> the # commands an application offers ("command line", Axpert)
+do(<<"applications.list">>, _Args, _Ctx) ->
+    {ok, #{<<"applications">> => [maps:with([<<"name">>, <<"commandLine">>], C) || C <- sd_config:list_appconns()]}};
+do(Action, Args, _Ctx) when Action =:= <<"applications.commands">>; Action =:= <<"admin.appconn.commands">> ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_datasource:commands(N) of
+            {ok, L} -> {ok, #{<<"commands">> => L}};
+            Err -> Err
+        end
+    end);
+do(<<"admin.appconn.test">>, Args, _Ctx) ->
+    with_bin(<<"name">>, Args, fun(N) -> sd_datasource:ping(N) end);
+
+%% ---- data sources (#datasources) ----
+%% datasource.list  -> what this person may use: administrator-made ones that apply to them + their own
+%% datasource.get   {name}
+%% datasource.save  {name,type:"sql"|"api",connection,sql|path[,method],params:[{name,default}],description[,applicable (admins)]}
+%% datasource.delete {name}
+%% datasource.run   {name, values:{...}, limit}  (slow) -> {columns, rows, total, truncated}
+do(<<"datasource.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"datasources">> => sd_datasource:list_for(User)}};
+do(<<"datasource.get">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case [D || D <- sd_datasource:list_for(User), maps:get(<<"name">>, D) =:= N orelse
+                                                     string:lowercase(maps:get(<<"name">>, D)) =:= string:lowercase(N)] of
+            [D | _] -> {ok, #{<<"datasource">> => D}};
+            [] -> {error, not_found, <<"No such data source.">>}
+        end
+    end);
+do(<<"datasource.save">>, Args, #{user := User}) ->
+    case sd_datasource:save(User, Args) of {ok, D} -> {ok, #{<<"datasource">> => D}}; Err -> Err end;
+do(<<"datasource.delete">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_datasource:delete(User, N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
+    end);
+do(<<"datasource.run">>, Args, #{user := User}) ->
+    with_bin(<<"name">>, Args, fun(N) -> sd_datasource:run_for(User, N, Args) end);
+do(<<"admin.datasource.list">>, _Args, _Ctx) ->
+    {ok, #{<<"datasources">> => sd_datasource:all_described()}};
+
+%% ---- global variables (#globalvars) ----
+%% globals.list     -> {builtins:[names], custom:[{name,default,datasource,column,description}], values:{...mine, instant}}
+%% globals.resolve  (slow) -> {values} including the ones a data source supplies
+%% admin.globals.save {name, default | datasource+column, description} / admin.globals.delete {name}
+do(<<"globals.list">>, _Args, #{user := User}) ->
+    {ok, #{<<"builtins">> => [N || {N, _} <- sd_globals:builtins()], <<"custom">> => sd_globals:list(),
+           <<"values">> => sd_globals:values(User)}};
+do(<<"globals.resolve">>, _Args, #{user := User}) ->
+    {ok, #{<<"values">> => sd_globals:resolve(User, #{})}};
+do(<<"admin.globals.save">>, Args, _Ctx) ->
+    case sd_globals:save(Args) of {ok, G} -> {ok, #{<<"variable">> => G}}; Err -> Err end;
+do(<<"admin.globals.delete">>, Args, _Ctx) ->
+    with_bin(<<"name">>, Args, fun(N) ->
+        case sd_globals:delete(N) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end
     end);
 
 do(Action, _, _) ->

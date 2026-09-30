@@ -12,6 +12,8 @@
 -module(sd_globals).
 -export([builtins/0, known/0, values/1, list/0, get/1, save/1, delete/1, resolve/2, referenced/1]).
 
+-compile({no_auto_import, [get/1]}).
+
 -define(HASH, "sd:globals").
 
 %% name -> how to read it from a user record

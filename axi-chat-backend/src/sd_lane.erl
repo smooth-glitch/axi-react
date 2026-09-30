@@ -35,7 +35,7 @@ slow_limit() ->
 slow_actions() ->
     [<<"datasource.run">>, <<"datasource.test">>, <<"option.run">>, <<"appconn.test">>, <<"pay.create">>,
      <<"pay.status">>, <<"wizard.step">>, <<"wizard.start">>, <<"admin.appconn.test">>, <<"admin.datasource.test">>,
-     <<"test.slow_sleep">>].
+     <<"applications.commands">>, <<"globals.resolve">>, <<"admin.appconn.commands">>, <<"test.slow_sleep">>].
 
 is_slow(Action) -> lists:member(Action, slow_actions()).
 
