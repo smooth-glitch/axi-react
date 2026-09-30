@@ -118,7 +118,9 @@ handle_line(Socket, Name, "/msg " ++ Rest) ->
             case chat_room:send_private(Name, To, Text) of
                 {Status, _Id, _Ts} when Status =:= ok; Status =:= queued -> ok;
                 {error, not_found} ->
-                    gen_tcp:send(Socket, io_lib:format("No such user: ~s~n", [To]))
+                    gen_tcp:send(Socket, io_lib:format("No such user: ~s~n", [To]));
+                {error, unavailable} ->
+                    gen_tcp:send(Socket, "Temporarily unavailable -- please try again in a moment.\n")
             end;
         _ ->
             gen_tcp:send(Socket, "Usage: /msg <username> <message>\n")
@@ -177,6 +179,9 @@ handle_line(Socket, Name, "/groupmsg " ++ Rest) ->
         [GroupName, Text] when Text =/= "" ->
             case chat_groups:group_message(GroupName, Name, Text) of
                 ok -> ok;
+                {ok, _Id, _Ts} -> ok;
+                {error, unavailable} ->
+                    gen_tcp:send(Socket, "Temporarily unavailable -- please try again in a moment.\n");
                 {error, not_found} ->
                     gen_tcp:send(Socket, io_lib:format("No such group: ~s~n", [GroupName]));
                 {error, not_member} ->
