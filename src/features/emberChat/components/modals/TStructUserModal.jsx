@@ -57,22 +57,21 @@ export default function TStructUserModal({ onClose, currentUser, initialPath }) 
             alignItems: "center",
             justifyContent: "space-between",
             padding: "12px 20px",
-            background: "#1a1a2e",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            background: "#ffffff",
+            borderBottom: "1px solid #f3dccf",
             flexShrink: 0,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="material-icons" style={{ color: "#7c6af7", fontSize: 22 }}>table_chart</span>
-            <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Org Structures</span>
-            <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, marginLeft: 4 }}>Lite TStruct Studio</span>
+            <span style={{ color: "#000", fontWeight: 600, fontSize: 15 }}>Org Structures</span>
+            <span style={{ color: "#000", fontSize: 12, marginLeft: 4 }}>Lite TStruct Studio</span>
           </div>
           <button
             onClick={onClose}
             style={{
               background: "none",
               border: "none",
-              color: "rgba(255,255,255,0.6)",
+              color: "#000",
               cursor: "pointer",
               fontSize: 22,
               lineHeight: 1,

@@ -2,10 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled, { useTheme } from 'styled-components';
-import { Boxes, LayoutDashboard, Moon, Plus, Search, Settings2, SlidersHorizontal, Sun, Table2, X } from 'lucide-react';
+import { LayoutDashboard, Plus, Search, Settings2, SlidersHorizontal, Table2, X } from 'lucide-react';
 import { Button, Skeleton, Text } from '../ui/kit';
 import { useStructs } from './StructsContext';
-import { useThemeMode } from '../ui/theme';
 
 const Root = styled.aside`
   position: relative;
@@ -112,14 +111,6 @@ const Count = styled.span`
   color: ${(p) => (p.$active ? p.theme.primaryText : p.theme.navMuted)};
 `;
 
-const Foot = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: ${(p) => p.theme.spacing.md}px ${(p) => p.theme.spacing.lg}px;
-  border-top: 1px solid ${(p) => p.theme.navBorder};
-`;
-
 function NavLink({ icon: IconCmp, label, active, onPress, testID, badge, index = 0, children }) {
   const t = useTheme();
   return (
@@ -147,8 +138,6 @@ function NavLink({ icon: IconCmp, label, active, onPress, testID, badge, index =
   );
 }
 
-const MODE_ICON = { light: Sun, dark: Moon };
-
 // Struct navigation. variant="sidebar": fixed left menu (wide screens). variant="screen": full-screen home list (narrow).
 export default function Sidebar({ variant = 'sidebar' }) {
   const t = useTheme();
@@ -156,10 +145,8 @@ export default function Sidebar({ variant = 'sidebar' }) {
   const { pathname } = useLocation();
   const activeRef = matchPath('/structs/:ref/:view/*', pathname)?.params.ref;
   const { structs, error, refresh } = useStructs();
-  const { mode } = useThemeMode();
   const [q, setQ] = useState('');
   const fixed = variant === 'sidebar';
-  const ModeIcon = MODE_ICON[mode];
 
   const shown = useMemo(() => (structs || []).filter((s) => s.name.toLowerCase().includes(q.trim().toLowerCase())), [structs, q]);
   // wide: replace (switching structs doesn't build history); narrow: push so Back returns to the list
@@ -170,7 +157,7 @@ export default function Sidebar({ variant = 'sidebar' }) {
     <Root $fixed={fixed}>
       <Brand>
         <Logo>
-          <Boxes size={18} strokeWidth={2} />
+          <Table2 size={18} strokeWidth={2} />
         </Logo>
         <div style={{ flex: 1 }}>
           <Text $variant="title" style={{ color: t.navText }}>
@@ -246,12 +233,6 @@ export default function Sidebar({ variant = 'sidebar' }) {
         ))}
       </div>
 
-      <Foot>
-        <Text $variant="caption" style={{ color: t.navMuted }}>
-          Theme: Automatic ({mode})
-        </Text>
-        <ModeIcon size={15} strokeWidth={1.9} color={t.navMuted} aria-hidden="true" data-testid="theme-indicator" />
-      </Foot>
     </Root>
   );
 }

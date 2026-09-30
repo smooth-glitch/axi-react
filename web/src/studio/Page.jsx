@@ -62,7 +62,9 @@ export default function Page({ title, subtitle, onBack, actions, children, foote
   const vw = useWindowWidth();
   const pad = vw < t.layout.tableBreakpoint ? t.spacing.lg : t.spacing.xl;
   const max = width === 'form' ? t.layout.formMaxWidth : width === 'full' ? t.layout.fullMaxWidth : t.layout.contentMaxWidth;
-  const back = onBack === true ? () => (location.key === 'default' ? navigate('/') : navigate(-1)) : onBack;
+  // Narrow (e.g. a split tab) has no sidebar: pages without their own back action return to the menu (home).
+  const narrow = vw < t.layout.wideBreakpoint;
+  const back = onBack === true ? () => (location.key === 'default' ? navigate('/') : navigate(-1)) : onBack || (narrow && location.pathname !== '/' ? () => navigate('/') : undefined);
 
   return (
     <Root>
