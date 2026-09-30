@@ -36,7 +36,11 @@
 %% ---- lookup -------------------------------------------------------------------------
 
 get(Username) ->
-    sd_db:hget_json(?USERS, sd_util:norm_user(Username)).
+    with_defaults(sd_db:hget_json(?USERS, sd_util:norm_user(Username))).
+
+%% A user stored before roles / person details existed reads exactly like a new one (empty values, not missing keys).
+with_defaults(U) when is_map(U) -> maps:merge(person_defaults(), U);
+with_defaults(Other) -> Other.
 
 exists(Username) -> get(Username) =/= undefined.
 
@@ -69,7 +73,7 @@ by_mobile(Id) ->
 
 list() ->
     lists:sort(fun(A, B) -> maps:get(<<"username">>, A) =< maps:get(<<"username">>, B) end,
-               [U || {_K, U} <- sd_db:hgetall_json(?USERS), is_map(U)]).
+               [with_defaults(U) || {_K, U} <- sd_db:hgetall_json(?USERS), is_map(U)]).
 
 admins() -> [U || U <- list(), is_admin(U), is_active(U)].
 
