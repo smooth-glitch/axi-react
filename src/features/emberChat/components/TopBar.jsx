@@ -129,7 +129,8 @@ export default function TopBar({
           title="Topics & Episodes categorization view"
         >
           <span className="material-icons">topic</span>
-          <span>Topics &amp; Episodes</span>
+          <span className="view-tab-label-full">Topics &amp; Episodes</span>
+          <span className="view-tab-label-short">Topics</span>
         </button>
       </div>
 
