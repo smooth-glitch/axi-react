@@ -299,13 +299,15 @@ export default function Composer({
       // Immediate local suggestions placeholder if available
       const afterCmd = before.slice(firstSpaceIdx + 1);
       const initialArgSpec = currentArgSpec || matched.args?.[0];
-      if (initialArgSpec && initialArgSpec.type !== "text") {
-        const locals = computeLocalArgSuggestions(initialArgSpec, afterCmd);
-        if (locals.length > 0) {
-          setArgSuggestions(locals);
-          setShowCmdMenu(true);
-        }
-      }
+      // Always reset the list for the new text: otherwise suggestions from a previous command (or an
+      // earlier word) stay on screen until the server answers (~150 ms + round trip), and pressing
+      // Enter in that window "chooses" a stale item instead of running what was typed.
+      const locals =
+        initialArgSpec && initialArgSpec.type !== "text"
+          ? computeLocalArgSuggestions(initialArgSpec, afterCmd)
+          : [];
+      setArgSuggestions(locals);
+      setShowCmdMenu(locals.length > 0);
 
       // Always debounce call to backend /cmdcomplete with the full text
       if (cmdDebounceTimer.current) {
