@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import ContentPanel from "./ContentPanel.jsx";
 import CommandMenuPopup from "./CommandMenuPopup.jsx";
+import OptionCategoryDropdown from "./OptionCategoryDropdown.jsx";
 import { quickReactions } from "../data/sampleData.js";
 import {
   DEFAULT_COMMANDS_CATALOG,
@@ -25,7 +26,7 @@ export default function Composer({
   pushToast,
   userCategory = "employee",
   optionCategories = [],
-  onOpenOptionCategory,
+  optionsVersion = 0,
   onOpenSubmissions,
   currentUser = null,
   onlineUsers = [],
@@ -70,6 +71,11 @@ export default function Composer({
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+
+  // Smart Prompts category dropdown (opens upward from the clicked pill)
+  const [openCategory, setOpenCategory] = useState(null);
+  const [categoryAnchor, setCategoryAnchor] = useState(null);
+  const closeCategory = useCallback(() => setOpenCategory(null), []);
 
   const hasText = text.trim().length > 0;
 
@@ -623,7 +629,16 @@ export default function Composer({
               key={c.id}
               type="button"
               className="sandesh-prompt-chip-3d"
-              onClick={() => !disabled && onOpenOptionCategory?.(c)}
+              data-prompt-pill
+              onClick={(e) => {
+                if (disabled) return;
+                if (openCategory?.id === c.id) {
+                  setOpenCategory(null);
+                } else {
+                  setCategoryAnchor(e.currentTarget.getBoundingClientRect());
+                  setOpenCategory(c);
+                }
+              }}
               title={c.executable === false ? `${c.label} (not wired yet)` : c.label}
               disabled={disabled}
             >
@@ -644,6 +659,18 @@ export default function Composer({
           </button>
         </div>
       </div>
+      {openCategory && categoryAnchor && (
+        <OptionCategoryDropdown
+          category={openCategory}
+          anchor={categoryAnchor}
+          refreshKey={optionsVersion}
+          onClose={closeCategory}
+          onPick={(option) => {
+            closeCategory();
+            onOpenSmartPromptModal?.(option);
+          }}
+        />
+      )}
       {/* 2. Replying-to Banner */}
       {replyingTo && (
         <div className="sandesh-reply-banner-3d">

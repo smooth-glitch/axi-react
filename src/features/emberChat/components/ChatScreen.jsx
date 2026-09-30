@@ -24,7 +24,7 @@ export default function ChatScreen({
   onActionCardClick,
   onOpenSmartPrompts,
   optionCategories,
-  onOpenOptionCategory,
+  optionsVersion,
   onOpenSubmissions,
   onOpenTStructUser,
   onOpenAdminConsole,
@@ -218,7 +218,7 @@ export default function ChatScreen({
             onAttachFile={onAttachFile}
             onOpenSmartPromptModal={onOpenSmartPrompts}
             optionCategories={optionCategories}
-            onOpenOptionCategory={onOpenOptionCategory}
+            optionsVersion={optionsVersion}
             onOpenSubmissions={onOpenSubmissions}
             onTyping={onTyping}
             disabled={disabled}

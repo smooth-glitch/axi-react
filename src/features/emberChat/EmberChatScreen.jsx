@@ -12,7 +12,6 @@ import AdminConsoleModal from "./components/modals/AdminConsoleModal.jsx";
 import ForwardModal from "./components/modals/ForwardModal.jsx";
 import OnlineUsersModal from "./components/modals/OnlineUsersModal.jsx";
 import HostsDirectoryModal from "./components/modals/HostsDirectoryModal.jsx";
-import OptionCategoryModal from "./components/modals/OptionCategoryModal.jsx";
 import GroupsDirectoryModal from "./components/modals/GroupsDirectoryModal.jsx";
 import InboxModal from "./components/modals/InboxModal.jsx";
 import UserProfileViewModal from "./components/modals/UserProfileViewModal.jsx";
@@ -234,8 +233,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   // Smart Prompts bar: one pill per category (with a count). The server applies "Applicable to".
   const [optionCategories, setOptionCategories] = useState([]);
-  const [openCategory, setOpenCategory] = useState(null);
-  const [optionsVersion, setOptionsVersion] = useState(0); // bumped on options_changed so an open category list reloads
+  const [optionsVersion, setOptionsVersion] = useState(0); // bumped on options_changed so an open category dropdown reloads
   const refreshOptionCategories = useCallback(async () => {
     const res = await sandeshSocket.sd("options.categories");
     if (res.ok) setOptionCategories(res.data?.categories || []);
@@ -2560,10 +2558,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           onDeleteChat={handleRequestDeleteChat}
           onActionCardClick={handleActionCardClick}
           optionCategories={optionCategories}
-          onOpenOptionCategory={(c) => {
-            setOpenCategory(c);
-            setModal("option_category");
-          }}
+          optionsVersion={optionsVersion}
           onOpenSubmissions={() => setModal("submissions")}
           onOpenSmartPrompts={(p) => {
             setEditingSubmission(null);
@@ -2887,18 +2882,6 @@ export function EmberChatScreen({ onOpenAiChat }) {
                 }}
                 onAvatarUpdated={(newAvatar) => {
                   setCurrentUser((m) => ({ ...m, avatar: newAvatar }));
-                }}
-              />
-            )}
-            {modal === "option_category" && openCategory && (
-              <OptionCategoryModal
-                category={openCategory}
-                refreshKey={optionsVersion}
-                onClose={() => setModal(null)}
-                onPick={(option) => {
-                  setEditingSubmission(null);
-                  setSelectedPrompt(option);
-                  setModal("smart_structure");
                 }}
               />
             )}
