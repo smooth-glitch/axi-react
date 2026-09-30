@@ -7467,22 +7467,6 @@
   color: var(--sandesh-text-muted);
 }
 
-.wcs-live-sync-dot .sync-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: block;
-}
-
-.wcs-live-sync-dot .sync-dot.online {
-  background: #34c759;
-  box-shadow: 0 0 6px #34c759;
-}
-
-.wcs-live-sync-dot .sync-dot.offline {
-  background: #ff9500;
-}
-
 .wcs-actions-section {
   padding: 12px 16px 8px;
   display: flex;

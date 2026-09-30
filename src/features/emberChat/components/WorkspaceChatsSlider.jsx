@@ -140,9 +140,6 @@ export default function WorkspaceChatsSlider({
           <div className="wcs-user-name">{me?.username || me?.name || "User"}</div>
           <div className="wcs-user-role">{me?.role || "User"}</div>
         </div>
-        <div className="wcs-live-sync-dot" title={socketStatus === "connected" ? "Live Sync Connected" : "Connecting..."}>
-          <span className={`sync-dot ${socketStatus === "connected" ? "online" : "offline"}`} />
-        </div>
         <button
           type="button"
           className="wcs-user-logout-btn"

@@ -179,15 +179,11 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* WebSocket Connection Status Pill */}
-        <div className="sandesh-connection-pill">
-          <span className={`status-indicator ${socketStatus === "connected" ? "online" : "offline"}`} />
-          <span className="connection-text">
-            {socketStatus === "connected"
-              ? "Live Sync (Erlang 8080)"
-              : "Disconnected (Reconnecting...)"}
-          </span>
-          {socketStatus !== "connected" && (
+        {/* Connection status: shown only when the connection is down (with a retry link); nothing while live */}
+        {socketStatus !== "connected" && (
+          <div className="sandesh-connection-pill">
+            <span className="status-indicator offline" />
+            <span className="connection-text">Disconnected (Reconnecting...)</span>
             <button
               type="button"
               className="reconnect-link"
@@ -196,8 +192,8 @@ export default function Sidebar({
             >
               Connect
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* 2. New Chat Button & Search */}

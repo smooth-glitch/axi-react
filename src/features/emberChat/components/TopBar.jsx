@@ -96,7 +96,7 @@ export default function TopBar({
           </div>
           <span className="chat-subtitle">
             {isWorkspace
-              ? "Enterprise Workspace • Type '#' for commands"
+              ? "Enterprise Workspace"
               : chat.designation ||
                 (chat.isGroup
                   ? chat.members?.length
