@@ -518,7 +518,8 @@ real event behind them.
 
 | Action | Level | Args → Returns |
 |---|---|---|
-| `options.list` | user | → `{options:[{id,caption,type,target,display,order}]}` — only the options **this user** is allowed to see ("Applicable to" already applied). This is the "Options section" above the chat. |
+| `options.list` | user | → `{options:[{id,caption,type,category,target,targetScope,display,order,owner}]}` — only the options **this user** is allowed to see ("Applicable to" already applied). This is the "Options section" above the chat. With no arguments it returns every one of them (unchanged). With any of `category`, `q`, `page`, `pageSize` it returns **one page** instead — see "Smart Prompts by category" below. |
+| `options.categories` | user | → `{categories:[{id,label,icon,types,executable,count}], total}` — one entry per Smart Prompts **pill**, with how many options this user has in it. See below. |
 | `tstruct.get` | user | `{name}` → `{tstruct}` — only if one of your options points at it |
 | `tstruct.submit` | user | `{name, values:{field: value}}` → `{submission}` or error `invalid_values` with `error.details.fields = {field: message}` |
 | `submissions.list` | user | → `{submissions}` — yours, plus those from people you host |
@@ -553,6 +554,41 @@ Any signed-in user can also make their own structures and options (level `user`)
 | `option.user.list` | → `{options, types}` — the options you made (an administrator gets all) |
 | `option.user.save` | `{id?, caption, type, target?, display?, applicable?, active?, order?}` → `{option}`; a new option gets a server id (`o<n>`); only its creator (or an administrator) can change an existing one |
 | `option.user.delete` | `{id}` — creator or administrator |
+
+### Smart Prompts by category (pills + popup)
+
+Instead of one button per option, My Workspace shows **one pill per category** with a count, and a click opens a popup that lists that category's options with a search bar.
+
+**Pills — `options.categories`** (optional arg `includeEmpty: true` also returns categories the user has nothing in):
+
+```json
+{"categories":[
+  {"id":"data_input","label":"Data input","icon":"edit_note","types":["data_input"],"executable":true,"count":12},
+  {"id":"download","label":"Download","icon":"download","types":["download"],"executable":true,"count":3},
+  {"id":"upload","label":"Upload","icon":"upload","types":["upload"],"executable":true,"count":1},
+  {"id":"get_data","label":"API display","icon":"table_chart","types":["get_data"],"executable":false,"count":2},
+  {"id":"pay","label":"Pay","icon":"payments","types":["pay"],"executable":false,"count":1},
+  {"id":"axpert","label":"Axpert option","icon":"widgets","types":["axpert_tstruct","axpert_smartview","axpert_iview","axpert_page"],"executable":false,"count":4}],
+ "total":23}
+```
+
+* Order is fixed (as above). Categories with no options for this user are left out, so a pill never shows `0`.
+* `count` and the popup list follow the **same rules** as `options.list`: active options only, and only those whose "Applicable to" matches this user (category, department, branch, designation, affiliate).
+* `executable:false` = "config only": the option can be configured but the chat cannot run it yet (`get_data`, `pay`, the four `axpert_*` types). Show the pill greyed or with a "coming soon" note, or hide it — a product decision.
+* The four Axpert types are one **"Axpert option"** pill (`id:"axpert"`), as in the Option Builder.
+
+**Popup — `options.list`** with arguments (all optional):
+
+| arg | meaning |
+|---|---|
+| `category` | a category id from above (`"data_input"`, `"axpert"`, …). A raw option type such as `"axpert_iview"` also works and selects its whole category. Anything else → `invalid` error listing the valid ids. |
+| `q` | search text; matches **caption, id or target**, ignoring case and surrounding spaces. Control characters are dropped, and it is cut at 100 characters. |
+| `page` | 1-based; default 1. Out of range is clamped to the last page; junk becomes 1. |
+| `pageSize` | default 20, max 100, min 1. |
+
+Reply: `{options:[…], category, q, page, pageSize, total, totalPages, hasMore}` — `total` is the number of matches (after `category` and `q`), so it is the number to show in the popup title. An empty result is `total:0, totalPages:1, options:[]`, not an error. Sorted by the configured `order`, then caption A–Z (case-insensitive). Each option also carries its `category` id.
+
+**Keeping the badges live:** when an administrator adds, changes or removes an option, every connected client receives `{"type":"sd_event","event":"options_changed"}`. Re-call `options.categories` (and `options.list` if a popup is open) when it arrives. Changing "Applicable to" or turning an option off moves the counts the same way.
 
 Options now carry `owner` (null = made by an administrator), `targetScope` (`"admin"` / `"user"`, which kind of form a `data_input` option opens), `createdTs` and `modifiedTs`; `options.list` returns `targetScope` and `owner`. Rules the server enforces:
 

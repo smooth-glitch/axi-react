@@ -21,7 +21,7 @@
 %%% get, hand them a form definition, and validate + store what they submit.
 -module(sd_config).
 -export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
-         list_options/0, save_option/1, delete_option/1, options_for/1, option_types/0,
+         list_options/0, save_option/1, delete_option/1, options_for/1, option_categories/0, option_categories_for/2, options_page/2, option_types/0,
          list_appconns/0, save_appconn/1, delete_appconn/1,
          tstruct_for_user/2, submit/4, list_submissions/2,
          update_submission/3, delete_submission/2,
@@ -393,7 +393,92 @@ check_applicable(K, _, _) -> {error, invalid, <<"applicable.", K/binary, " must 
 options_for(User) ->
     [strip(O) || O <- list_options(), maps:get(<<"active">>, O, true) =/= false, applies(O, User)].
 
-strip(O) -> maps:with([<<"id">>, <<"caption">>, <<"type">>, <<"target">>, <<"targetScope">>, <<"owner">>, <<"display">>, <<"order">>], O).
+strip(O) ->
+    S = maps:with([<<"id">>, <<"caption">>, <<"type">>, <<"target">>, <<"targetScope">>, <<"owner">>, <<"display">>, <<"order">>], O),
+    S#{<<"category">> => category_of(maps:get(<<"type">>, O, <<>>))}.
+
+%% ---- option categories (the Smart Prompts pills) ---------------------------------------------------------
+%% One pill per category, in this order. The four Axpert types share one "Axpert option" pill, as in the
+%% Option Builder. `executable` = the chat can run it today; the others are stored but "config only".
+option_categories() ->
+    [#{<<"id">> => <<"data_input">>, <<"label">> => <<"Data input">>, <<"icon">> => <<"edit_note">>,
+       <<"types">> => [<<"data_input">>], <<"executable">> => true},
+     #{<<"id">> => <<"download">>, <<"label">> => <<"Download">>, <<"icon">> => <<"download">>,
+       <<"types">> => [<<"download">>], <<"executable">> => true},
+     #{<<"id">> => <<"upload">>, <<"label">> => <<"Upload">>, <<"icon">> => <<"upload">>,
+       <<"types">> => [<<"upload">>], <<"executable">> => true},
+     #{<<"id">> => <<"get_data">>, <<"label">> => <<"API display">>, <<"icon">> => <<"table_chart">>,
+       <<"types">> => [<<"get_data">>], <<"executable">> => false},
+     #{<<"id">> => <<"pay">>, <<"label">> => <<"Pay">>, <<"icon">> => <<"payments">>,
+       <<"types">> => [<<"pay">>], <<"executable">> => false},
+     #{<<"id">> => <<"axpert">>, <<"label">> => <<"Axpert option">>, <<"icon">> => <<"widgets">>,
+       <<"types">> => [<<"axpert_tstruct">>, <<"axpert_smartview">>, <<"axpert_iview">>, <<"axpert_page">>],
+       <<"executable">> => false}].
+
+category_of(Type) ->
+    case [maps:get(<<"id">>, C) || C <- option_categories(), lists:member(Type, maps:get(<<"types">>, C))] of
+        [Id | _] -> Id;
+        [] -> <<"other">>
+    end.
+
+%% The pills for this user: each category with how many options apply to them. Empty categories are left out
+%% unless IncludeEmpty. Counts follow exactly the same rules as options_for/1 (active + "applicable to").
+option_categories_for(User, IncludeEmpty) ->
+    Opts = options_for(User),
+    [C#{<<"count">> => N}
+     || C <- option_categories(),
+        N <- [length([O || O <- Opts, maps:get(<<"category">>, O) =:= maps:get(<<"id">>, C)])],
+        IncludeEmpty orelse N > 0].
+
+%% One searchable, paged list. Args (all optional): category (a category id, or a raw type), q (matches
+%% caption, id or target, any case), page (1-based), pageSize (default 20, max 100).
+options_page(User, Args) ->
+    CatArg = case sd_util:get(<<"category">>, Args) of B when is_binary(B), B =/= <<>> -> B; _ -> undefined end,
+    case CatArg =:= undefined orelse category_known(CatArg) of
+        false -> {error, invalid, <<"Unknown category. Use one of: ", (join(category_ids()))/binary, ".">>};
+        true ->
+            Cat = category_id(CatArg),
+            Q = query_text(sd_util:get(<<"q">>, Args)),
+            All = [O || O <- options_for(User),
+                        Cat =:= undefined orelse maps:get(<<"category">>, O) =:= Cat,
+                        matches_query(O, Q)],
+            Sorted = lists:sort(fun(A, B) -> sort_key(A) =< sort_key(B) end, All),
+            Size = clamp_int(sd_util:get(<<"pageSize">>, Args), 20, 1, 100),
+            Total = length(Sorted),
+            Pages = max(1, (Total + Size - 1) div Size),
+            Page = clamp_int(sd_util:get(<<"page">>, Args), 1, 1, Pages),
+            Slice = lists:sublist(Sorted, (Page - 1) * Size + 1, Size),
+            {ok, #{<<"options">> => Slice, <<"category">> => case Cat of undefined -> null; _ -> Cat end,
+                   <<"q">> => Q, <<"page">> => Page, <<"pageSize">> => Size, <<"total">> => Total,
+                   <<"totalPages">> => Pages, <<"hasMore">> => Page < Pages}}
+    end.
+
+category_ids() -> [maps:get(<<"id">>, C) || C <- option_categories()].
+category_known(B) -> lists:member(B, category_ids()) orelse lists:member(B, ?OPTION_TYPES).
+category_id(undefined) -> undefined;
+category_id(B) -> case lists:member(B, category_ids()) of true -> B; false -> category_of(B) end.
+
+%% A raw type ("axpert_iview") narrows to that type's category; the caller wanted one whole category anyway.
+query_text(B) when is_binary(B) ->
+    Clean = << <<C>> || <<C>> <= B, C >= 32, C =/= 127 >>,
+    string:lowercase(string:trim(binary:part(Clean, 0, min(byte_size(Clean), 100))));
+query_text(_) -> <<>>.
+
+matches_query(_O, <<>>) -> true;
+matches_query(O, Q) ->
+    lists:any(fun(K) ->
+                  case maps:get(K, O, <<>>) of
+                      V when is_binary(V) -> binary:match(string:lowercase(V), Q) =/= nomatch;
+                      _ -> false
+                  end
+              end, [<<"caption">>, <<"id">>, <<"target">>]).
+
+sort_key(O) ->
+    Ord = case maps:get(<<"order">>, O, 0) of N when is_integer(N) -> N; _ -> 0 end,
+    {Ord, string:lowercase(maps:get(<<"caption">>, O, <<>>)), maps:get(<<"id">>, O, <<>>)}.
+
+clamp_int(V, _Default, Min, Max) when is_integer(V) -> max(Min, min(Max, V));
+clamp_int(_, Default, Min, Max) -> max(Min, min(Max, Default)).
 
 applies(Option, User) ->
     Ap = maps:get(<<"applicable">>, Option, #{}),
