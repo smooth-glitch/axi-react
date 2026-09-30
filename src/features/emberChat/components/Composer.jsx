@@ -242,6 +242,10 @@ export default function Composer({
     (currentVal, caretPos) => {
       const trimmedStart = currentVal.trimStart();
       if (!trimmedStart.startsWith("#")) {
+        // Nothing to suggest for: drop any in-flight suggestion request so a late reply cannot
+        // re-open the menu over an empty / non-# composer.
+        cmdReqIdRef.current += 1;
+        if (cmdDebounceTimer.current) clearTimeout(cmdDebounceTimer.current);
         setShowCmdMenu(false);
         setCmdSearchQuery("");
         return;
@@ -347,6 +351,9 @@ export default function Composer({
     const trimmed = text.trim();
     onSend?.(trimmed);
     setText("");
+    // ignore suggestion replies that are still on their way for the text we just sent
+    cmdReqIdRef.current += 1;
+    if (cmdDebounceTimer.current) clearTimeout(cmdDebounceTimer.current);
     setShowCmdMenu(false);
     setCmdSearchQuery("");
     if (textareaRef.current) {

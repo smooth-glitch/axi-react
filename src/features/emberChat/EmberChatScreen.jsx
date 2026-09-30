@@ -1195,7 +1195,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           pushToast(`Request ${event.reqId.slice(1)}ed successfully.`);
         } else if (event.reqId === "#connect") {
           if (event.ok) {
-            pushToast(`Connected with @${event.data?.user || "user"}`);
+            // the reply is a pending invitation (the other person still has to accept it)
+            const inv = event.data?.request;
+            const who = (inv?.approvers && inv.approvers[0]) || inv?.subjectName || event.data?.user;
+            pushToast(who ? `Invitation sent to @${who}. They need to accept it.` : "Invitation sent. They need to accept it.");
             sandeshSocket.sd("assoc.list").then((res) => {
               if (res.ok && res.data?.associates) setAssociates(res.data.associates);
             });
