@@ -2340,14 +2340,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
   }, [refreshApprovals, pushToast, handleSelectChat]);
 
-  if (!currentUser) {
-    return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} notice={loginNotice} />;
-  }
-
   const currentGroupMembersRaw =
     (activeChat.isGroup && groupMembersByName[activeChat.name]) ||
     activeChat.members ||
-    [currentUser.username || currentUser.name];
+    [currentUser?.username || currentUser?.name];
 
   const enrichedGroupMembers = currentGroupMembersRaw.map((m) => {
     const rawName = typeof m === "string" ? m : m?.username || m?.name || m?.id || "";
@@ -2450,6 +2446,12 @@ export function EmberChatScreen({ onOpenAiChat }) {
       ensureProfileLoaded(u);
     });
   }, [chats, onlineUsers, associates, socketStatus, ensureProfileLoaded]);
+
+  // Keep this AFTER every hook above: React needs the same hooks on every render, and returning early
+  // (logged out -> logged in) before the memos/effect ran made the hook count change and crashed.
+  if (!currentUser) {
+    return <SandeshLoginScreen onLoginSuccess={handleLoginSuccess} notice={loginNotice} />;
+  }
 
   const teamPool = [...(enrichedOnlineUsers || []), ...(enrichedAssociates || [])];
   const currentAddableUsers = teamPool.filter((u) => {
