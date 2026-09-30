@@ -161,7 +161,7 @@ user_actions() ->
      <<"options.list">>, <<"options.categories">>, <<"connect.my">>, <<"connect.scan">>,
      <<"connect.rotate">>, <<"connect.lookup">>, <<"profile.get">>, <<"profile.update">>, <<"applications.list">>, <<"applications.commands">>,
      <<"datasource.list">>, <<"datasource.get">>, <<"datasource.save">>, <<"datasource.delete">>, <<"datasource.run">>,
-     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"onboarding.get">>, <<"catalog.get">>,
+     <<"globals.list">>, <<"globals.resolve">>, <<"tstruct.get">>, <<"tstruct.submit">>, <<"submissions.list">>, <<"records.list">>, <<"catalog.list">>, <<"wizard.list">>, <<"wizard.get">>, <<"wizard.start">>, <<"wizard.current">>, <<"wizard.step">>, <<"wizard.cancel">>, <<"wizard.runs">>, <<"wizard.run">>, <<"onboarding.get">>, <<"catalog.get">>,
      <<"submissions.update">>, <<"submissions.delete">>,
      <<"tstruct.user.list">>, <<"tstruct.user.get">>, <<"tstruct.user.save">>,
      <<"tstruct.user.delete">>, <<"tstruct.user.submit">>, <<"tstruct.user.update">>,
@@ -853,6 +853,25 @@ do(<<"admin.onboarding.delete">>, Args, _Ctx) ->
         ok -> {ok, #{<<"deleted">> => true}};
         Err -> Err
     end;
+
+do(<<"wizard.list">>, _Args, #{user := User}) -> {ok, #{<<"wizards">> => sd_wizard:list_for(User)}};
+do(<<"wizard.get">>, Args, #{user := User}) ->
+    case sd_wizard:get_for(User, sd_util:get(<<"name">>, Args, <<>>)) of
+        {ok, W} -> {ok, #{<<"wizard">> => W}};
+        Err -> Err
+    end;
+do(<<"wizard.start">>, Args, #{user := User}) -> sd_wizard:start(User, sd_util:get(<<"name">>, Args, <<>>));
+do(<<"wizard.current">>, Args, #{user := User}) -> sd_wizard:current(User, sd_util:get(<<"runId">>, Args));
+do(<<"wizard.step">>, Args, #{user := User}) -> sd_wizard:step(User, sd_util:get(<<"runId">>, Args), Args);
+do(<<"wizard.cancel">>, Args, #{user := User}) ->
+    case sd_wizard:cancel(User, sd_util:get(<<"runId">>, Args)) of {ok, R} -> {ok, #{<<"run">> => R}}; Err -> Err end;
+do(<<"wizard.runs">>, _Args, #{user := User}) -> {ok, #{<<"runs">> => sd_wizard:runs(User)}};
+do(<<"wizard.run">>, Args, #{user := User}) -> sd_wizard:run_view(User, sd_util:get(<<"runId">>, Args));
+do(<<"admin.wizard.list">>, _Args, _Ctx) -> {ok, #{<<"wizards">> => sd_wizard:list_defs(), <<"stepTypes">> => sd_wizard:step_types()}};
+do(<<"admin.wizard.save">>, Args, _Ctx) ->
+    case sd_wizard:save_def(Args) of {ok, W} -> {ok, #{<<"wizard">> => W}}; Err -> Err end;
+do(<<"admin.wizard.delete">>, Args, _Ctx) ->
+    case sd_wizard:delete_def(sd_util:get(<<"name">>, Args, <<>>)) of ok -> {ok, #{<<"deleted">> => true}}; Err -> Err end;
 
 do(Action, _, _) ->
     {error, unknown_action, <<"Unknown sd action: ", Action/binary>>}.

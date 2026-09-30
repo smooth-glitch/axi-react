@@ -23,7 +23,7 @@
 -export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_categories/0, option_categories_for/2, options_page/2, option_types/0,
          list_appconns/0, save_appconn/1, delete_appconn/1, appconn_raw/1, safe_path/1,
-         tstruct_for_user/2, submit/4, list_submissions/2, search_records/2,
+         tstruct_for_user/2, submit/4, list_submissions/2, search_records/2, check_values/2, validate_fields/1, get_tstruct/1,
          update_submission/3, delete_submission/2,
          list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
          delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2, validate_applicable/1,

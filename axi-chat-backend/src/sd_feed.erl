@@ -348,6 +348,7 @@ request_title(<<"onboarding">>) -> <<"New user awaiting approval">>;
 request_title(<<"associate">>) -> <<"Connection request">>;
 request_title(<<"host_transfer">>) -> <<"Host transfer request">>;
 request_title(<<"group_invite">>) -> <<"Group invitation">>;
+request_title(<<"wizard">>) -> <<"Approval needed">>;
 request_title(_) -> <<"Approval needed">>.
 
 %% Opening a DM (`/read dm <user>`) reads that person's item.
@@ -392,6 +393,7 @@ do_request_outcome(#{<<"from">> := From, <<"id">> := Id, <<"type">> := Type}, St
                 <<"associate">> -> <<"connection request">>;
                 <<"host_transfer">> -> <<"host transfer request">>;
                 <<"group_invite">> -> <<"group invitation">>;
+                <<"wizard">> -> <<"approval step">>;
                 _ -> <<"request">>
             end,
     catch notify(From, #{<<"key">> => <<"outcome:", (integer_to_binary(Id))/binary>>,
