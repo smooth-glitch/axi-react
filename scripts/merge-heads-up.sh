@@ -141,7 +141,7 @@ build() {  # $1 = max conflict blocks, $2 = max commit blocks
     --arg when "$(TZ=Asia/Kolkata date +'%d %b %Y · %H:%M IST')" --arg compare "$COMPARE" \
     --arg checked "$CHECKED" --arg errors "$ERRORS" --arg merged "$MERGED_SKIPPED" --arg days "$MAX_AGE_DAYS" \
     --arg sha "${AFTER:0:7}" --arg shaUrl "$SERVER/$REPO/commit/$AFTER" \
-    --arg status "$SERVER/$REPO/blob/$DEFAULT_BRANCH/docs/STATUS.md" --arg mainUrl "$SERVER/$REPO/tree/$DEFAULT_BRANCH" '
+    --arg status "$SERVER/$REPO/blob/$DEFAULT_BRANCH/${APP_PREFIX}docs/STATUS.md" --arg mainUrl "$SERVER/$REPO/tree/$DEFAULT_BRANCH/${APP_DIR}" '
     def tile($num; $label; $color): {type:"Column", width:"stretch", items:[{type:"Container", style:"emphasis", items:[
       {type:"TextBlock", text:$num, size:"ExtraLarge", weight:"Bolder", color:$color, horizontalAlignment:"Center"},
       {type:"TextBlock", text:$label, size:"Small", isSubtle:true, spacing:"None", horizontalAlignment:"Center"}]}]};

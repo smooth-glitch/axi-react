@@ -15,6 +15,15 @@ paid action or license.
 | Open PRs, issues | not carried by a mirror push; merge or re-open first |
 | Teams webhook, VM, nginx, Redis | unchanged |
 
+## Target: the master repo `Agileaxpert/Axi_AI`
+The company repo is a master repo for several future apps, so Connectum lives in the folder `connectum/`.
+`scripts/ops/to-master-repo.sh <scratch-dir>` builds that layout in a scratch clone and leaves this working copy untouched:
+the whole history is rewritten under `connectum/`, and the workflows move to the repo root (GitHub only reads them there),
+renamed `Connectum: ...`, path-filtered to `connectum/**` and run from that folder. The scripts find their own folder
+(`APP_DIR` in `scripts/repo-env.sh`), so they work in both layouts. Then push the scratch clone:
+`git push <url> --all && git push <url> --tags`. Tags `v*` trigger release notes for any app in the repo, so use `v*` for Connectum only
+until another app needs its own prefix.
+
 ## Steps
 1. **Freeze**: merge or close open PRs; let Deploy finish.
 2. **Create** an empty repo in the company org (no README).
