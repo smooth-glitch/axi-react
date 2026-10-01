@@ -1,11 +1,18 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 12:35 IST · commit [`21f57ff`](https://github.com/smooth-glitch/axi-react/commit/21f57fff4840a72e5787fffedc29d9f8f8e225af)
+> Last updated: 01 Oct 2026, 12:44 IST · commit [`f13353c`](https://github.com/smooth-glitch/axi-react/commit/f13353cc40740de08fead52ab4c1d13504b07f6f)
 
 ## New here? Start here
 
 **Connectum** is the AXI chat platform: a React SPA frontend plus an Erlang/OTP real-time chat backend, in this one repo.
+
+### Try the app
+
+- **App:** <https://10.0.2.146> (reachable on the office network only)
+- **Working remotely?** You need VPN access to reach it. New team members: contact **AXPERT SUPPORT** (on Teams) to get your VPN config.
+
+### First steps
 
 1. Read the [README](https://github.com/smooth-glitch/axi-react#readme), especially its *Start here, by role* table.
 2. Skim the docs below, then clone the repo and follow the README's run instructions.
@@ -44,11 +51,11 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 67 |
+| Arjun Sridhar | 68 |
 | Arjun | 35 |
 | Anish-S-Agile | 27 |
 | Gunn | 26 |
-| connectum-status-bot | 2 |
+| connectum-status-bot | 3 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -65,6 +72,8 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 12:39 | Arjun Sridhar | [`fe13e11`](https://github.com/smooth-glitch/axi-react/commit/fe13e113c6ef58c430ac43a0979d1dd34ca994b3) docs: link the app and VPN instructions from the generated status page | +7 / −0 |
+| 01 Oct, 12:35 | connectum-status-bot | [`0d23e7f`](https://github.com/smooth-glitch/axi-react/commit/0d23e7f033d6e57a04abf72a2a359fc9a8715db3) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:32 | Arjun Sridhar | [`e9d7da7`](https://github.com/smooth-glitch/axi-react/commit/e9d7da746300421ead4fc718ec40cac7b5aa7dea) ci: show Indian time (IST) on the Teams card and the status page | +4 / −4 |
 | 01 Oct, 12:31 | connectum-status-bot | [`998b8ce`](https://github.com/smooth-glitch/axi-react/commit/998b8ce9f2d88c225b3ce76134d0c74c5a55ba84) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:28 | Arjun Sridhar | [`24faec4`](https://github.com/smooth-glitch/axi-react/commit/24faec474791299fc00e92d23d8fb7ebc191e384) ci: one Teams card per merge to main; ignore already-merged branches; protect generated STATUS.md | +194 / −244 |
@@ -88,5 +97,3 @@
 | 30 Sep, 15:54 | Arjun Sridhar | [`1ac1835`](https://github.com/smooth-glitch/axi-react/commit/1ac183594f1f94e79977b3813c87a7ecf494906f) fix: groups appear only when the server confirms (group_created); no optimistic 'created' toast | +9 / −40 |
 | 30 Sep, 15:53 | Arjun Sridhar | [`adc738c`](https://github.com/smooth-glitch/axi-react/commit/adc738cd04fa157a3ad49a634491440f9270ec02) fix(composer): clear stale argument suggestions when the text changes (Enter chose a leftover item from a previous command) | +9 / −7 |
 | 30 Sep, 15:49 | Arjun Sridhar | [`29151ab`](https://github.com/smooth-glitch/axi-react/commit/29151abd697b1029a2d24060f1ab1851a1cf78b8) fix: restore notifications, tstruct and tstruct-add in the # menu whitelist (dropped by a UI polish commit) | +2 / −1 |
-| 30 Sep, 15:42 | Arjun Sridhar | [`77bc3b6`](https://github.com/smooth-glitch/axi-react/commit/77bc3b66cf9b6477110ef6e56aba8667fea55379) feat: show profile pictures in inbox, forward, new-group and My Workspace lists | +5 / −2 |
-| 30 Sep, 15:41 | Arjun Sridhar | [`10f7bb4`](https://github.com/smooth-glitch/axi-react/commit/10f7bb4d1438ee0fd6c51db0ed1d3a5cd40ea9bc) fix: hooks after the logged-out early return crashed the screen right after login | +7 / −5 |
