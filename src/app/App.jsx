@@ -209,10 +209,10 @@ export default function App() {
     if (window._axiLegacyScriptsLoading) return undefined;
     window._axiLegacyScriptsLoading = true;
     const legacyScripts = [
-      '/axi-databin-core.jsx',
-      '/axi-databin-extras.jsx',
-      '/axi-ui-polish.jsx',
-      '/axi-push-to-tstruct.jsx',
+      '/axi-databin-core.js',
+      '/axi-databin-extras.js',
+      '/axi-ui-polish.js',
+      '/axi-push-to-tstruct.js',
     ];
     function loadNext(i) {
       if (i >= legacyScripts.length) {

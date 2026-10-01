@@ -280,7 +280,7 @@ function updateTokenBadge() {
       { duration: 350, easing: 'ease-out' }
     );
   } catch (e) {
-    badge.style.display = 'none';
+    if (badge) badge.style.display = 'none';
   }
 }
 
