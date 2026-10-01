@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 12:57 IST · commit [`2ee58d1`](https://github.com/smooth-glitch/axi-react/commit/2ee58d1465e73a95714faa2ff87c08c8ab278f42)
+> Last updated: 01 Oct 2026, 14:18 IST · commit [`9b26c7e`](https://github.com/smooth-glitch/axi-react/commit/9b26c7e858984bc02bed20de260ef68abbb03b73)
 
 ## New here? Start here
 
@@ -51,19 +51,19 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 69 |
+| Arjun Sridhar | 72 |
 | Arjun | 35 |
 | Anish-S-Agile | 27 |
 | Gunn | 26 |
-| connectum-status-bot | 4 |
+| connectum-status-bot | 5 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
 | Area | Files touched |
 |---|---|
-| Frontend | 231 |
+| Frontend | 233 |
 | Other | 114 |
-| Backend | 93 |
+| Backend | 96 |
 | CI / DevOps | 28 |
 | Docs | 23 |
 | Tests | 11 |
@@ -72,6 +72,10 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 14:10 | Arjun Sridhar | [`1da41fc`](https://github.com/smooth-glitch/axi-react/commit/1da41fcab5dc16b6e8aaf1e74b5fcf0f8f8e5711) fix(frontend): hosts can open User Approvals (sign-ups are approved by the host who covers the person) | +35 / −30 |
+| 01 Oct, 13:40 | Arjun Sridhar | [`f48c3cf`](https://github.com/smooth-glitch/axi-react/commit/f48c3cffb1d79c54852b5210932d334b95ea5313) feat(frontend): admin console wiring for reassignment, unlock screen, activity log, reporting manager on sign-up | +536 / −13 |
+| 01 Oct, 13:27 | Arjun Sridhar | [`aad8748`](https://github.com/smooth-glitch/axi-react/commit/aad8748a0a604766259a9eb62e3a425862e81fa8) fix(backend): admin reassignment hardening, audit trail, bulk move, SMTP email | +829 / −101 |
+| 01 Oct, 12:57 | connectum-status-bot | [`a9a5613`](https://github.com/smooth-glitch/axi-react/commit/a9a56137ce480b8ae3c0adef1574f930d01b04f7) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:50 | Arjun Sridhar | [`2cd669c`](https://github.com/smooth-glitch/axi-react/commit/2cd669c09835e53fdcac3cb7426dcabd66e6f12f) ci: automations bundle (deploy notifications, VM watchdog, PR checks, daily digest, branch housekeeping, secret scan, PR conflict warning, release notes, PR template) | +606 / −0 |
 | 01 Oct, 12:44 | connectum-status-bot | [`fdb3085`](https://github.com/smooth-glitch/axi-react/commit/fdb30856a29f40967c7f89c1ba3b20c2e0ba0823) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:39 | Arjun Sridhar | [`fe13e11`](https://github.com/smooth-glitch/axi-react/commit/fe13e113c6ef58c430ac43a0979d1dd34ca994b3) docs: link the app and VPN instructions from the generated status page | +7 / −0 |
@@ -93,7 +97,3 @@
 | 30 Sep, 17:18 | Anish-S-Agile | [`38a5dd4`](https://github.com/smooth-glitch/axi-react/commit/38a5dd486d319afe4f20f13039c24627e16eceb0) Upload option UI Polish | +481 / −21 |
 | 30 Sep, 16:14 | Arjun Sridhar | [`b102393`](https://github.com/smooth-glitch/axi-react/commit/b102393523dc2674775982af1eccd20afef7f5ed) chore: stop tracking dist/ (build output); CI builds it before every deploy (#79) | +5 / −48775 |
 | 30 Sep, 16:04 | Arjun Sridhar | [`2c3db5a`](https://github.com/smooth-glitch/axi-react/commit/2c3db5a678b5fec933720a0d804d876e51538b18) fix: #notifications opens the notification panel; #remind confirms with a toast | +8 / −0 |
-| 30 Sep, 16:03 | Arjun Sridhar | [`abc4f0f`](https://github.com/smooth-glitch/axi-react/commit/abc4f0f69093b2853a879dcbbc9c31a705f7ba9b) fix: associates list showed blank names (server sends {online, relation, user:{...}}); normalise once | +13 / −3 |
-| 30 Sep, 15:58 | Arjun Sridhar | [`ca66964`](https://github.com/smooth-glitch/axi-react/commit/ca669648f1f71d94358cd1b525bb52c2af321176) fix: #connect toast said 'Connected with @user' for what is a pending invitation; composer ignores late suggestion replies after send | +11 / −1 |
-| 30 Sep, 15:56 | Arjun Sridhar | [`a8413f5`](https://github.com/smooth-glitch/axi-react/commit/a8413f502d5d39ba5938d28cc85248edc2560021) fix: # commands were sent to the server twice (raw line + explicit call): duplicate errors, double history loads | +17 / −18 |
-| 30 Sep, 15:54 | Arjun Sridhar | [`1ac1835`](https://github.com/smooth-glitch/axi-react/commit/1ac183594f1f94e79977b3813c87a7ecf494906f) fix: groups appear only when the server confirms (group_created); no optimistic 'created' toast | +9 / −40 |
