@@ -1,7 +1,40 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 06:47 UTC · commit [`774e372`](https://github.com/smooth-glitch/axi-react/commit/774e37293e9966d952aeb870810b022840054d98)
+> Last updated: 01 Oct 2026, 06:50 UTC · commit [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50)
+
+## New here? Start here
+
+**Connectum** is the AXI chat platform: a React SPA frontend plus an Erlang/OTP real-time chat backend, in this one repo.
+
+1. Read the [README](https://github.com/smooth-glitch/axi-react#readme), especially its *Start here, by role* table.
+2. Skim the docs below, then clone the repo and follow the README's run instructions.
+3. In the **Connectum dev group** on Teams, scroll up for the history of decisions. Ask whoever adds you to share chat history from the start.
+4. Check [Recent changes](#recent-changes) to see what is moving right now, and [NEXT_STEPS](NEXT_STEPS.md) for what is planned.
+
+### Who owns what
+
+| Area | Owner |
+|---|---|
+| Erlang chat backend, DevOps | Arjun |
+| Lite tstruct UI | Gunn |
+| Rest of the UI and wiring it to the backend | Anish |
+
+### Docs index
+
+- [Redis backups on the VM](BACKUPS.md) · `docs/BACKUPS.md`
+- [AXI Chat Backend — WebSocket Protocol](CHAT_PROTOCOL.md) · `docs/CHAT_PROTOCOL.md`
+- [Connectum backend: frontend integration guide](CONNECTUM_FRONTEND_INTEGRATION.md) · `docs/CONNECTUM_FRONTEND_INTEGRATION.md`
+- [Frontend hand-off: `#commands` changes](FRONTEND_HANDOFF_HASH_COMMANDS.md) · `docs/FRONTEND_HANDOFF_HASH_COMMANDS.md`
+- [`#commands` — the chat prompt bar's action menu](HASH_COMMANDS.md) · `docs/HASH_COMMANDS.md`
+- [Axpert Chat Plugin — Next Steps & Progress Tracker](NEXT_STEPS.md) · `docs/NEXT_STEPS.md`
+- [Sandesh API — what the frontend builds against](SANDESH_API.md) · `docs/SANDESH_API.md`
+- [AXI Chat Backend](../axi-chat-backend/README.md) · `axi-chat-backend/README.md`
+- [Concurrency rules: nothing shared waits on Redis](../axi-chat-backend/docs/CONCURRENCY.md) · `axi-chat-backend/docs/CONCURRENCY.md`
+- [Debugging & Handover Guide](../axi-chat-backend/docs/DEBUGGING.md) · `axi-chat-backend/docs/DEBUGGING.md`
+- [Lite TStruct — how it works (backend owner's notes)](../axi-chat-backend/docs/LITE_TSTRUCT.md) · `axi-chat-backend/docs/LITE_TSTRUCT.md`
+- [Login / Signup / Self-Register — integration steps (AxiChat backend)](../axi-chat-backend/docs/LOGIN_INTEGRATION.md) · `axi-chat-backend/docs/LOGIN_INTEGRATION.md`
+- [Sandesh layer — backend notes](../axi-chat-backend/docs/SANDESH.md) · `axi-chat-backend/docs/SANDESH.md`
 
 ## Progress
 
@@ -11,7 +44,7 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 62 |
+| Arjun Sridhar | 63 |
 | Arjun | 35 |
 | Anish-S-Agile | 27 |
 | Gunn | 26 |
@@ -23,14 +56,15 @@
 | Frontend | 231 |
 | Other | 113 |
 | Backend | 93 |
-| Docs | 21 |
+| Docs | 22 |
+| CI / DevOps | 12 |
 | Tests | 11 |
-| CI / DevOps | 9 |
 
 ## Recent changes
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct | Arjun Sridhar | [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50) ci: Teams status card and self-updating STATUS.md, both on push to main | +310 / −0 |
 | 01 Oct | Anish-S-Agile | [`62e8331`](https://github.com/smooth-glitch/axi-react/commit/62e8331e6c7b69738f068503094456492b8bd171) Docs Readable + Ui polish | +1923 / −473 |
 | 30 Sep | Arjun Sridhar | [`1d284a8`](https://github.com/smooth-glitch/axi-react/commit/1d284a857f32cd6059d6517a3e50ab2c29b4be98) feat(backend): Connectum backend (codes/QR, wizards, data sources, payments, custom # commands, chat edit) (#86) | +5181 / −107 |
 | 30 Sep | Arjun Sridhar | [`2a267e9`](https://github.com/smooth-glitch/axi-react/commit/2a267e9ed16af3da7d63c1e4fe95b7c4a19857bf) UI cleanup: remove the '#' hint, the green sync dot and the 'Live Sync' pill (#85) | +8 / −31 |
@@ -55,4 +89,3 @@
 | 30 Sep | Anish-S-Agile | [`68153af`](https://github.com/smooth-glitch/axi-react/commit/68153af205921778a4fe0b9f386be0e2e1c2fb66) Updated UI Polish | +4803 / −2104 |
 | 30 Sep | Gunn | [`b47b415`](https://github.com/smooth-glitch/axi-react/commit/b47b415bc35a782431dc2a0db5d719292a351f3c) fix(tstruct): URL-encode struct names in web paths; drop leftover #tstruct-edit/-delete reply handlers | +16 / −27 |
 | 30 Sep | Arjun Sridhar | [`b49b2f8`](https://github.com/smooth-glitch/axi-react/commit/b49b2f866aca489300dd70b0d7cf70244441757f) chore: remove #tstruct-edit and #tstruct-delete (record ids can't be discovered); viewer buttons use /sd (#74) | +21 / −63 |
-| 30 Sep | Gunn | [`4e8ea4b`](https://github.com/smooth-glitch/axi-react/commit/4e8ea4bb6cd21b5d9609b243e528b5e876ee66ae) fix(barcode): release camera tracks immediately in Lite TStruct scanner; stable onDetected in both scanners | +24 / −4 |
