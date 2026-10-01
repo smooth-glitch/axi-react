@@ -13,6 +13,7 @@ export default function ChatScreen({
   messages,
   userCategory,
   isAdmin,
+  canApprove,
   onMenuClick,
   onMembersClick,
   onSend,
@@ -120,6 +121,7 @@ export default function ChatScreen({
         onOpenAiChat={onOpenAiChat}
         onDeleteChat={onDeleteChat}
         isAdmin={isAdmin}
+        canApprove={canApprove}
         onlineUsers={onlineUsers}
         onOpenApprovals={onOpenApprovals}
         pendingApprovalsCount={pendingApprovalsCount}
@@ -142,7 +144,7 @@ export default function ChatScreen({
         />
       ) : (
         <div className="sandesh-chat-body">
-          {isAdmin && pendingApprovalsCount > 0 && (
+          {(canApprove ?? isAdmin) && pendingApprovalsCount > 0 && (
             <div className="sandesh-pending-approval-banner">
               <div className="approval-banner-left">
                 <span className="material-icons banner-icon">how_to_reg</span>

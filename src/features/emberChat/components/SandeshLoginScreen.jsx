@@ -126,6 +126,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
   const [regBranch, setRegBranch] = useState("");
   const [regDept, setRegDept] = useState("");
   const [regDesignation, setRegDesignation] = useState("");
+  const [regManager, setRegManager] = useState("");
   const [regCategory, setRegCategory] = useState("Citizen");
   const [regAffiliate, setRegAffiliate] = useState("");
   const [regAffiliateBranch, setRegAffiliateBranch] = useState("");
@@ -1104,6 +1105,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
         payload.branch = regBranch;
         payload.department = regDept;
         payload.designation = regDesignation;
+        if (regManager.trim()) payload.reportingManager = regManager.trim();
       } else if (regType === "affiliate") {
         payload.isEmployee = false;
         payload.affiliate = regAffiliate;
@@ -2347,6 +2349,21 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     required={true}
                     align="right"
                   />
+                </div>
+              )}
+
+              {regType === "employee" && (
+                <div className="sandesh-input-group">
+                  <label>Reporting Manager (optional)</label>
+                  <div className="sandesh-input-box-3d">
+                    <input
+                      type="text"
+                      aria-label="Reporting manager"
+                      placeholder="Your manager's username, e.g. sab"
+                      value={regManager}
+                      onChange={(e) => setRegManager(e.target.value)}
+                    />
+                  </div>
                 </div>
               )}
 

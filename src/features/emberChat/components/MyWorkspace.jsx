@@ -373,7 +373,7 @@ export default function MyWorkspace({
           {/* Right: Notification Slider Trigger & User Actions */}
           <div className="workspace-topbar-right">
             {/* Admin Approvals shortcut if Admin */}
-            {currentUser?.isAdmin && (
+            {(currentUser?.isAdmin || currentUser?.isHost) && (
               <button
                 type="button"
                 className="workspace-pill-action-btn"

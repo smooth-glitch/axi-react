@@ -13,6 +13,7 @@ export default function TopBar({
   onOpenAiChat,
   onDeleteChat,
   isAdmin,
+  canApprove,
   onlineUsers = [],
   onOpenApprovals,
   pendingApprovalsCount = 0,
@@ -170,8 +171,8 @@ export default function TopBar({
           <span className="material-icons">delete_sweep</span>
         </button>
 
-        {/* User Approvals trigger */}
-        {isAdmin && (
+        {/* User Approvals trigger: admins, and hosts (they approve the sign-ups of the people they cover) */}
+        {(canApprove ?? isAdmin) && (
           <button
             type="button"
             className="sandesh-action-pill-btn approvals-topbar-pill"

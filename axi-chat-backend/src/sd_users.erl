@@ -19,7 +19,8 @@
 %%% plus accepted invitations. Relations: "host" (that peer is MY host),
 %%% "user" (that peer is a user I host), "peer" (accepted invitation).
 -module(sd_users).
--export([get/1, find/1, list/0, exists/1, create/2, create_dry/1, update/3, set_status/2,
+-export([get/1, find/1, list/0, exists/1, create/2, create_dry/1, update/3, update_full/3, set_status/2,
+         valid_host_target/1, move_hosted/2, locked/2,
          set_host/2, mark_login/1, mark_totp/1, replace/1,
          public/1, full/1, is_admin/1, is_host/1, is_active/1, effective_category/1,
          admins/0, users_of_host/1, hosts_covering/1, host_covers/2, count_using/2,
@@ -115,8 +116,15 @@ full(U) -> U.
 %% Opts: mode => invite | register | setup, actor => binary(),
 %%       role => <<"admin">> | <<"user">>, host => binary() | undefined,
 %%       status => <<"active">> | <<"pending">>, username => binary() (optional)
-create(Attrs, Opts) when is_map(Attrs) ->
+create(Attrs0, Opts) when is_map(Attrs0) ->
     Mode = maps:get(mode, Opts, invite),
+    %% A person registering themselves must never be able to give themselves host rights,
+    %% user-management rights or roles: those are the administrator's decision.
+    Attrs = case Mode of
+                register -> maps:without([<<"isHost">>, <<"hostScope">>, <<"canManageUsers">>,
+                                          <<"roles">>, <<"role">>, <<"status">>, <<"host">>], Attrs0);
+                _ -> Attrs0
+            end,
     case validate_profile(Attrs, Mode, undefined) of
         {ok, Profile} ->
             Email = maps:get(<<"email">>, Profile),
@@ -187,68 +195,184 @@ create_dry(Attrs) when is_map(Attrs) ->
 
 %% Attrs may contain any editable profile field; the merged profile is
 %% re-validated as a whole so an update can never leave a record invalid.
-update(Username, Attrs, _Actor) when is_map(Attrs) ->
+update(Username, Attrs, Actor) when is_map(Attrs) ->
+    case update_full(Username, Attrs, Actor) of
+        {ok, New, _Extra} -> {ok, New};
+        Err -> Err
+    end.
+
+%% Like update/3 but also returns an Extra map of things the caller should show:
+%%   hostMismatch  => #{host, suggestedHosts}  the user's host no longer covers them after this change
+%%   hostChanged   => #{from, to}              (only with autoHost: true) the host was switched for them
+%%   uncoveredUsers => [username]              a host whose scope shrank still hosts people outside it
+%%   movedUsers    => [username]               (only with reassignTo) people moved off a demoted host
+%% Extra attrs (not profile fields): autoHost (bool), reassignTo (username).
+%% The read-modify-write runs under a per-user lock, so two simultaneous edits can't lose each other.
+update_full(Username, Attrs, Actor) when is_map(Attrs) ->
+    locked(Username, fun() -> do_update(Username, Attrs, Actor) end).
+
+-define(EDITABLE, [<<"name">>, <<"email">>, <<"mobile">>, <<"isEmployee">>, <<"branch">>,
+                   <<"department">>, <<"designation">>, <<"reportingManager">>,
+                   <<"affiliate">>, <<"affiliateBranch">>, <<"category">>, <<"country">>,
+                   <<"city">>, <<"pin">>, <<"isHost">>, <<"hostScope">>, <<"canManageUsers">>,
+                   <<"roles">>, <<"address">>, <<"gender">>, <<"dob">>, <<"education">>, <<"skills">>]).
+-define(ORG_FIELDS, [<<"isEmployee">>, <<"branch">>, <<"department">>, <<"designation">>,
+                     <<"affiliate">>, <<"category">>]).
+
+do_update(Username, Attrs, _Actor) ->
     case get(Username) of
         undefined -> {error, not_found, <<"No such user.">>};
         Old ->
-            Editable = [<<"name">>, <<"email">>, <<"mobile">>, <<"isEmployee">>, <<"branch">>,
-                        <<"department">>, <<"designation">>, <<"reportingManager">>,
-                        <<"affiliate">>, <<"affiliateBranch">>, <<"category">>, <<"country">>,
-                        <<"city">>, <<"pin">>, <<"isHost">>, <<"hostScope">>, <<"canManageUsers">>,
-                        <<"roles">>, <<"address">>, <<"gender">>, <<"dob">>, <<"education">>, <<"skills">>],
-            Merged = maps:merge(Old, maps:with(Editable, Attrs)),
+            Merged = maps:merge(Old, maps:with(?EDITABLE, Attrs)),
             case validate_profile(Merged, update, Old) of
                 {ok, Profile} ->
                     Email = maps:get(<<"email">>, Profile),
                     Mobile = maps:get(<<"mobile">>, Profile),
-                    case check_unique(Email, Mobile, maps:get(<<"username">>, Old)) of
+                    OldName = maps:get(<<"username">>, Old),
+                    case check_unique(Email, Mobile, OldName) of
                         ok ->
-                            New = maps:merge(Old, Profile#{<<"updatedTs">> => sd_util:now_ms()}),
-                            reindex(Old, New),
-                            put_user(New),
-                            {ok, New};
+                            case demotion_check(OldName, Old, Profile, Attrs) of
+                                {error, _, _} = Err -> Err;
+                                {ok, MoveTo} ->
+                                    New = maps:merge(Old, Profile#{<<"updatedTs">> => sd_util:now_ms()}),
+                                    reindex(Old, New),
+                                    put_user(New),
+                                    Moved = case MoveTo of undefined -> []; To -> move_hosted(OldName, To) end,
+                                    {New2, Extra0} = host_review(OldName, Old, New, Attrs),
+                                    Extra1 = case Moved of [] -> Extra0; _ -> Extra0#{<<"movedUsers">> => Moved} end,
+                                    {ok, New2, scope_review(OldName, New2, Extra1)}
+                            end;
                         Err -> Err
                     end;
                 Err -> Err
             end
     end.
 
-set_status(Username, Status) ->
-    case get(Username) of
-        undefined -> {error, not_found, <<"No such user.">>};
-        U ->
-            New = U#{<<"status">> => Status, <<"updatedTs">> => sd_util:now_ms()},
-            put_user(New),
-            {ok, New}
+%% A host who still has people can't simply stop being a host: they'd be left pointing at a non-host.
+demotion_check(Name, Old, Profile, Attrs) ->
+    WasHost = is_host(Old), StillHost = is_host(Profile),
+    case WasHost andalso not StillHost of
+        false -> {ok, undefined};
+        true ->
+            case users_of_host(Name) of
+                [] -> {ok, undefined};
+                Users ->
+                    case sd_util:get(<<"reassignTo">>, Attrs, undefined) of
+                        To when is_binary(To) ->
+                            ToN = sd_util:norm_user(To),
+                            case ToN =:= Name of
+                                true -> {error, invalid, <<"reassignTo can't be the same user.">>};
+                                false -> case valid_host_target(ToN) of ok -> {ok, ToN}; Err -> Err end
+                            end;
+                        _ ->
+                            {error, has_users,
+                             iolist_to_binary(io_lib:format(
+                               "This host still has ~b user(s). Send reassignTo (another host's username) to move them, or move them first.",
+                               [length(Users)]))}
+                    end
+            end
     end.
 
-set_host(Username, HostOrNull) ->
-    case get(Username) of
-        undefined -> {error, not_found, <<"No such user.">>};
-        U ->
-            Old = sd_util:get(<<"host">>, U),
-            New = U#{<<"host">> => HostOrNull, <<"updatedTs">> => sd_util:now_ms()},
-            put_user(New),
-            %% The old host link goes; a peer link (accepted invitation) is kept.
-            case is_binary(Old) andalso assoc_relation(Username, Old) =:= <<"host">> of
-                true -> assoc_remove(Username, Old);
-                false -> ok
-            end,
-            case is_binary(HostOrNull) of
-                true -> assoc_add(Username, HostOrNull, host);
-                false -> ok
-            end,
-            {ok, New}
+%% After an org change (branch / department / designation / category ...): does the user's host still cover them?
+host_review(Name, Old, New, Attrs) ->
+    HostName = sd_util:get(<<"host">>, New),
+    Changed = lists:any(fun(K) -> maps:get(K, Old, null) =/= maps:get(K, New, null) end, ?ORG_FIELDS),
+    case Changed andalso is_binary(HostName) of
+        false -> {New, #{}};
+        true ->
+            Covered = case get(HostName) of
+                          undefined -> false;
+                          H -> is_admin(H) orelse host_covers(H, New)
+                      end,
+            case Covered of
+                true -> {New, #{}};
+                false ->
+                    Suggested = [maps:get(<<"username">>, H) || H <- hosts_covering(New)],
+                    case {sd_util:is_true(sd_util:get(<<"autoHost">>, Attrs, false)), Suggested} of
+                        {true, [First | _]} ->
+                            {ok, N2} = set_host(Name, First),
+                            {N2, #{<<"hostChanged">> => #{<<"from">> => HostName, <<"to">> => First}}};
+                        _ ->
+                            {New, #{<<"hostMismatch">> => #{<<"host">> => HostName, <<"suggestedHosts">> => Suggested}}}
+                    end
+            end
     end.
+
+%% A host whose scope no longer covers some of the people they host.
+scope_review(Name, New, Extra) ->
+    case is_host(New) of
+        false -> Extra;
+        true ->
+            Out = [maps:get(<<"username">>, U) || U <- users_of_host(Name), not host_covers(New, U)],
+            case Out of [] -> Extra; _ -> Extra#{<<"uncoveredUsers">> => Out} end
+    end.
+
+%% Per-user lock: serialises every read-modify-write of one user record on this node.
+%% (The backend runs as a single Erlang node; Redis alone would not make get+put atomic.)
+locked(Username, Fun) ->
+    Key = {sd_user, sd_util:norm_user(Username)},
+    case global:trans({Key, self()}, Fun, [node()], 20) of
+        aborted -> {error, busy, <<"That user is being changed right now; try again.">>};
+        Result -> Result
+    end.
+
+valid_host_target(Host) ->
+    case get(Host) of
+        #{<<"status">> := <<"active">>} = U ->
+            case is_host(U) orelse is_admin(U) of
+                true -> ok;
+                false -> {error, invalid, <<"The new host must be a host or administrator.">>}
+            end;
+        _ -> {error, not_found, <<"No such active host.">>}
+    end.
+
+%% Moves everyone hosted by From to To. Returns the usernames moved.
+move_hosted(From, To) ->
+    [begin {ok, _} = set_host(maps:get(<<"username">>, U), To), maps:get(<<"username">>, U) end
+     || U <- users_of_host(From)].
+
+set_status(Username, Status) ->
+    locked(Username, fun() ->
+        case get(Username) of
+            undefined -> {error, not_found, <<"No such user.">>};
+            U ->
+                New = U#{<<"status">> => Status, <<"updatedTs">> => sd_util:now_ms()},
+                put_user(New),
+                {ok, New}
+        end
+    end).
+
+set_host(Username, HostOrNull) ->
+    locked(Username, fun() ->
+        case get(Username) of
+            undefined -> {error, not_found, <<"No such user.">>};
+            U ->
+                Old = sd_util:get(<<"host">>, U),
+                New = U#{<<"host">> => HostOrNull, <<"updatedTs">> => sd_util:now_ms()},
+                put_user(New),
+                %% The old host link goes; a peer link (accepted invitation) is kept.
+                case is_binary(Old) andalso assoc_relation(Username, Old) =:= <<"host">> of
+                    true -> assoc_remove(Username, Old);
+                    false -> ok
+                end,
+                case is_binary(HostOrNull) of
+                    true -> assoc_add(Username, HostOrNull, host);
+                    false -> ok
+                end,
+                {ok, New}
+        end
+    end).
 
 mark_login(Username) -> touch(Username, <<"lastLoginTs">>).
 mark_totp(Username) -> touch(Username, <<"lastTotpTs">>).
 
 touch(Username, Field) ->
-    case get(Username) of
-        undefined -> ok;
-        U -> put_user(U#{Field => sd_util:now_ms()})
-    end.
+    locked(Username, fun() ->
+        case get(Username) of
+            undefined -> ok;
+            U -> put_user(U#{Field => sd_util:now_ms()})
+        end
+    end).
 
 %% Overwrite a whole record (caller has already validated it).
 replace(User) -> put_user(User).
