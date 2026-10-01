@@ -2048,6 +2048,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
+    if (activeChat.id !== "workspace" && !activeChat.isWorkspace) {
+      newMsg.status = "sent";
+      newMsg.ticks = "sent";
+    }
+
     updateActiveMessages((list) => [...list, newMsg]);
 
     // In My Workspace, provide automated prompt tips or confirmations
@@ -2099,12 +2104,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   const handleAttachFile = (filePayload) => {
     const tempId = `temp-${Date.now()}`;
+    const isWs = activeChat.id === "workspace" || activeChat.isWorkspace;
     const newMsg = {
       id: tempId,
       dir: "out",
       from: currentUser.name || currentUser.username,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      ticks: "sent",
+      status: isWs ? "read" : "sent",
+      ticks: isWs ? "read" : "sent",
       ...filePayload,
     };
     updateActiveMessages((list) => [...list, newMsg]);

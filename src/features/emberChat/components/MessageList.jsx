@@ -93,17 +93,22 @@ export function getFileBadgeConfig(fileName = "") {
 }
 
 
-function TicksIcon({ state }) {
-  if (state === "sending") {
+export function TicksIcon({ state }) {
+  const norm = typeof state === "object" && state !== null
+    ? (state.ticks || state.status || (state.read ? "read" : "sent"))
+    : state;
+  const s = (norm || "sent").toString().toLowerCase().trim();
+
+  if (s === "sending") {
     return (
-      <span className="sandesh-ticks sending" title="Sending..." style={{ opacity: 0.6, display: "inline-flex", verticalAlign: "middle" }}>
+      <span className="sandesh-ticks sending" title="Sending..." style={{ opacity: 0.65, display: "inline-flex", verticalAlign: "middle" }}>
         <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
           <circle cx="6" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 2" />
         </svg>
       </span>
     );
   }
-  if (state === "failed") {
+  if (s === "failed") {
     return (
       <span className="sandesh-ticks failed" title="Failed to deliver" style={{ color: "#ef4444", display: "inline-flex", verticalAlign: "middle" }}>
         <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
@@ -113,18 +118,31 @@ function TicksIcon({ state }) {
       </span>
     );
   }
-  return (
-    <span className={`sandesh-ticks ${state === "read" ? "read" : "sent"}`} title={state === "read" ? "Read" : "Sent"}>
-      {state === "read" ? (
+  if (s === "read" || s === "seen" || s === "true") {
+    return (
+      <span className="sandesh-ticks read" title="Read" aria-label="Read receipt">
         <svg width="15" height="11" viewBox="0 0 16 11" fill="none">
           <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           <path d="M5 5.5L8.5 9L15 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-      ) : (
-        <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
+      </span>
+    );
+  }
+  if (s === "delivered") {
+    return (
+      <span className="sandesh-ticks delivered" title="Delivered" aria-label="Delivered">
+        <svg width="15" height="11" viewBox="0 0 16 11" fill="none">
           <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5 5.5L8.5 9L15 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-      )}
+      </span>
+    );
+  }
+  return (
+    <span className="sandesh-ticks sent" title="Sent" aria-label="Sent">
+      <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
+        <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </span>
   );
 }
@@ -478,7 +496,7 @@ function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMe
         {/* Timestamp and Ticks */}
         <div className="sandesh-bubble-footer">
           <span className="msg-time">{msg.time || "now"}</span>
-          {isOut && <TicksIcon state={msg.ticks || msg.status || "sent"} />}
+          {isOut && <TicksIcon state={msg.read ? "read" : (msg.ticks || msg.status || "sent")} />}
         </div>
 
         {/* Reaction Badges */}
