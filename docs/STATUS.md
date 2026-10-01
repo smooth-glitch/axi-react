@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 18:30 IST · commit [`9064f3b`](https://github.com/smooth-glitch/axi-react/commit/9064f3bcaefce1a5fe6c6d95af90c3132b4ec470)
+> Last updated: 01 Oct 2026, 18:56 IST · commit [`37420f3`](https://github.com/smooth-glitch/axi-react/commit/37420f32078b160c109e3da582b3b0add62f7783)
 
 ## New here? Start here
 
@@ -54,11 +54,11 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 80 |
+| Arjun Sridhar | 82 |
 | Anish-S-Agile | 36 |
 | Arjun | 35 |
 | Gunn | 26 |
-| connectum-status-bot | 14 |
+| connectum-status-bot | 15 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -75,6 +75,9 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 18:49 | Arjun Sridhar | [`2a789c8`](https://github.com/smooth-glitch/axi-react/commit/2a789c84ca5c16ab40662c4d9db08d757b137e8d) docs: master-repo migration path; status links honour the app folder | +11 / −2 |
+| 01 Oct, 18:48 | Arjun Sridhar | [`088cc5c`](https://github.com/smooth-glitch/axi-react/commit/088cc5c93378c54a88e91bf888ef8a17a5a4adae) chore: scripts work from any app folder; add master-repo converter | +24 / −17 |
+| 01 Oct, 18:30 | connectum-status-bot | [`d3f0345`](https://github.com/smooth-glitch/axi-react/commit/d3f0345003f206d99ac18fe1cc0aa18f056f2f36) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 18:29 | Arjun Sridhar | [`1c939a0`](https://github.com/smooth-glitch/axi-react/commit/1c939a09d3c88dccd70ec4a001a9c8253a5d3852) fix(ci): smoke test checks only the tools runner jobs use | +1 / −1 |
 | 01 Oct, 18:26 | connectum-status-bot | [`9248382`](https://github.com/smooth-glitch/axi-react/commit/92483827d7c3f9b60a46972f71b481e3db961525) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 18:18 | Arjun Sridhar | [`250e7bb`](https://github.com/smooth-glitch/axi-react/commit/250e7bb50928c58c884ffb3ac2645e23792a849e) chore: make the repo portable to another GitHub org | +232 / −23 |
@@ -97,6 +100,3 @@
 | 01 Oct, 14:18 | connectum-status-bot | [`a71e89f`](https://github.com/smooth-glitch/axi-react/commit/a71e89fc5781df78dd12309f515d3eec0496cfe9) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 14:10 | Arjun Sridhar | [`1da41fc`](https://github.com/smooth-glitch/axi-react/commit/1da41fcab5dc16b6e8aaf1e74b5fcf0f8f8e5711) fix(frontend): hosts can open User Approvals (sign-ups are approved by the host who covers the person) | +35 / −30 |
 | 01 Oct, 13:40 | Arjun Sridhar | [`f48c3cf`](https://github.com/smooth-glitch/axi-react/commit/f48c3cffb1d79c54852b5210932d334b95ea5313) feat(frontend): admin console wiring for reassignment, unlock screen, activity log, reporting manager on sign-up | +536 / −13 |
-| 01 Oct, 13:27 | Arjun Sridhar | [`aad8748`](https://github.com/smooth-glitch/axi-react/commit/aad8748a0a604766259a9eb62e3a425862e81fa8) fix(backend): admin reassignment hardening, audit trail, bulk move, SMTP email | +829 / −101 |
-| 01 Oct, 13:01 | Anish-S-Agile | [`a56c3e9`](https://github.com/smooth-glitch/axi-react/commit/a56c3e9186118c0755c5769ce69c0f54601101af) Green tick Updated | +135 / −14 |
-| 01 Oct, 12:57 | connectum-status-bot | [`a9a5613`](https://github.com/smooth-glitch/axi-react/commit/a9a56137ce480b8ae3c0adef1574f930d01b04f7) docs: refresh STATUS.md [skip ci] | +0 / −0 |
