@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 14:34 IST · commit [`da1c65c`](https://github.com/smooth-glitch/axi-react/commit/da1c65ca208a969f7670aa03429ba3da9e6ac3bb)
+> Last updated: 01 Oct 2026, 15:06 IST · commit [`191d58d`](https://github.com/smooth-glitch/axi-react/commit/191d58d478976ab1ba23b0a05a4606ffb028b24c)
 
 ## New here? Start here
 
@@ -55,9 +55,9 @@
 |---|---|
 | Arjun Sridhar | 74 |
 | Arjun | 35 |
-| Anish-S-Agile | 27 |
+| Anish-S-Agile | 33 |
 | Gunn | 26 |
-| connectum-status-bot | 6 |
+| connectum-status-bot | 7 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -68,18 +68,20 @@
 | Backend | 96 |
 | CI / DevOps | 28 |
 | Docs | 25 |
-| Tests | 11 |
+| Tests | 12 |
 
 ## Recent changes
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 14:34 | connectum-status-bot | [`e49a8aa`](https://github.com/smooth-glitch/axi-react/commit/e49a8aaf1bc2d0e1c14ed913782e92ee0320ec9c) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 14:27 | Arjun Sridhar | [`e8bd01b`](https://github.com/smooth-glitch/axi-react/commit/e8bd01bdce5ade61703fec919ac6c42c9e371120) docs: demo guide (set up from scratch, steps 1-7, and how to use the new admin features) | +90 / −0 |
 | 01 Oct, 14:24 | Arjun Sridhar | [`dd42c36`](https://github.com/smooth-glitch/axi-react/commit/dd42c368126f7991fa654e98661348d448352194) docs: email setup guide; deploys can be run by hand (main only) | +58 / −0 |
 | 01 Oct, 14:18 | connectum-status-bot | [`a71e89f`](https://github.com/smooth-glitch/axi-react/commit/a71e89fc5781df78dd12309f515d3eec0496cfe9) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 14:10 | Arjun Sridhar | [`1da41fc`](https://github.com/smooth-glitch/axi-react/commit/1da41fcab5dc16b6e8aaf1e74b5fcf0f8f8e5711) fix(frontend): hosts can open User Approvals (sign-ups are approved by the host who covers the person) | +35 / −30 |
 | 01 Oct, 13:40 | Arjun Sridhar | [`f48c3cf`](https://github.com/smooth-glitch/axi-react/commit/f48c3cffb1d79c54852b5210932d334b95ea5313) feat(frontend): admin console wiring for reassignment, unlock screen, activity log, reporting manager on sign-up | +536 / −13 |
 | 01 Oct, 13:27 | Arjun Sridhar | [`aad8748`](https://github.com/smooth-glitch/axi-react/commit/aad8748a0a604766259a9eb62e3a425862e81fa8) fix(backend): admin reassignment hardening, audit trail, bulk move, SMTP email | +829 / −101 |
+| 01 Oct, 13:01 | Anish-S-Agile | [`a56c3e9`](https://github.com/smooth-glitch/axi-react/commit/a56c3e9186118c0755c5769ce69c0f54601101af) Green tick Updated | +135 / −14 |
 | 01 Oct, 12:57 | connectum-status-bot | [`a9a5613`](https://github.com/smooth-glitch/axi-react/commit/a9a56137ce480b8ae3c0adef1574f930d01b04f7) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:50 | Arjun Sridhar | [`2cd669c`](https://github.com/smooth-glitch/axi-react/commit/2cd669c09835e53fdcac3cb7426dcabd66e6f12f) ci: automations bundle (deploy notifications, VM watchdog, PR checks, daily digest, branch housekeeping, secret scan, PR conflict warning, release notes, PR template) | +606 / −0 |
 | 01 Oct, 12:44 | connectum-status-bot | [`fdb3085`](https://github.com/smooth-glitch/axi-react/commit/fdb30856a29f40967c7f89c1ba3b20c2e0ba0823) docs: refresh STATUS.md [skip ci] | +0 / −0 |
@@ -88,14 +90,12 @@
 | 01 Oct, 12:32 | Arjun Sridhar | [`e9d7da7`](https://github.com/smooth-glitch/axi-react/commit/e9d7da746300421ead4fc718ec40cac7b5aa7dea) ci: show Indian time (IST) on the Teams card and the status page | +4 / −4 |
 | 01 Oct, 12:31 | connectum-status-bot | [`998b8ce`](https://github.com/smooth-glitch/axi-react/commit/998b8ce9f2d88c225b3ce76134d0c74c5a55ba84) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:28 | Arjun Sridhar | [`24faec4`](https://github.com/smooth-glitch/axi-react/commit/24faec474791299fc00e92d23d8fb7ebc191e384) ci: one Teams card per merge to main; ignore already-merged branches; protect generated STATUS.md | +194 / −244 |
+| 01 Oct, 12:26 | Anish-S-Agile | [`55eeec3`](https://github.com/smooth-glitch/axi-react/commit/55eeec364275e8b5fe30c9fda15406dd35d3a16b) Hash Bug fix | +20 / −8 |
 | 01 Oct, 12:24 | Arjun Sridhar | [`88325fb`](https://github.com/smooth-glitch/axi-react/commit/88325fb353324874af3d12dac8a5530e40689c5c) ci: on every merge to main, post a pull reminder with a per-branch conflict forecast and safe-resolution steps to Teams | +173 / −0 |
 | 01 Oct, 12:22 | connectum-status-bot | [`9e30d9a`](https://github.com/smooth-glitch/axi-react/commit/9e30d9a968b925bf1c8d52757f1d4adac5f8dc7d) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:20 | Arjun Sridhar | [`2dc93a1`](https://github.com/smooth-glitch/axi-react/commit/2dc93a143dfe3c2ccdce474841203277284ce5e7) ci: STATUS.md doubles as a new-developer onboarding page (start-here steps, owners, docs index) | +27 / −0 |
 | 01 Oct, 12:17 | Arjun Sridhar | [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50) ci: Teams status card and self-updating STATUS.md, both on push to main | +252 / −0 |
-| 01 Oct, 10:45 | Anish-S-Agile | [`62e8331`](https://github.com/smooth-glitch/axi-react/commit/62e8331e6c7b69738f068503094456492b8bd171) Docs Readable + Ui polish | +1923 / −473 |
-| 30 Sep, 21:48 | Arjun Sridhar | [`1d284a8`](https://github.com/smooth-glitch/axi-react/commit/1d284a857f32cd6059d6517a3e50ab2c29b4be98) feat(backend): Connectum backend (codes/QR, wizards, data sources, payments, custom # commands, chat edit) (#86) | +5181 / −107 |
-| 30 Sep, 18:32 | Arjun Sridhar | [`2a267e9`](https://github.com/smooth-glitch/axi-react/commit/2a267e9ed16af3da7d63c1e4fe95b7c4a19857bf) UI cleanup: remove the '#' hint, the green sync dot and the 'Live Sync' pill (#85) | +8 / −31 |
-| 30 Sep, 17:54 | Gunn | [`cd67a90`](https://github.com/smooth-glitch/axi-react/commit/cd67a9040c87bae8e020e1461cddf6ec10248a1b) feat: Smart Prompts category list opens as an upward dropdown from the pill | +297 / −187 |
-| 30 Sep, 17:35 | Gunn | [`7339f92`](https://github.com/smooth-glitch/axi-react/commit/7339f924f392fa202422b4124300d9b6c3c485b6) feat: Smart Prompts by category -- pills with counts + paged, searchable category popup | +217 / −14 |
-| 30 Sep, 17:26 | Arjun Sridhar | [`4813eca`](https://github.com/smooth-glitch/axi-react/commit/4813eca7baef1b41fb9a3fd7a66a2b83484c6768) fix: shared chat servers never wait on Redis -- a Redis stall no longer crashes chat_room / chat_groups (#80) | +420 / −134 |
-| 30 Sep, 17:26 | Arjun Sridhar | [`3bcf63d`](https://github.com/smooth-glitch/axi-react/commit/3bcf63d92498b280d94c5e58cd5ddeff116241e3) feat: Smart Prompts by category -- options.categories (pills + counts) and paged, searchable options.list (#81) | +398 / −6 |
+| 01 Oct, 12:13 | Anish-S-Agile | [`fe14ef0`](https://github.com/smooth-glitch/axi-react/commit/fe14ef04b6a8e1d36aafc79e725df7e6e19e8cd1) Hash Directory Button fixed | +43 / −8 |
+| 01 Oct, 12:06 | Anish-S-Agile | [`a58db72`](https://github.com/smooth-glitch/axi-react/commit/a58db728e3905d0b2c7299d335f644aa1702a3c3) command Directory UI Updated | +560 / −172 |
+| 01 Oct, 11:42 | Anish-S-Agile | [`449908d`](https://github.com/smooth-glitch/axi-react/commit/449908d8407fb067142ece45c04336fea6b81c81) Ui fixed | +40 / −24 |
+| 01 Oct, 11:23 | Anish-S-Agile | [`2ac33e4`](https://github.com/smooth-glitch/axi-react/commit/2ac33e48eb908e6badd44ab7c3e898f37c4a91fb) feat(commands): polish CommandsHelpModal UI, commands catalog and integration tests | +645 / −136 |
