@@ -56,6 +56,14 @@ jobs:
             esac
           }
 
+          # 10-cell diff bar: filled = share of additions, hollow = share of deletions.
+          bar() {
+            local i=$1 d=$2 t=$(($1 + $2)) g=0 out="" n
+            [ "$t" -gt 0 ] && g=$(( (i * 10 + t / 2) / t ))
+            for n in 1 2 3 4 5 6 7 8 9 10; do if [ "$n" -le "$g" ]; then out="${out}▰"; else out="${out}▱"; fi; done
+            echo "$out"
+          }
+
           COMMITS_JSON='[]'
           ALL_FILES=$(mktemp)
           TOT_INS=0; TOT_DEL=0
@@ -79,12 +87,13 @@ jobs:
             # First 3 non-empty lines of the body, as the description.
             BODY=$(git show -s --format=%b "$H" | grep -Evi '^(Co-Authored-By|Claude-Session|Signed-off-by|Reviewed-by):' | grep -v '^$' | head -n 3 || true)
             read -r I D F <<< "$(git show --numstat --format= "$H" | awk '$1 ~ /^[0-9]+$/ {i+=$1; d+=$2} {f++} END {print i+0, d+0, f+0}')"
+            BAR=$(bar "$I" "$D")
             git show --name-only --format= "$H" >> "$ALL_FILES"
             AREAS=$(git show --name-only --format= "$H" | while read -r P; do [ -n "$P" ] && area "$P"; done | sort -u | paste -sd ' · ' -)
             COMMITS_JSON=$(echo "$COMMITS_JSON" | jq --arg h "${H:0:7}" --arg url "$SERVER/$REPO/commit/$H" \
               --arg name "$NAME" --arg date "$DATE" --arg title "$TITLE" --arg icon "$ICON" --arg scope "$SCOPE" \
-              --arg body "$BODY" --arg areas "$AREAS" --argjson ins "$I" --argjson del "$D" --argjson files "$F" \
-              '. + [{h:$h,url:$url,name:$name,date:$date,title:$title,icon:$icon,scope:$scope,body:$body,areas:$areas,ins:$ins,del:$del,files:$files}]')
+              --arg body "$BODY" --arg areas "$AREAS" --arg bar "$BAR" --argjson ins "$I" --argjson del "$D" --argjson files "$F" \
+              '. + [{h:$h,url:$url,name:$name,date:$date,title:$title,icon:$icon,scope:$scope,body:$body,areas:$areas,bar:$bar,ins:$ins,del:$del,files:$files}]')
           done
 
           # Totals across the whole push.
@@ -97,7 +106,7 @@ jobs:
             --arg actor "$ACTOR" --arg actorUrl "$SERVER/$ACTOR" \
             --arg when "$(date -u +'%d %b %Y · %H:%M UTC')" \
             --arg total "$TOTAL" --arg files "$FILES_N" --arg authors "$AUTHORS" \
-            --arg areas "$AREA_SUMMARY" --arg ins "$TOT_INS" --arg del "$TOT_DEL" --arg compare "$COMPARE" '
+            --arg areas "$AREA_SUMMARY" --arg totbar "$(bar "$TOT_INS" "$TOT_DEL")" --arg ins "$TOT_INS" --arg del "$TOT_DEL" --arg compare "$COMPARE" '
             def tile($num; $label; $color): {
               type:"Column", width:"stretch", items:[{
                 type:"Container", style:"emphasis", items:[
@@ -117,7 +126,7 @@ jobs:
                     ]
                     + (if .body != "" then [{type:"TextBlock", text:.body, wrap:true, spacing:"Small", size:"Small"}] else [] end)
                     + [{type:"TextBlock", spacing:"Small", size:"Small", wrap:true,
-                        text:("🟢 +" + (.ins|tostring) + "   🔴 −" + (.del|tostring) + "   📄 " + (.files|tostring) + (if .files == 1 then " file" else " files" end) + (if .areas != "" then "   ·   " + .areas else "" end))}]
+                        text:("`" + .bar + "`  **+" + (.ins|tostring) + "** / −" + (.del|tostring) + "  ·  " + (.files|tostring) + (if .files == 1 then " file" else " files" end) + (if .areas != "" then "  ·  " + .areas else "" end))}]
                   )}
                 ]}]};
             {type:"message", attachments:[{contentType:"application/vnd.microsoft.card.adaptive",
@@ -129,9 +138,10 @@ jobs:
                       {type:"ColumnSet", columns:[
                         {type:"Column", width:"auto", verticalContentAlignment:"Center", items:[{type:"TextBlock", text:"⬡", size:"ExtraLarge", weight:"Bolder"}]},
                         {type:"Column", width:"stretch", items:[
-                          {type:"TextBlock", text:"CONNECTUM  ·  DEV UPDATE", size:"Small", weight:"Bolder", isSubtle:true},
+                          {type:"TextBlock", text:"▌CONNECTUM // DEV FEED", size:"Small", weight:"Bolder"},
                           {type:"TextBlock", text:("[" + $branch + "](" + $branchUrl + ")"), size:"Large", weight:"Bolder", spacing:"None", wrap:true},
-                          {type:"TextBlock", text:("Pushed by [" + $actor + "](" + $actorUrl + ")  ·  " + $when), size:"Small", spacing:"None", wrap:true}
+                          {type:"TextBlock", text:("`$ git push origin " + $branch + "`"), size:"Small", spacing:"Small", wrap:true},
+                          {type:"TextBlock", text:("by [" + $actor + "](" + $actorUrl + ")  ·  " + $when), size:"Small", spacing:"None", wrap:true, isSubtle:true}
                         ]}
                       ]}
                     ]},
@@ -141,9 +151,10 @@ jobs:
                       tile("+" + $ins; "ADDED"; "Good"),
                       tile("−" + $del; "REMOVED"; "Attention")
                     ]},
-                    {type:"TextBlock", spacing:"Medium", wrap:true, size:"Small", text:("**Areas** " + $areas)},
+                    {type:"TextBlock", spacing:"Medium", wrap:true, size:"Small", text:("`" + $totbar + "`  net change " + "**+" + $ins + "** / −" + $del)},
+                    {type:"TextBlock", spacing:"Small", wrap:true, size:"Small", text:("**Areas**  " + $areas)},
                     {type:"TextBlock", wrap:true, size:"Small", spacing:"None", text:("**Contributors** " + $authors)},
-                    {type:"TextBlock", text:"WHAT CHANGED", size:"Small", weight:"Bolder", isSubtle:true, spacing:"Large", separator:true}
+                    {type:"TextBlock", text:"▌CHANGELOG", size:"Small", weight:"Bolder", isSubtle:true, spacing:"Large", separator:true}
                   ]
                   + ($commits | map(commitBlock))
                   + (if ($total | tonumber) > 10 then [{type:"TextBlock", isSubtle:true, wrap:true, size:"Small", text:("+" + (($total | tonumber) - 10 | tostring) + " more commits in this push, see the full list below.")}] else [] end)
