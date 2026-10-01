@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 12:44 IST · commit [`f13353c`](https://github.com/smooth-glitch/axi-react/commit/f13353cc40740de08fead52ab4c1d13504b07f6f)
+> Last updated: 01 Oct 2026, 12:57 IST · commit [`2ee58d1`](https://github.com/smooth-glitch/axi-react/commit/2ee58d1465e73a95714faa2ff87c08c8ab278f42)
 
 ## New here? Start here
 
@@ -51,11 +51,11 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 68 |
+| Arjun Sridhar | 69 |
 | Arjun | 35 |
 | Anish-S-Agile | 27 |
 | Gunn | 26 |
-| connectum-status-bot | 3 |
+| connectum-status-bot | 4 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -64,14 +64,16 @@
 | Frontend | 231 |
 | Other | 114 |
 | Backend | 93 |
-| Docs | 22 |
-| CI / DevOps | 15 |
+| CI / DevOps | 28 |
+| Docs | 23 |
 | Tests | 11 |
 
 ## Recent changes
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 12:50 | Arjun Sridhar | [`2cd669c`](https://github.com/smooth-glitch/axi-react/commit/2cd669c09835e53fdcac3cb7426dcabd66e6f12f) ci: automations bundle (deploy notifications, VM watchdog, PR checks, daily digest, branch housekeeping, secret scan, PR conflict warning, release notes, PR template) | +606 / −0 |
+| 01 Oct, 12:44 | connectum-status-bot | [`fdb3085`](https://github.com/smooth-glitch/axi-react/commit/fdb30856a29f40967c7f89c1ba3b20c2e0ba0823) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:39 | Arjun Sridhar | [`fe13e11`](https://github.com/smooth-glitch/axi-react/commit/fe13e113c6ef58c430ac43a0979d1dd34ca994b3) docs: link the app and VPN instructions from the generated status page | +7 / −0 |
 | 01 Oct, 12:35 | connectum-status-bot | [`0d23e7f`](https://github.com/smooth-glitch/axi-react/commit/0d23e7f033d6e57a04abf72a2a359fc9a8715db3) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:32 | Arjun Sridhar | [`e9d7da7`](https://github.com/smooth-glitch/axi-react/commit/e9d7da746300421ead4fc718ec40cac7b5aa7dea) ci: show Indian time (IST) on the Teams card and the status page | +4 / −4 |
@@ -95,5 +97,3 @@
 | 30 Sep, 15:58 | Arjun Sridhar | [`ca66964`](https://github.com/smooth-glitch/axi-react/commit/ca669648f1f71d94358cd1b525bb52c2af321176) fix: #connect toast said 'Connected with @user' for what is a pending invitation; composer ignores late suggestion replies after send | +11 / −1 |
 | 30 Sep, 15:56 | Arjun Sridhar | [`a8413f5`](https://github.com/smooth-glitch/axi-react/commit/a8413f502d5d39ba5938d28cc85248edc2560021) fix: # commands were sent to the server twice (raw line + explicit call): duplicate errors, double history loads | +17 / −18 |
 | 30 Sep, 15:54 | Arjun Sridhar | [`1ac1835`](https://github.com/smooth-glitch/axi-react/commit/1ac183594f1f94e79977b3813c87a7ecf494906f) fix: groups appear only when the server confirms (group_created); no optimistic 'created' toast | +9 / −40 |
-| 30 Sep, 15:53 | Arjun Sridhar | [`adc738c`](https://github.com/smooth-glitch/axi-react/commit/adc738cd04fa157a3ad49a634491440f9270ec02) fix(composer): clear stale argument suggestions when the text changes (Enter chose a leftover item from a previous command) | +9 / −7 |
-| 30 Sep, 15:49 | Arjun Sridhar | [`29151ab`](https://github.com/smooth-glitch/axi-react/commit/29151abd697b1029a2d24060f1ab1851a1cf78b8) fix: restore notifications, tstruct and tstruct-add in the # menu whitelist (dropped by a UI polish commit) | +2 / −1 |
