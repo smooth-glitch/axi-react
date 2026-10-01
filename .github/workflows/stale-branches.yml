@@ -1,0 +1,31 @@
+name: Branch housekeeping (Teams)
+
+# Mondays 10:00 AM IST (04:30 UTC): lists branches that were merged through a PR but never
+# deleted, and branches with unmerged work and no activity for 30+ days. Report only; deletes nothing.
+on:
+  schedule:
+    - cron: '30 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  housekeeping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build and post the list
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "TEAMS_WEBHOOK_URL not set; skipping"; exit 0; fi
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          BASE_REF=origin/main bash scripts/stale-branches.sh --post

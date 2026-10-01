@@ -1,0 +1,89 @@
+name: VM health watchdog
+
+# Every 15 minutes the self-hosted runner ON the VM checks that the app is healthy and
+# posts to Teams only when something changes: a problem appears, it is still broken
+# (reminder every 2 hours), or it recovers. GitHub's cloud runners cannot reach the VM
+# (10.0.2.146 is office-network only), which is why this runs on the VM's own runner.
+# No checkout on purpose: the runner workspace is shared with the deploys and a checkout
+# would clean their build output. Needs the repo secret TEAMS_WEBHOOK_URL.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: health-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: [self-hosted, axi-vm]
+    timeout-minutes: 5
+    env:
+      WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+    steps:
+      - name: Check, compare with last state, notify on change
+        run: |
+          STATE_FILE="$HOME/.axi-watchdog.state"
+          PROBLEMS=""
+          add() { PROBLEMS="${PROBLEMS}${PROBLEMS:+; }$1"; }
+
+          code=$(curl -sk -o /dev/null -m 10 -w '%{http_code}' https://127.0.0.1/ || true)
+          [ "$code" = "200" ] || add "nginx/frontend answered HTTP ${code:-none} (expected 200)"
+
+          systemctl is-active --quiet axi-chat-backend || add "service axi-chat-backend is not active"
+          code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' http://127.0.0.1:8080/ || true)
+          [ "$code" = "404" ] || add "backend port 8080 answered HTTP ${code:-none} (expected 404)"
+
+          systemctl is-active --quiet redis 2>/dev/null || systemctl is-active --quiet redis-server 2>/dev/null || add "redis service is not active"
+
+          used=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+          [ "${used:-0}" -lt 90 ] || add "disk is ${used}% full"
+
+          # Backup freshness: only checked if the runner may use sudo non-interactively.
+          if sudo -n true 2>/dev/null; then
+            fresh=$(sudo -n find /var/backups/axi-redis -name 'redis-*.rdb' -mmin -480 2>/dev/null | head -1)
+            [ -n "$fresh" ] || add "no Redis backup in the last 8 hours (see docs/BACKUPS.md)"
+          fi
+
+          NOW=$(date +%s)
+          PREV=$(cat "$STATE_FILE" 2>/dev/null || echo ok)
+          STAMP=$(TZ=Asia/Kolkata date +'%d %b, %H:%M IST')
+
+          post() {  # $1 style  $2 icon  $3 title  $4 text
+            [ -z "$WEBHOOK" ] && { echo "TEAMS_WEBHOOK_URL not set; not posting"; return 0; }
+            SAFE=$(printf '%s' "$4" | tr -cd 'A-Za-z0-9 .,:;()/%_=<>-')
+            cat > card.json <<JSON
+          {"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"\$schema":"http://adaptivecards.io/schemas/adaptive-card.json","type":"AdaptiveCard","version":"1.4","msteams":{"width":"Full"},"body":[
+          {"type":"Container","style":"$1","bleed":true,"items":[{"type":"ColumnSet","columns":[
+            {"type":"Column","width":"auto","verticalContentAlignment":"Center","items":[{"type":"TextBlock","text":"$2","size":"ExtraLarge"}]},
+            {"type":"Column","width":"stretch","items":[
+              {"type":"TextBlock","text":"CONNECTUM  ·  HEALTH WATCHDOG","size":"Small","weight":"Bolder","isSubtle":true},
+              {"type":"TextBlock","text":"$3","size":"Large","weight":"Bolder","spacing":"None","wrap":true},
+              {"type":"TextBlock","text":"$STAMP","size":"Small","spacing":"None"}]}]}]},
+          {"type":"TextBlock","text":"$SAFE","wrap":true,"spacing":"Medium"}],
+          "actions":[{"type":"Action.OpenUrl","title":"Open the app (VPN)","url":"https://10.0.2.146"}]}}]}
+          JSON
+            curl -sS -f --retry 3 --retry-delay 5 --max-time 30 -X POST -H 'Content-Type: application/json' -d @card.json "$WEBHOOK"
+          }
+
+          if [ -z "$PROBLEMS" ]; then
+            echo "healthy"
+            case "$PREV" in down*) post good "✅" "Back to healthy" "All checks pass again."; esac
+            echo ok > "$STATE_FILE"
+          else
+            echo "PROBLEMS: $PROBLEMS"
+            case "$PREV" in
+              down\|*)
+                LAST=${PREV##*|}
+                if [ $((NOW - LAST)) -ge 7200 ]; then
+                  post attention "🚨" "Still unhealthy" "$PROBLEMS"
+                  echo "down|${PREV#down|}" | awk -F'|' -v n="$NOW" '{print "down|" $2 "|" n}' > "$STATE_FILE"
+                fi ;;
+              *)
+                post attention "🚨" "Problem detected on the VM" "$PROBLEMS"
+                echo "down|$NOW|$NOW" > "$STATE_FILE" ;;
+            esac
+          fi

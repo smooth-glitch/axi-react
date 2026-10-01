@@ -1,0 +1,28 @@
+name: Daily digest (Teams)
+
+# Weekdays at 6:00 PM IST (12:30 UTC): what merged today, open PRs, PRs waiting for review.
+# Runs on GitHub's scheduler, so it does not depend on anyone's laptop. Posts nothing on quiet days.
+on:
+  schedule:
+    - cron: '30 12 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and post the digest
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "TEAMS_WEBHOOK_URL not set; skipping"; exit 0; fi
+          bash scripts/daily-digest.sh --post

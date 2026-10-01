@@ -1,0 +1,35 @@
+name: Release notes
+
+# Push a tag like v1.2.0 (or run this manually with a tag that already exists) and a GitHub
+# Release is created with notes grouped by commit type (feat, fix, docs...) since the previous tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish notes for (e.g. v1.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "tag $TAG does not exist"; exit 1; }
+          bash scripts/release-notes.sh "$TAG" > notes.md
+          cat notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then gh release edit "$TAG" --notes-file notes.md
+          else gh release create "$TAG" --title "$TAG" --notes-file notes.md; fi
