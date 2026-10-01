@@ -1559,6 +1559,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     const sendsItself =
       cmd === "addmember" || cmd === "invitegroup" ||
       cmd === "leavegroup" || cmd === "leave" ||
+      cmd === "help" || cmd === "commands" || cmd === "directory" || cmd === "cmds" ||
       ((cmd === "creategroup" || cmd === "newgroup") && !rest);
     if (!sendsItself) sandeshSocket.send(rawLine);
 
@@ -1962,7 +1963,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     }
 
     // 9. Help & Command Directory
-    if (cmd === "help" || cmd === "commands") {
+    if (cmd === "help" || cmd === "commands" || cmd === "directory" || cmd === "cmds") {
       setModalParam(rest || null);
       setModal("commands_help");
       return;
@@ -1971,11 +1972,22 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   // P0 & P1: Send messages with sending/sent/failed status and correct routing
   const handleSend = (text, replyTo) => {
-    // Check if text is a known #command
-    if (text.startsWith("#")) {
-      const parsed = parseCommandLine(text);
+    const trimmed = (text || "").trim();
+
+    // 1. Direct intercept for #help / #commands to immediately open the Commands Directory popup
+    if (/^#(help|commands|directory|cmds)(\s+.*)?$/i.test(trimmed)) {
+      const match = trimmed.match(/^#(help|commands|directory|cmds)(?:\s+(.*))?$/i);
+      const queryParam = match && match[2] ? match[2].trim() : null;
+      setModalParam(queryParam);
+      setModal("commands_help");
+      return;
+    }
+
+    // 2. Check if text is a known #command
+    if (trimmed.startsWith("#")) {
+      const parsed = parseCommandLine(trimmed);
       if (parsed && parsed.matchedCommand) {
-        handleRouteHashCommand(text, parsed, replyTo);
+        handleRouteHashCommand(trimmed, parsed, replyTo);
         return;
       }
     }

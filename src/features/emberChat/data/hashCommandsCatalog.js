@@ -487,12 +487,12 @@ export const DEFAULT_COMMANDS_CATALOG = [
     requires: "none",
   },
 
-  // 8. Help
+  // 8. Help & Commands Directory
   {
     name: "help",
-    aliases: ["commands"],
+    aliases: ["commands", "directory", "cmds"],
     category: "help",
-    summary: "List all # commands or explain a specific one",
+    summary: "Open the full interactive #Commands Directory popup",
     usage: "#help [command]",
     args: [{ name: "command", type: "word", required: false }],
     available: true,
