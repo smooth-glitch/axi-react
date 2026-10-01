@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 18:26 IST · commit [`1998b1c`](https://github.com/smooth-glitch/axi-react/commit/1998b1cdbf991214e438ce968e914db71fde9806)
+> Last updated: 01 Oct 2026, 18:30 IST · commit [`9064f3b`](https://github.com/smooth-glitch/axi-react/commit/9064f3bcaefce1a5fe6c6d95af90c3132b4ec470)
 
 ## New here? Start here
 
@@ -54,11 +54,11 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 79 |
+| Arjun Sridhar | 80 |
 | Anish-S-Agile | 36 |
 | Arjun | 35 |
 | Gunn | 26 |
-| connectum-status-bot | 13 |
+| connectum-status-bot | 14 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -75,6 +75,8 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 18:29 | Arjun Sridhar | [`1c939a0`](https://github.com/smooth-glitch/axi-react/commit/1c939a09d3c88dccd70ec4a001a9c8253a5d3852) fix(ci): smoke test checks only the tools runner jobs use | +1 / −1 |
+| 01 Oct, 18:26 | connectum-status-bot | [`9248382`](https://github.com/smooth-glitch/axi-react/commit/92483827d7c3f9b60a46972f71b481e3db961525) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 18:18 | Arjun Sridhar | [`250e7bb`](https://github.com/smooth-glitch/axi-react/commit/250e7bb50928c58c884ffb3ac2645e23792a849e) chore: make the repo portable to another GitHub org | +232 / −23 |
 | 01 Oct, 18:11 | connectum-status-bot | [`88dff6c`](https://github.com/smooth-glitch/axi-react/commit/88dff6cbedf7838d9a2b8694ff4d43d6313e52c9) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 18:01 | connectum-status-bot | [`6fa89b9`](https://github.com/smooth-glitch/axi-react/commit/6fa89b91106f15f186b2e5d04698a1f528a3e62a) docs: refresh STATUS.md [skip ci] | +0 / −0 |
@@ -98,5 +100,3 @@
 | 01 Oct, 13:27 | Arjun Sridhar | [`aad8748`](https://github.com/smooth-glitch/axi-react/commit/aad8748a0a604766259a9eb62e3a425862e81fa8) fix(backend): admin reassignment hardening, audit trail, bulk move, SMTP email | +829 / −101 |
 | 01 Oct, 13:01 | Anish-S-Agile | [`a56c3e9`](https://github.com/smooth-glitch/axi-react/commit/a56c3e9186118c0755c5769ce69c0f54601101af) Green tick Updated | +135 / −14 |
 | 01 Oct, 12:57 | connectum-status-bot | [`a9a5613`](https://github.com/smooth-glitch/axi-react/commit/a9a56137ce480b8ae3c0adef1574f930d01b04f7) docs: refresh STATUS.md [skip ci] | +0 / −0 |
-| 01 Oct, 12:50 | Arjun Sridhar | [`2cd669c`](https://github.com/smooth-glitch/axi-react/commit/2cd669c09835e53fdcac3cb7426dcabd66e6f12f) ci: automations bundle (deploy notifications, VM watchdog, PR checks, daily digest, branch housekeeping, secret scan, PR conflict warning, release notes, PR template) | +606 / −0 |
-| 01 Oct, 12:44 | connectum-status-bot | [`fdb3085`](https://github.com/smooth-glitch/axi-react/commit/fdb30856a29f40967c7f89c1ba3b20c2e0ba0823) docs: refresh STATUS.md [skip ci] | +0 / −0 |
