@@ -1,12 +1,12 @@
 name: Connectum Teams status
 
-# Posts a detailed status card to the "Connectum dev group" Teams chat on every
-# push: who pushed, each commit (author, hash link, files, +/-, description),
+# Posts a detailed status card to the "Connectum dev group" Teams chat whenever
+# something lands on main: who pushed, each commit (author, hash link, files, +/-, description),
 # the areas touched and totals. Needs the repo secret TEAMS_WEBHOOK_URL (a
 # Teams "Workflows" webhook for that chat). Without it the job exits quietly.
 on:
   push:
-    branches: [main, feat/connectum-backend]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
