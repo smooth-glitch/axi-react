@@ -126,7 +126,6 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
   const [regBranch, setRegBranch] = useState("");
   const [regDept, setRegDept] = useState("");
   const [regDesignation, setRegDesignation] = useState("");
-  const [regManager, setRegManager] = useState("");
   const [regCategory, setRegCategory] = useState("Citizen");
   const [regAffiliate, setRegAffiliate] = useState("");
   const [regAffiliateBranch, setRegAffiliateBranch] = useState("");
@@ -380,7 +379,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                 department: "General",
                 designation: "Associate",
                 time: "Recently",
-                details: "Account registered on Connectum backend, waiting for admin clearance to enter chat.",
+                details: "Account registered on Sandesh backend, waiting for admin clearance to enter chat.",
                 fromUser: cleanId,
               });
               localStorage.setItem("sandesh_pending_registrations", JSON.stringify(existing));
@@ -853,7 +852,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
   const handleCopyAllRecoveryCodes = () => {
     if (!recoveryReveal?.recoveryCodes) return;
     const text = [
-      "CONNECTUM ENTERPRISE TWO-FACTOR RECOVERY CODES",
+      "SANDESH ENTERPRISE TWO-FACTOR RECOVERY CODES",
       "Created: " + new Date().toISOString(),
       "Identifier: " + (signInIdentifier || adminUsername),
       "---------------------------------------------",
@@ -870,7 +869,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
   const handleDownloadRecoveryCodes = () => {
     if (!recoveryReveal?.recoveryCodes) return;
     const text = [
-      "CONNECTUM ENTERPRISE TWO-FACTOR RECOVERY CODES",
+      "SANDESH ENTERPRISE TWO-FACTOR RECOVERY CODES",
       "Created: " + new Date().toISOString(),
       "Identifier: " + (signInIdentifier || adminUsername),
       "---------------------------------------------",
@@ -883,7 +882,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `connectum-recovery-codes-${Date.now()}.txt`;
+    a.download = `sandesh-recovery-codes-${Date.now()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1105,7 +1104,6 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
         payload.branch = regBranch;
         payload.department = regDept;
         payload.designation = regDesignation;
-        if (regManager.trim()) payload.reportingManager = regManager.trim();
       } else if (regType === "affiliate") {
         payload.isEmployee = false;
         payload.affiliate = regAffiliate;
@@ -1264,7 +1262,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
             </h2>
             <p className="sandesh-subtext-muted">
               As an enterprise administrator, you must replace the initial default password with a secure password
-              before accessing Connectum.
+              before accessing Sandesh.
             </p>
 
             {errorMsg && <div className="sandesh-alert sandesh-alert-danger">{errorMsg}</div>}
@@ -1333,7 +1331,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                 className="sandesh-btn-primary-3d"
                 disabled={loading}
               >
-                <span>{loading ? "Updating Password..." : "Update Password & Launch Connectum"}</span>
+                <span>{loading ? "Updating Password..." : "Update Password & Launch Sandesh"}</span>
                 <ArrowRight size={18} />
               </button>
             </form>
@@ -1917,9 +1915,9 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
           {/* Header Brand */}
           <div className="sandesh-auth-header">
             <div className="sandesh-brand-badge-3d">
-              <img src={sandeshLogo} alt="Connectum Logo" className="sandesh-brand-badge-img" />
+              <img src={sandeshLogo} alt="Sandesh Logo" className="sandesh-brand-badge-img" />
             </div>
-            <h1 className="sandesh-auth-title">Connectum</h1>
+            <h1 className="sandesh-auth-title">Sandesh</h1>
             <p className="sandesh-auth-tagline">
               {publicData?.org
                 ? `${publicData.org} • Enterprise Platform`
@@ -1985,7 +1983,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                 className="sandesh-btn-primary-3d"
                 disabled={loading}
               >
-                <span>{loading ? "Authenticating..." : "Sign In to Connectum"}</span>
+                <span>{loading ? "Authenticating..." : "Sign In to Sandesh"}</span>
                 <ArrowRight size={18} className="sandesh-btn-arrow" />
               </button>
 
@@ -2020,7 +2018,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                   {publicData.org || "Agile Labs Enterprise"} is Live
                 </h3>
                 <p style={{ fontSize: 13, color: "var(--sandesh-text-muted, #666)", lineHeight: 1.5, marginBottom: 20 }}>
-                  This Connectum enterprise server has already completed initial bootstrap setup. If you are an existing user or administrator, please Sign In. To join as a new user, please Self Register.
+                  This Sandesh enterprise server has already completed initial bootstrap setup. If you are an existing user or administrator, please Sign In. To join as a new user, please Self Register.
                 </p>
                 <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
                   <button
@@ -2349,21 +2347,6 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
                     required={true}
                     align="right"
                   />
-                </div>
-              )}
-
-              {regType === "employee" && (
-                <div className="sandesh-input-group">
-                  <label>Reporting Manager (optional)</label>
-                  <div className="sandesh-input-box-3d">
-                    <input
-                      type="text"
-                      aria-label="Reporting manager"
-                      placeholder="Your manager's username, e.g. sab"
-                      value={regManager}
-                      onChange={(e) => setRegManager(e.target.value)}
-                    />
-                  </div>
                 </div>
               )}
 
