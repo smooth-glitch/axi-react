@@ -29,7 +29,7 @@
          save_group/3, delete_group/1, load_groups/0, toggle_reaction/3,
          delete_message/2,
          save_link_preview/2,
-         set_pubkey/2, get_pubkey/1, set_avatar/2, clear_avatar/1, set_status/2, get_profile/1]).
+         set_pubkey/2, get_pubkey/1, set_avatar/2, clear_avatar/1, set_status/2, get_profile/1, dm_partners/1]).
 -include_lib("kernel/include/logger.hrl").
 
 -define(HISTORY_LIMIT, 50).
@@ -80,6 +80,10 @@ record_dm_partners(A, B) ->
     ok.
 
 %% [{Other, LastMessage}] for every DM thread User has, newest first.
+%% The names User has a direct-message history with.
+dm_partners(User) ->
+    [b2l(B) || B <- q_ok(["SMEMBERS", "dm_partners:" ++ User])].
+
 %% LastMessage is the same tuple shape load_history/1 returns.
 list_dm_conversations(User) ->
     Others = [b2l(B) || B <- q_ok(["SMEMBERS", "dm_partners:" ++ User])],

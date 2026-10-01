@@ -307,13 +307,19 @@ do_private(Users, From, To, Text, ReplyTo) ->
 do_host_message(Users, From, HostKey, Text, ReplyTo) ->
     case chat_hosts:resolve_host(HostKey, From) of
         {ok, ResolvedTo} ->
-            ConvKey = host_conv_key(HostKey, From),
-            {Id, Ts} = chat_store:save_message(ConvKey, From, Text, chat, true, ReplyTo),
-            case maps:find(ResolvedTo, Users) of
-                {ok, Pid} -> Pid ! {host_message, HostKey, Id, Ts, From, Text, ReplyTo};
-                error -> ok
-            end,
-            {ok, Id, Ts};
+            %% Same rule as a direct message to that person (sd_policy): a host channel is not a back door.
+            case sd_policy:can_message(From, ResolvedTo) of
+                {false, Why} ->
+                    {error, {not_allowed, Why}};
+                true ->
+                    ConvKey = host_conv_key(HostKey, From),
+                    {Id, Ts} = chat_store:save_message(ConvKey, From, Text, chat, true, ReplyTo),
+                    case maps:find(ResolvedTo, Users) of
+                        {ok, Pid} -> Pid ! {host_message, HostKey, Id, Ts, From, Text, ReplyTo};
+                        error -> ok
+                    end,
+                    {ok, Id, Ts}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.

@@ -829,10 +829,38 @@ complete_registration_checked(Socket, Name, Identity, Rest) ->
             spawn(fun() -> chat_hosts:refresh_department_hosts(Identity) end),
             ws_send(Socket, json_obj([{"type", "welcome"}, {"name", Name}])),
             send_history_payload(Socket, "global", [], GlobalHistory),
+            send_initial_profiles(Socket, Name),
             handle_ws_data(Socket, Name, Rest);
         {error, taken} ->
             ws_send_json(Socket, "error", "Username taken"),
             handle_username_data(Socket, Rest)
+    end.
+
+%% After the welcome: the current avatar and status of everyone this client already knows about (itself, the
+%% people online, its direct-message partners and its Sandesh connections), as ordinary "profile" events.
+%% Without this a status is only ever pushed to whoever is online at the moment it changes, so anyone who
+%% connects or reconnects later never learned it. People with neither an avatar nor a status are skipped.
+%% Best effort: a problem here must never break the connection handshake.
+-define(MAX_INITIAL_PROFILES, 300).
+send_initial_profiles(Socket, Name) ->
+    try
+        Online = chat_room:list_users(),
+        Partners = chat_store:dm_partners(Name),
+        Connected = [binary_to_list(P) || {P, _Rel} <- sd_users:assoc_list(Name), is_binary(P)],
+        Known = lists:sublist(lists:usort([Name | Online ++ Partners ++ Connected]), ?MAX_INITIAL_PROFILES),
+        lists:foreach(
+          fun(Other) ->
+              case chat_store:get_profile(Other) of
+                  {undefined, undefined} -> ok;
+                  {Avatar, Status} ->
+                      AvatarField = case Avatar of undefined -> {"avatar", {raw, "null"}}; A -> {"avatar", {str, A}} end,
+                      StatusField = case Status of undefined -> {"status", {raw, "null"}}; S -> {"status", {str, S}} end,
+                      ws_send(Socket, json_obj2([{"type", {str, "profile"}}, {"user", {str, Other}}, AvatarField, StatusField]))
+              end
+          end, Known)
+    catch Class:Reason ->
+        ?LOG_WARNING("initial profiles for ~s failed: ~p:~p", [Name, Class, Reason]),
+        ok
     end.
 
 %% ---- post-login loop ---------------------------------------------------
@@ -1080,6 +1108,8 @@ handle_line(Socket, Name, "/hostmsg " ++ Rest) ->
                         {"id", {raw, integer_to_list(Id)}}, {"ts", {raw, integer_to_list(Ts)}}]));
                 {error, not_found} ->
                     ws_send_json(Socket, "error", "No such host, or it has no one assigned yet: " ++ HostKey);
+                {error, {not_allowed, Why}} ->
+                    ws_send_error(Socket, "not_associated", Why);
                 {error, unavailable} ->
                     ws_send_json(Socket, "error", "Temporarily unavailable -- please try again in a moment")
             end;

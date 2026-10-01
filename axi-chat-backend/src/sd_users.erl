@@ -24,6 +24,7 @@
          set_host/2, mark_login/1, mark_totp/1, replace/1,
          public/1, full/1, is_admin/1, is_host/1, is_active/1, effective_category/1,
          admins/0, users_of_host/1, hosts_covering/1, host_covers/2, count_using/2,
+         hosts_for/1, can_see_host/2,
          search/2, unique_username/1, valid_host_scope/1, has_role/2, roles_of/1, users_with_role/1,
          update_person/2, person_fields/0,
          assoc_list/1, assoc_add/3, assoc_remove/2, associated/2, assoc_relation/2]).
@@ -119,10 +120,12 @@ full(U) -> U.
 create(Attrs0, Opts) when is_map(Attrs0) ->
     Mode = maps:get(mode, Opts, invite),
     %% A person registering themselves must never be able to give themselves host rights,
-    %% user-management rights or roles: those are the administrator's decision.
+    %% user-management rights or roles, or choose who their reporting manager is: those are the
+    %% administrator's (or a host's) decision, made later through update_full.
     Attrs = case Mode of
                 register -> maps:without([<<"isHost">>, <<"hostScope">>, <<"canManageUsers">>,
-                                          <<"roles">>, <<"role">>, <<"status">>, <<"host">>], Attrs0);
+                                          <<"roles">>, <<"role">>, <<"status">>, <<"host">>,
+                                          <<"reportingManager">>], Attrs0);
                 _ -> Attrs0
             end,
     case validate_profile(Attrs, Mode, undefined) of
@@ -769,6 +772,44 @@ covers(Scope, User) ->
 hosts_covering(User) ->
     [H || H <- list(), is_active(H), is_host(H), host_covers(H, User),
           maps:get(<<"username">>, H) =/= maps:get(<<"username">>, User, <<>>)].
+
+%% The hosts a person may see and use: the one they are assigned to (even if an administrator put them
+%% there outside the host's usual scope) plus every active host whose scope covers them.
+%% -> [{HostUser, <<"assigned">> | <<"covering">>}], the assigned host first, no duplicates.
+hosts_for(Viewer) ->
+    Assigned = case sd_util:get(<<"host">>, Viewer) of
+                   H when is_binary(H) ->
+                       case get(H) of
+                           #{<<"status">> := <<"active">>} = U -> [{U, <<"assigned">>}];
+                           _ -> []
+                       end;
+                   _ -> []
+               end,
+    Covering = [{H, <<"covering">>} || H <- hosts_covering(Viewer)],
+    dedupe_hosts(Assigned ++ Covering, []).
+
+dedupe_hosts([], Acc) -> lists:reverse(Acc);
+dedupe_hosts([{U, Rel} | Rest], Acc) ->
+    Name = maps:get(<<"username">>, U),
+    case lists:any(fun({X, _}) -> maps:get(<<"username">>, X) =:= Name end, Acc) of
+        true -> dedupe_hosts(Rest, Acc);
+        false -> dedupe_hosts(Rest, [{U, Rel} | Acc])
+    end.
+
+%% May Viewer see / reach Target? Ordinary people are visible to everyone (as before). A HOST is visible only
+%% to: themselves, administrators, other hosts (staff peers), the people they are assigned to or cover, and
+%% anyone they are connected with (accepted invitation).
+can_see_host(Viewer, Target) ->
+    V = maps:get(<<"username">>, Viewer, <<>>),
+    T = maps:get(<<"username">>, Target, <<>>),
+    case is_host(Target) of
+        false -> true;
+        true ->
+            V =:= T orelse is_admin(Viewer) orelse is_host(Viewer)
+                orelse sd_util:get(<<"host">>, Viewer) =:= T
+                orelse host_covers(Target, Viewer)
+                orelse associated(V, T)
+    end.
 
 count_using(roles, Name) ->
     Lower = string:lowercase(Name),

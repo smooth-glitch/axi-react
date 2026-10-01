@@ -317,7 +317,8 @@ Arguments are JSON keys in the command; "→" is `data` in the reply.
 | `assoc.list` | user | → `{associates:[{user:{public profile}, relation:"host"\|"user"\|"peer", online}]}` — your left-hand contact list. `relation` is what *they are to you*: `host` = your host, `user` = someone you host, `peer` = an accepted invitation. |
 | `assoc.invite` | user | `{to}` (username, email or mobile) → `{request}` |
 | `assoc.remove` | user | `{user}` — removes a `peer` link only |
-| `users.search` | user | `{q}` → `{users:[public profile]}`. **Strict mode: exact username/email/mobile only** (no browsing the directory). Open mode: partial name match. |
+| `users.search` | user | `{q}` → `{users:[public profile]}`. **Strict mode: exact username/email/mobile only** (no browsing the directory). Open mode: partial name match. **Hosts are only listed for the people they are for** (see *Hosts visibility* below); everyone else is listed as before. |
+| `hosts.mine` | user | → `{hosts:[{username,name,designation,department,branch,isHost,online,relation}]}` — only the hosts that cover the caller: `relation:"assigned"` for the one they are assigned to (even if an administrator put them there outside the host's usual scope), `"covering"` for the others. Never the full host list. |
 | `req.list` | user | `{status?}` (`pending` default, `all`, or a status) → `{requests:[…]}` — everything waiting on you, and things you started |
 | `req.respond` | user | `{id, action:"accept"\|"reject"\|"ignore"}` → `{request}` |
 | `host.users` | host | → `{users:[…full records…, online]}` — people you host |
@@ -522,7 +523,7 @@ real event behind them.
 | `options.categories` | user | → `{categories:[{id,label,icon,types,executable,count}], total}` — one entry per Smart Prompts **pill**, with how many options this user has in it. See below. |
 | `tstruct.get` | user | `{name}` → `{tstruct}` — only if one of your options points at it |
 | `tstruct.submit` | user | `{name, values:{field: value}}` → `{submission}` or error `invalid_values` with `error.details.fields = {field: message}` |
-| `submissions.list` | user | → `{submissions}` — yours, plus those from people you host |
+| `submissions.list` | user | `{tstruct?, ref?, limit?, offset?}` → `{submissions, total, offset, limit, hasMore}` — yours, plus those from the people you host **now** (a newly assigned host sees their earlier history too); `tstruct` narrows to one structure (an administrator sees every submission of it). Newest first. `limit` 1–500 (default 500); page with `offset` while `hasMore`. Nothing is dropped after the newest N any more. |
 
 Option `type`: `data_input` (opens the form named in `target`), `get_data`
 (`target` = API name, `display` = `table`\|`name_value`\|`text`), `download`,
@@ -736,3 +737,18 @@ Besides replies, the server pushes small `{"type":"sd_event","event":...,"data":
 | `submissions_changed` | the submitter, the form's host, and admins | `id`, `tstruct`, `action` (`created`/`updated`/`deleted`), `by` |
 
 Events sent while a client is offline are lost, so after reconnecting a client should re-read everything it shows (the web app does this on its `resync`).
+
+## Hosts visibility, sign-up manager, and status on connect
+
+- **Hosts visibility.** A host is visible to, and reachable by: themselves, administrators, other hosts (staff), the people
+  they are assigned to or cover, and anyone connected with them (accepted invitation). Ordinary people are visible to
+  everyone as before. Enforced in `users.search`, `hosts.mine` and direct messages (`sd_users:can_see_host/2`,
+  `sd_policy:can_message/2`). In `open` mode the DM rule applies to people signed in to Sandesh (plain chat clients are
+  unaffected); in `strict` mode a DM already needs an association. A refused DM answers
+  `{"type":"error","code":"not_associated"}`. The `/hostmsg` department-host channel goes through the same rule.
+- **Reporting manager.** `reportingManager` is ignored on `POST /api/sd/register` (like `isHost`, `roles`, ...). An
+  administrator sets it with `admin.user.update`, a host with `users.invite`.
+- **Status on connect.** Right after `welcome` (and the global history) the server sends one ordinary
+  `{"type":"profile","user","avatar"|null,"status"|null}` event for each person the client already knows (itself, people
+  online, its direct-message partners, its Sandesh connections) who has an avatar or a status. Handle it exactly like the
+  live `profile` event. People with neither are skipped.
