@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { sandeshSocket } from "../../../../services/sandeshSocket.js";
 import AdminFormsPanel from "./AdminFormsPanel.jsx";
 import AdminOptionsPanel from "./AdminOptionsPanel.jsx";
+import AdminActivityPanel from "./AdminActivityPanel.jsx";
+import AdminUnlockPanel from "./AdminUnlockPanel.jsx";
 
 const EMPTY_DATA = {
   users: [],
@@ -151,10 +153,14 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
   const [adminData, setAdminData] = useState(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [locked, setLocked] = useState(false); // the backend wants the password + one-time code first
   const [busy, setBusy] = useState(false);
   const [reassignTargetUser, setReassignTargetUser] = useState(null);
   const [selectedNewHost, setSelectedNewHost] = useState("");
   const [hostEditUser, setHostEditUser] = useState(null); // { user, isHost, scope }
+  const [placementUser, setPlacementUser] = useState(null); // { user, branch, department, designation, autoHost }
+  const [handover, setHandover] = useState(null); // { user, mode: "demote" | "deactivate", newHost, count }
+  const [bulkMove, setBulkMove] = useState(null); // { kind, from, to, preview, result }
   const [userSearch, setUserSearch] = useState(initialQuery || "");
   const [setupDraft, setSetupDraft] = useState({
     branches: { name: "", city: "", country: "India", pin: "" },
@@ -182,8 +188,14 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
   });
 
   const fail = useCallback(
-    (res) =>
-      pushToast({ type: "sd", ok: false, error: res?.error || { message: "Request failed." } }),
+    (res) => {
+      // The unlock lapsed (or was never done): show the unlock screen instead of a bare error.
+      if (res?.error?.code === "admin_locked") {
+        setLocked(true);
+        return;
+      }
+      pushToast({ type: "sd", ok: false, error: res?.error || { message: "Request failed." } });
+    },
     [pushToast]
   );
 
@@ -201,9 +213,14 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
     setLoading(false);
     const firstFail = [users, branches, departments, designations, categories, affiliates].find((r) => !r.ok);
     if (firstFail) {
+      if (firstFail.error?.code === "admin_locked") {
+        setLocked(true);
+        return;
+      }
       setLoadError(firstFail.error?.message || "Couldn't load the admin data.");
       return;
     }
+    setLocked(false);
     setAdminData({
       users: (users.data?.users || []).map(toRow),
       branches: branches.data?.items || [],
@@ -225,12 +242,54 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
 
   const hostCandidates = adminData.users.filter((u) => u.active && (u.isHost || u.role === "admin"));
 
-  const toggleUserActive = async (user) => {
+  const warn = (text) => pushToast(`⚠️ ${text}`);
+
+  const deactivateOrActivate = async (user, extra = {}) => {
     setBusy(true);
-    const res = await sandeshSocket.sd("admin.user.status", { username: user.username, active: !user.active });
+    const res = await sandeshSocket.sd("admin.user.status", {
+      username: user.username,
+      active: !user.active,
+      ...extra,
+    });
     setBusy(false);
     if (!res.ok) return fail(res);
     pushToast(`User ${user.name} ${user.active ? "deactivated" : "activated"}`);
+    const moved = res.data?.movedUsers?.length || 0;
+    const orphans = res.data?.orphans?.length || 0;
+    if (moved) pushToast(`${moved} ${moved === 1 ? "person was" : "people were"} moved to @${extra.reassignTo}`);
+    if (orphans) warn(`${orphans} ${orphans === 1 ? "person has" : "people have"} no active host now. Use "Change Host" on them.`);
+    setHandover(null);
+    loadAll();
+  };
+
+  const toggleUserActive = async (user) => {
+    // Deactivating a host leaves their people without one: offer to hand them over in the same step.
+    if (user.active && user.isHost) {
+      const count = adminData.users.filter((u) => u.hostUser === user.username).length;
+      const firstOther = hostCandidates.find((h) => h.username !== user.username)?.username || "";
+      setHandover({ user, mode: "deactivate", newHost: firstOther, count });
+      return;
+    }
+    deactivateOrActivate(user);
+  };
+
+  const confirmHandover = async (e) => {
+    e.preventDefault();
+    if (!handover) return;
+    const { user, mode, newHost } = handover;
+    if (mode === "deactivate") return deactivateOrActivate(user, newHost ? { reassignTo: newHost } : {});
+    setBusy(true);
+    const res = await sandeshSocket.sd("admin.user.update", {
+      username: user.username,
+      isHost: false,
+      hostScope: null,
+      reassignTo: newHost,
+    });
+    setBusy(false);
+    if (!res.ok) return fail(res);
+    pushToast(`${user.name} is no longer a host; ${res.data?.movedUsers?.length || 0} people moved to @${newHost}`);
+    setHandover(null);
+    setHostEditUser(null);
     loadAll();
   };
 
@@ -245,6 +304,9 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
     setBusy(false);
     if (!res.ok) return fail(res);
     pushToast(`Reassigned Host for ${reassignTargetUser.name} to @${selectedNewHost}`);
+    if (res.data?.coversUser === false) {
+      warn(`@${selectedNewHost}'s scope doesn't normally cover ${reassignTargetUser.name} (department/branch/designation). Saved as an admin override.`);
+    }
     setReassignTargetUser(null);
     loadAll();
   };
@@ -263,11 +325,68 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
       hostScope: isHost ? scope : null,
     });
     setBusy(false);
-    if (!res.ok) return fail(res);
+    if (!res.ok) {
+      // A host who still has people can't just stop being a host: ask who takes over.
+      if (res.error?.code === "has_users") {
+        const count = adminData.users.filter((u) => u.hostUser === user.username).length;
+        const firstOther = hostCandidates.find((h) => h.username !== user.username)?.username || "";
+        setHandover({ user, mode: "demote", newHost: firstOther, count });
+        return;
+      }
+      return fail(res);
+    }
     pushToast(
       !isHost ? `${user.name} is no longer a host` : user.isHost ? `Updated ${user.name}'s host scope` : `${user.name} is now a host`
     );
+    const out = res.data?.uncoveredUsers || [];
+    if (out.length) warn(`${out.length} of ${user.name}'s people are outside the new scope: ${out.map((x) => "@" + x).join(", ")}. Move them with "Change Host".`);
     setHostEditUser(null);
+    loadAll();
+  };
+
+  const savePlacement = async (e) => {
+    e.preventDefault();
+    if (!placementUser) return;
+    const { user, branch, department, designation, autoHost } = placementUser;
+    const changed = branch !== (user.branch || "") || department !== (user.department || "") || designation !== (user.designation || "");
+    if (!changed) {
+      pushToast({ type: "sd", ok: false, error: { message: "Nothing to change: pick a different branch, department or designation." } });
+      return;
+    }
+    setBusy(true);
+    const res = await sandeshSocket.sd("admin.user.update", { username: user.username, branch, department, designation, autoHost });
+    setBusy(false);
+    if (!res.ok) return fail(res);
+    pushToast(`${user.name} updated: ${[branch, department, designation].filter(Boolean).join(" · ")}`);
+    if (res.data?.hostChanged) pushToast(`Host switched to @${res.data.hostChanged.to}, who covers the new placement`);
+    if (res.data?.hostMismatch) {
+      const sug = res.data.hostMismatch.suggestedHosts || [];
+      warn(`@${res.data.hostMismatch.host} no longer covers ${user.name}. ${sug.length ? `Matching hosts: ${sug.map((x) => "@" + x).join(", ")}.` : "No host currently covers this placement."} Use "Change Host".`);
+    }
+    setPlacementUser(null);
+    loadAll();
+  };
+
+  const bulkKindOf = { departments: "department", branches: "branch", designations: "designation" };
+
+  const previewBulk = async () => {
+    setBusy(true);
+    const res = await sandeshSocket.sd("admin.users.bulk_move", { kind: bulkMove.kind, from: bulkMove.from, to: bulkMove.to, dryRun: true });
+    setBusy(false);
+    if (!res.ok) return fail(res);
+    setBulkMove({ ...bulkMove, preview: res.data, result: null });
+  };
+
+  const runBulk = async () => {
+    setBusy(true);
+    const res = await sandeshSocket.sd("admin.users.bulk_move", { kind: bulkMove.kind, from: bulkMove.from, to: bulkMove.to, autoHost: !!bulkMove.autoHost });
+    setBusy(false);
+    if (!res.ok) return fail(res);
+    const d = res.data || {};
+    pushToast(`Moved ${d.count || 0} ${d.count === 1 ? "person" : "people"} to ${bulkMove.to}`);
+    if (d.failed?.length) warn(`${d.failed.length} could not be moved: ${d.failed.map((f) => `@${f.username} (${f.message})`).join("; ")}`);
+    if (d.hostMismatch?.length) warn(`${d.hostMismatch.length} now have a host that doesn't cover them: ${d.hostMismatch.map((x) => "@" + x).join(", ")}`);
+    setBulkMove(null);
     loadAll();
   };
 
@@ -395,6 +514,13 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
         </button>
         <button
           type="button"
+          className={`sandesh-tab-pill ${activeTab === "activity" ? "active" : ""}`}
+          onClick={() => setActiveTab("activity")}
+        >
+          <span className="material-icons pill-icon">history</span> Activity
+        </button>
+        <button
+          type="button"
           className={`sandesh-tab-pill ${activeTab === "invite" ? "active" : ""}`}
           onClick={() => setActiveTab("invite")}
         >
@@ -403,8 +529,16 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
       </div>
 
       <div className="sandesh-modal-body admin-content-scroll">
-        {loading && !["forms", "options"].includes(activeTab) && <p className="section-note" style={{ padding: 16 }}>Loading…</p>}
-        {!loading && loadError && !["forms", "options"].includes(activeTab) && (
+        {locked && (
+          <AdminUnlockPanel
+            onUnlocked={() => {
+              setLocked(false);
+              loadAll();
+            }}
+          />
+        )}
+        {!locked && loading && !["forms", "options", "activity"].includes(activeTab) && <p className="section-note" style={{ padding: 16 }}>Loading…</p>}
+        {!locked && !loading && loadError && !["forms", "options", "activity"].includes(activeTab) && (
           <div className="sandesh-alert sandesh-alert-danger" style={{ margin: 16 }}>
             {loadError}{" "}
             <button type="button" className="sandesh-btn-link" onClick={loadAll}>
@@ -414,7 +548,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
         )}
 
         {/* TAB 1: USERS & HOSTS */}
-        {!loading && !loadError && activeTab === "users" && (
+        {!locked && !loading && !loadError && activeTab === "users" && (
           <div className="admin-table-container">
             <div className="admin-section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
               <h4>All Registered Users ({adminData.users.length})</h4>
@@ -512,6 +646,23 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
                       >
                         Change Host
                       </button>
+                      {u.isEmployee && (
+                        <button
+                          type="button"
+                          className="sandesh-btn-link"
+                          onClick={() =>
+                            setPlacementUser({
+                              user: u,
+                              branch: u.branch || "",
+                              department: u.department || "",
+                              designation: u.designation || "",
+                              autoHost: false,
+                            })
+                          }
+                        >
+                          Change Placement
+                        </button>
+                      )}
                       {u.isEmployee && u.role !== "admin" && (
                         <button
                           type="button"
@@ -559,6 +710,85 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
               </div>
             )}
 
+            {placementUser && (
+              <div className="reassign-host-panel" data-testid="placement-panel">
+                <h5>Change placement for {placementUser.user.name}</h5>
+                <form onSubmit={savePlacement} className="reassign-form" style={{ display: "block" }}>
+                  {[
+                    ["branch", "Branch", adminData.branches],
+                    ["department", "Department", adminData.departments],
+                    ["designation", "Designation", adminData.designations],
+                  ].map(([field, label, items]) => (
+                    <div key={field} style={{ marginBottom: 8 }}>
+                      <label className="section-note">{label}</label>
+                      <div className="sandesh-input-box-3d select-box">
+                        <select
+                          aria-label={label}
+                          value={placementUser[field]}
+                          onChange={(e) => setPlacementUser({ ...placementUser, [field]: e.target.value })}
+                          required
+                        >
+                          {!items.some((i) => i.name === placementUser[field]) && <option value={placementUser[field]}>{placementUser[field] || "—"}</option>}
+                          {items.map((i) => (
+                            <option key={i.name} value={i.name}>{i.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={placementUser.autoHost}
+                      onChange={(e) => setPlacementUser({ ...placementUser, autoHost: e.target.checked })}
+                    />
+                    <span>Switch to a host that covers the new placement (if their current host won't)</span>
+                  </label>
+                  <div className="reassign-btns" style={{ marginTop: 12 }}>
+                    <button type="submit" className="sandesh-btn-primary-3d" disabled={busy}>Save</button>
+                    <button type="button" className="sandesh-btn-secondary-3d" onClick={() => setPlacementUser(null)}>Cancel</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {handover && (
+              <div className="reassign-host-panel" data-testid="handover-panel">
+                <h5>
+                  {handover.mode === "deactivate" ? `Deactivate host ${handover.user.name}` : `${handover.user.name} stops being a host`}
+                </h5>
+                <p className="section-note">
+                  {handover.count
+                    ? `${handover.count} ${handover.count === 1 ? "person has" : "people have"} this person as their host.`
+                    : "They currently host nobody."}{" "}
+                  {handover.mode === "deactivate" ? "Choose who takes over (or decide later)." : "Choose who takes over before continuing."}
+                </p>
+                <form onSubmit={confirmHandover} className="reassign-form">
+                  <div className="sandesh-input-box-3d select-box">
+                    <select
+                      aria-label="New host"
+                      value={handover.newHost}
+                      onChange={(e) => setHandover({ ...handover, newHost: e.target.value })}
+                      required={handover.mode === "demote"}
+                    >
+                      {handover.mode === "deactivate" && <option value="">Decide later (they will show as unassigned)</option>}
+                      {hostCandidates
+                        .filter((h) => h.username !== handover.user.username)
+                        .map((h) => (
+                          <option key={h.username} value={h.username}>{h.name} (@{h.username})</option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="reassign-btns">
+                    <button type="submit" className="sandesh-btn-primary-3d" disabled={busy || (handover.mode === "demote" && !handover.newHost)}>
+                      {handover.mode === "deactivate" ? "Deactivate" : "Move people and continue"}
+                    </button>
+                    <button type="button" className="sandesh-btn-secondary-3d" onClick={() => setHandover(null)}>Cancel</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             {reassignTargetUser && (
               <div className="reassign-host-panel">
                 <h5>Reassign SPOC Host for {reassignTargetUser.name}</h5>
@@ -589,7 +819,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
         )}
 
         {/* TAB 2: AFFILIATES */}
-        {!loading && !loadError && activeTab === "affiliates" && (
+        {!locked && !loading && !loadError && activeTab === "affiliates" && (
           <div className="admin-table-container">
             <div className="admin-section-header">
               <h4>External Affiliates &amp; Partners</h4>
@@ -659,7 +889,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
         )}
 
         {/* TAB 3: ORGANIZATION SETUP */}
-        {!loading && !loadError && activeTab === "setup" && (
+        {!locked && !loading && !loadError && activeTab === "setup" && (
           <div className="admin-setup-grid">
             {[
               { kind: "branches", title: "Branches", icon: "domain", fields: ["name", "city", "country", "pin"] },
@@ -693,6 +923,25 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
                               : item.description || "No description provided"}
                           </span>
                         </div>
+                        <button
+                          type="button"
+                          className="setup-item-remove-btn"
+                          disabled={busy}
+                          title={`Move everyone in ${item.name} somewhere else`}
+                          onClick={() =>
+                            setBulkMove({
+                              kind: bulkKindOf[kind],
+                              orgKind: kind,
+                              from: item.name,
+                              to: adminData[kind].find((x) => x.name !== item.name)?.name || "",
+                              autoHost: false,
+                              preview: null,
+                            })
+                          }
+                        >
+                          <span className="material-icons">swap_horiz</span>
+                          <span>Move people</span>
+                        </button>
                         <button
                           type="button"
                           className="setup-item-remove-btn"
@@ -736,15 +985,62 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
                 </form>
               </div>
             ))}
+            {bulkMove && (
+              <div className="setup-card" data-testid="bulk-panel" style={{ gridColumn: "1 / -1" }}>
+                <h5>Move people: {bulkMove.kind} “{bulkMove.from}”</h5>
+                <p className="section-note">Everyone currently in “{bulkMove.from}” moves to the {bulkMove.kind} you choose. Nothing changes until you confirm.</p>
+                <div className="sandesh-input-box-3d select-box">
+                  <select
+                    aria-label="Move to"
+                    value={bulkMove.to}
+                    onChange={(e) => setBulkMove({ ...bulkMove, to: e.target.value, preview: null })}
+                  >
+                    {adminData[bulkMove.orgKind]
+                      .filter((x) => x.name !== bulkMove.from)
+                      .map((x) => (
+                        <option key={x.name} value={x.name}>{x.name}</option>
+                      ))}
+                  </select>
+                </div>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={!!bulkMove.autoHost}
+                    onChange={(e) => setBulkMove({ ...bulkMove, autoHost: e.target.checked })}
+                  />
+                  <span>Switch people to a host that covers the new placement where their host won't</span>
+                </label>
+                {bulkMove.preview && (
+                  <p className="section-note" data-testid="bulk-preview">
+                    {bulkMove.preview.count === 0
+                      ? "Nobody is in this group."
+                      : `${bulkMove.preview.count} ${bulkMove.preview.count === 1 ? "person" : "people"} will move: ${bulkMove.preview.users.map((u) => "@" + u).join(", ")}`}
+                  </p>
+                )}
+                <div className="reassign-btns" style={{ marginTop: 12 }}>
+                  <button type="button" className="sandesh-btn-secondary-3d" onClick={previewBulk} disabled={busy || !bulkMove.to}>Preview</button>
+                  <button
+                    type="button"
+                    className="sandesh-btn-primary-3d"
+                    onClick={runBulk}
+                    disabled={busy || !bulkMove.preview || bulkMove.preview.count === 0}
+                  >
+                    {bulkMove.preview?.count ? `Move ${bulkMove.preview.count}` : "Move"}
+                  </button>
+                  <button type="button" className="sandesh-btn-secondary-3d" onClick={() => setBulkMove(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* TABS 5-6: LITE TSTRUCT FORMS + OPTIONS (load their own data) */}
-        {activeTab === "forms" && <AdminFormsPanel pushToast={pushToast} />}
-        {activeTab === "options" && <AdminOptionsPanel pushToast={pushToast} />}
+        {!locked && activeTab === "forms" && <AdminFormsPanel pushToast={pushToast} />}
+        {!locked && activeTab === "options" && <AdminOptionsPanel pushToast={pushToast} />}
+        {!locked && activeTab === "activity" && <AdminActivityPanel pushToast={pushToast} />}
 
         {/* TAB 4: INVITE USER */}
-        {!loading && !loadError && activeTab === "invite" && (
+        {!locked && !loading && !loadError && activeTab === "invite" && (
           <form onSubmit={handleInviteSubmit} className="invite-user-form">
             <h4>Invite User to Sandesh Platform</h4>
             <div className="sandesh-form-row">

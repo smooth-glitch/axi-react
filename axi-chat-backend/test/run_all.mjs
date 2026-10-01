@@ -56,6 +56,7 @@ const SUITES = [
   { name: "connectum_chat_test", db: 25, arg: "url", env: { CHAT_RATE_LIMIT_MAX: "1000", CHAT_EDIT_WINDOW_SEC: "3" } },
   { name: "connectum_cmdx_test", db: 24, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000" } },
   { name: "connectum_option_run_test", db: 23, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "1000", SANDESH_PAY_WEBHOOK_SECRET: "whsecret-123" } },
+  { name: "admin_reassign_test", db: 41, arg: "url", env: { ...STRICT, CHAT_RATE_LIMIT_MAX: "5000", SANDESH_OTP_MODE: "smtp", SMTP_HOST: "127.0.0.1", SMTP_PORT: "12525", SMTP_USER: "mailer@test.co", SMTP_PASS: "pw", SMTP_STARTTLS: "0" } },
   { name: "sec_impersonation_test", db: 5, arg: "url", env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_REQUIRE_SESSION: "1" } },
   { name: "sandesh_user_options_test", db: 12, arg: "url", timeoutMs: 180000, env: { CHAT_RATE_LIMIT_MAX: "1000", SANDESH_MAX_FILE_MB: "1", SANDESH_FILES_DIR: path.join(os.tmpdir(), "sd-files-runall") } },
   // Open mode (the default). Two shared backends: the first two TEST the rate limiter so they need the default

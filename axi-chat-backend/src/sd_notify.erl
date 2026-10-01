@@ -7,6 +7,8 @@
 %%%            server log. Dev only -- never use on a shared/real deployment.
 %%%   fixed    OTP is always 123456 (the value the current frontend demo
 %%%            screen advertises). Dev/demo only.
+%%%   smtp     send real email through SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS (see sd_smtp.erl);
+%%%            falls back to the log (and says so) for a person with no email address.
 %%%   webhook  POST JSON to SANDESH_NOTIFY_WEBHOOK so any SMS/email gateway
 %%%            can be plugged in without changing this code:
 %%%            {"kind":"otp"|"invite"|..., "to":{"name","email","mobile"},
@@ -30,6 +32,7 @@ channel() ->
     case os:getenv("SANDESH_OTP_MODE") of
         "fixed" -> fixed;
         "webhook" -> webhook;
+        "smtp" -> smtp;
         _ -> log
     end.
 
@@ -39,6 +42,7 @@ deliver(Kind, To, Extra) ->
     Text = maps:get(<<"text">>, Extra, <<>>),
     case channel() of
         webhook -> webhook(Kind, To, Extra);
+        smtp -> smtp(Kind, To, Extra);
         _ ->
             warn_dev_channel(),
             %% Deliberately includes the code: log/fixed modes are dev-only.
@@ -63,6 +67,43 @@ warn_dev_channel() ->
                 [case channel() of fixed -> "fixed"; _ -> "log" end]);
         false -> ok
     end.
+
+%% Email through SMTP, off the caller's process so a slow mail server never blocks a request.
+smtp(Kind, To, Extra) ->
+    Email = maps:get(<<"email">>, To, <<>>),
+    case sd_smtp:configured() andalso is_binary(Email) andalso Email =/= <<>> of
+        false ->
+            ?LOG_WARNING("sd_notify[~s]: SMTP not configured or no email for ~s; nothing sent",
+                         [Kind, maps:get(<<"name">>, To, <<>>)]);
+        true ->
+            {Subject, Body} = mail_text(Kind, To, Extra),
+            spawn(fun() ->
+                case sd_smtp:send(Email, Subject, Body) of
+                    ok -> ?LOG_NOTICE("sd_notify[~s]: email sent to ~s", [Kind, Email]);
+                    {error, Why} -> ?LOG_WARNING("sd_notify[~s]: email to ~s failed: ~p", [Kind, Email, Why])
+                end
+            end)
+    end,
+    ok.
+
+mail_text(Kind, To, Extra) ->
+    Name = maps:get(<<"name">>, To, <<>>),
+    Text = maps:get(<<"text">>, Extra, <<>>),
+    Code = maps:get(<<"code">>, Extra, <<>>),
+    AppUrl = case os:getenv("APP_URL") of false -> "https://10.0.2.146"; U -> U end,
+    Subject = case Kind of
+                  invite -> "You're invited to Connectum";
+                  otp -> "Your Connectum sign-in code";
+                  _ -> "Connectum notification"
+              end,
+    Greeting = case Name of <<>> -> "Hello,"; _ -> ["Hello ", Name, ","] end,
+    CodeLine = case Code of <<>> -> ""; _ -> ["\r\n\r\nYour code: ", Code, "\r\n(It expires shortly. Never share it with anyone.)"] end,
+    Body = unicode:characters_to_binary(
+             [Greeting, "\r\n\r\n", Text, CodeLine,
+              "\r\n\r\nOpen the app: ", AppUrl,
+              "\r\nThe app is reachable on the office network. Working remotely? You need VPN access: "
+              "contact AXPERT SUPPORT to get your VPN config.\r\n\r\n-- Connectum, Agile Labs\r\n"]),
+    {Subject, Body}.
 
 webhook(Kind, To, Extra) ->
     case os:getenv("SANDESH_NOTIFY_WEBHOOK") of
