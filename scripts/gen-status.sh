@@ -2,12 +2,12 @@
 # Regenerates docs/STATUS.md from git history and docs/NEXT_STEPS.md.
 # Run by .github/workflows/update-status.yml on every push to main; safe to run locally.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
 OUT=docs/STATUS.md
-. "$(dirname "$0")/repo-env.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/repo-env.sh"
+cd "$APP_ROOT"
 
 area() {
-  case "$1" in
+  case "${1#"$APP_PREFIX"}" in
     axi-chat-backend/*) echo "Backend" ;;
     web/*|src/*|components/*|public/*|index.html) echo "Frontend" ;;
     docs/*|*.md) echo "Docs" ;;
@@ -72,17 +72,17 @@ for n in $(seq 1 20); do if [ "$n" -le "$FILLED" ]; then BAR="${BAR}▰"; else B
   echo
   echo "| Contributor | Commits |"
   echo "|---|---|"
-  git log --no-merges --since='30 days ago' --format=%an | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "| %s | %s |\n", $0, c}'
+  git log --no-merges --since='30 days ago' --format=%an -- . | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "| %s | %s |\n", $0, c}'
   echo
   echo "| Area | Files touched |"
   echo "|---|---|"
-  git log --no-merges --since='30 days ago' --name-only --format= | sort -u | while read -r P; do [ -n "$P" ] && area "$P"; done | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "| %s | %s |\n", $0, c}'
+  git log --no-merges --since='30 days ago' --name-only --format= -- . | sort -u | while read -r P; do [ -n "$P" ] && area "$P"; done | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "| %s | %s |\n", $0, c}'
   echo
   echo "## Recent changes"
   echo
   echo "| When | Who | Change | Diff |"
   echo "|---|---|---|---|"
-  TZ=Asia/Kolkata git log --no-merges -n 25 --format='%H|%an|%ad|%s' --date=format-local:'%d %b, %H:%M' | while IFS='|' read -r H N D S; do
+  TZ=Asia/Kolkata git log --no-merges -n 25 --format='%H|%an|%ad|%s' --date=format-local:'%d %b, %H:%M' -- . | while IFS='|' read -r H N D S; do
     read -r I X <<< "$(git show --numstat --format= "$H" | awk '$1 ~ /^[0-9]+$/ {i+=$1; d+=$2} END {print i+0, d+0}')"
     S=${S//|/\\|}
     echo "| $D | $N | [\`${H:0:7}\`]($REPO_URL/commit/$H) $S | +$I / −$X |"

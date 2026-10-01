@@ -4,8 +4,8 @@
 # the conflicting files and how to resolve safely. Clean PRs get their old warning removed.
 # docs/STATUS.md is bot-generated and never counted. Needs gh (GH_TOKEN), jq, git >= 2.38.
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
-. "$(dirname "$0")/repo-env.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/repo-env.sh"
+cd "$APP_ROOT"
 BASE=${BASE_REF:-origin/main}
 MARK='<!-- connectum-conflict-warning -->'
 DRY=${DRY_RUN:-0}
@@ -16,7 +16,7 @@ gh pr list --repo "$REPO" --state open --limit 50 --json number,headRefName,isDr
   REF="origin/$B"
   git rev-parse -q --verify "$REF" >/dev/null || { echo "#$N: $REF not fetched, skipping"; continue; }
   OUT=$(git merge-tree --write-tree --name-only --no-messages "$BASE" "$REF" 2>/dev/null); RC=$?
-  FILES=""; [ "$RC" -eq 1 ] && FILES=$(echo "$OUT" | tail -n +2 | grep -vxF 'docs/STATUS.md' | grep -v '^$' || true)
+  FILES=""; [ "$RC" -eq 1 ] && FILES=$(echo "$OUT" | tail -n +2 | grep -vxF "${APP_PREFIX}docs/STATUS.md" | grep -v '^$' || true)
 
   EXISTING=$(gh api "repos/$REPO/issues/$N/comments" --paginate --jq ".[] | select(.body | contains(\"$MARK\")) | .id" | head -1)
   if [ -z "$FILES" ]; then

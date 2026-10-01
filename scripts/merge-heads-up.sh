@@ -7,22 +7,22 @@
 # bot-generated and never counted as a conflict.
 # Used by .github/workflows/merge-heads-up.yml; safe to run locally (writes $CARD_OUT).
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
 
 BASE=${BASE_REF:-origin/main}
 AFTER=${AFTER:-$(git rev-parse "$BASE")}
 BEFORE=${BEFORE:-}
 ACTOR=${ACTOR:-}
-. "$(dirname "$0")/repo-env.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/repo-env.sh"
+cd "$APP_ROOT"
 MAX_AGE_DAYS=${MAX_AGE_DAYS:-21}
 MAX_BRANCHES=${MAX_BRANCHES:-8}
 MAX_COMMITS=${MAX_COMMITS:-6}
 MAX_FILES=${MAX_FILES:-3}
 CARD_OUT=${CARD_OUT:-card.json}
-GENERATED='docs/STATUS.md'
+GENERATED="${APP_PREFIX}docs/STATUS.md"
 
 area() {
-  case "$1" in
+  case "${1#"$APP_PREFIX"}" in
     axi-chat-backend/*) echo "Backend" ;;
     web/*|src/*|components/*|public/*|index.html) echo "Frontend" ;;
     docs/*|*.md) echo "Docs" ;;
@@ -38,7 +38,7 @@ if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000"
 else
   RANGE="-5 $AFTER"; COMPARE="$SERVER/$REPO/commits/$DEFAULT_BRANCH"
 fi
-HASHES=$(git rev-list --no-merges --reverse $RANGE)
+HASHES=$(git rev-list --no-merges --reverse $RANGE -- .)
 TOTAL=$(echo "$HASHES" | grep -c . || true)
 [ "$TOTAL" -eq 0 ] && { echo "No new non-merge commits on main; nothing to announce"; exit 0; }
 SHOWN=$(echo "$HASHES" | tail -n "$MAX_COMMITS")
