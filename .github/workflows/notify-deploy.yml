@@ -1,0 +1,55 @@
+name: Deploy notifications (Teams)
+
+# Posts a Teams card when "Deploy backend" or "Deploy frontend" finishes, so a failed
+# deploy on the VM is never silent. Runs on a GitHub-hosted runner (no VM access needed).
+# Needs the repo secret TEAMS_WEBHOOK_URL; without it the job exits quietly.
+on:
+  workflow_run:
+    workflows: ["Deploy backend", "Deploy frontend"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post deploy card
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          NAME: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          MSG: ${{ github.event.workflow_run.head_commit.message }}
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          STARTED: ${{ github.event.workflow_run.run_started_at }}
+          ENDED: ${{ github.event.workflow_run.updated_at }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "TEAMS_WEBHOOK_URL not set; skipping"; exit 0; fi
+          WHAT=$(echo "$NAME" | sed 's/^Deploy //')            # backend | frontend
+          SECS=$(( $(date -d "$ENDED" +%s) - $(date -d "$STARTED" +%s) ))
+          WHEN=$(TZ=Asia/Kolkata date +'%d %b, %H:%M IST')
+          SUBJECT=$(echo "$MSG" | head -n 1 | cut -c1-140)
+          if [ "$CONCLUSION" = "success" ]; then
+            export CARD_STYLE=good CARD_ICON="✅" CARD_TITLE="$WHAT deployed"
+            export CARD_BODY="**${SUBJECT}**
+          Commit [\`${SHA:0:7}\`]($SERVER/$REPO/commit/$SHA) · took ${SECS}s · live at https://10.0.2.146 (office network or VPN)"
+          else
+            export CARD_STYLE=attention CARD_ICON="❌" CARD_TITLE="$WHAT deploy FAILED"
+            export CARD_BODY="**${SUBJECT}**
+          Commit [\`${SHA:0:7}\`]($SERVER/$REPO/commit/$SHA) · failed after ${SECS}s
+          ## What to check
+          Open the run and find the first red step.
+          If it failed at or after the restart/verify step, the service may be down: on the VM run \`systemctl status axi-chat-backend\` (backend) or check nginx (frontend)."
+          fi
+          export CARD_KICKER="CONNECTUM  ·  DEPLOY" CARD_SUB="Triggered by $ACTOR  ·  $WHEN"
+          export CARD_ACTIONS="View run|$RUN_URL"
+          bash scripts/teams-card.sh --post
