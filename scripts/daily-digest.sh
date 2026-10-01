@@ -33,5 +33,5 @@ $(echo "$OPEN_LINES" | head -n 12)"; fi
 export CARD_STYLE=accent CARD_ICON="📋" CARD_KICKER="CONNECTUM  ·  DAILY DIGEST" CARD_TITLE="$(TZ=Asia/Kolkata date +'%A, %d %b')" \
   CARD_SUB="$N_MERGED merged today  ·  $N_OPEN open" CARD_BODY="$BODY" \
   CARD_ACTIONS="Open pull requests|$SERVER/$REPO/pulls
-Project status page|$SERVER/$REPO/blob/$DEFAULT_BRANCH/docs/STATUS.md"
+Project status page|$SERVER/$REPO/blob/$DEFAULT_BRANCH/${APP_PREFIX}docs/STATUS.md"
 bash "$(dirname "$0")/teams-card.sh" "$@"

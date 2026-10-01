@@ -2,8 +2,8 @@
 # Weekly Teams list of (a) branches already merged through a PR but never deleted and
 # (b) branches with unmerged commits and no activity for 30+ days. Reports only: it never deletes.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
-. "$(dirname "$0")/repo-env.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/repo-env.sh"
+cd "$APP_ROOT"
 STALE_DAYS=${STALE_DAYS:-30}
 BASE=${BASE_REF:-origin/main}
 NOW=$(date +%s)
