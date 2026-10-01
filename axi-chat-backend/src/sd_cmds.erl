@@ -676,53 +676,104 @@ do(<<"admin.user.get">>, Args, _Ctx) ->
     end);
 do(<<"admin.user.update">>, Args, #{user := Actor}) ->
     with_bin(<<"username">>, Args, fun(Name) ->
-        case sd_users:update(Name, Args, maps:get(<<"username">>, Actor)) of
-            {ok, U} -> {ok, #{<<"user">> => U}};
+        Before = sd_users:get(Name),
+        case sd_users:update_full(Name, Args, maps:get(<<"username">>, Actor)) of
+            {ok, U, Extra} ->
+                Changes = diff_fields(Before, U),
+                audit(Actor, <<"user.update">>, U, #{<<"changes">> => Changes, <<"extra">> => Extra}),
+                notify_changed(Actor, U, Changes),
+                {ok, maps:merge(#{<<"user">> => U}, Extra)};
             Err -> Err
         end
     end);
+%% Move everyone from one department / branch / designation to another in one call.
+%% {kind: "department"|"branch"|"designation", from, to, dryRun?, autoHost?}
+do(<<"admin.users.bulk_move">>, Args, #{user := Actor}) ->
+    Kind = maps:get(<<"kind">>, Args, undefined),
+    From = maps:get(<<"from">>, Args, undefined), To = maps:get(<<"to">>, Args, undefined),
+    case bulk_kind(Kind) of
+        undefined -> {error, invalid, <<"kind must be one of: department, branch, designation.">>};
+        {Field, OrgKind} when is_binary(From), is_binary(To), From =/= <<>>, To =/= <<>> ->
+            case string:lowercase(From) =:= string:lowercase(To) of
+                true -> {error, invalid, <<"from and to are the same.">>};
+                false ->
+                    case sd_org:get(OrgKind, To) of
+                        undefined -> {error, invalid, <<"'to' isn't in the organisation's list.">>};
+                        ToItem ->
+                            ToName = maps:get(<<"name">>, ToItem),
+                            Users = [U || U <- sd_users:list(),
+                                          is_binary(maps:get(Field, U, null)),
+                                          string:lowercase(maps:get(Field, U)) =:= string:lowercase(From)],
+                            Names = [maps:get(<<"username">>, U) || U <- Users],
+                            case sd_util:is_true(maps:get(<<"dryRun">>, Args, false)) of
+                                true -> {ok, #{<<"dryRun">> => true, <<"count">> => length(Names), <<"users">> => Names}};
+                                false -> bulk_apply(Actor, Field, ToName, Names, Args)
+                            end
+                    end
+            end;
+        _ -> {error, invalid, <<"from and to are required.">>}
+    end;
+do(<<"admin.audit.list">>, Args, _Ctx) ->
+    Filter = case maps:get(<<"username">>, Args, undefined) of U when is_binary(U), U =/= <<>> -> U; _ -> undefined end,
+    Limit = int(maps:get(<<"limit">>, Args, 50), 50),
+    {ok, #{<<"entries">> => sd_audit:list(Filter, Limit)}};
 do(<<"admin.user.status">>, Args, #{user := Actor}) ->
     with_bin(<<"username">>, Args, fun(Name) ->
         case maps:get(<<"active">>, Args, undefined) of
-            Active when is_boolean(Active) -> set_active(Actor, sd_util:norm_user(Name), Active);
+            Active when is_boolean(Active) ->
+                set_active(Actor, sd_util:norm_user(Name), Active, maps:get(<<"reassignTo">>, Args, undefined));
             _ -> {error, invalid, <<"active (true/false) is required.">>}
         end
     end);
-do(<<"admin.host.change">>, Args, _Ctx) ->
+do(<<"admin.host.change">>, Args, #{user := Actor}) ->
     with_bin(<<"user">>, Args, fun(Name) ->
         case maps:get(<<"host">>, Args, undefined) of
-            null -> reassign_one(Name, null);
-            H when is_binary(H) -> reassign_one(Name, sd_util:norm_user(H));
+            null -> audited_host_change(Actor, Name, null);
+            H when is_binary(H) -> audited_host_change(Actor, Name, sd_util:norm_user(H));
             _ -> {error, invalid, <<"host is required (a username, or null to clear).">>}
         end
     end);
-do(<<"admin.host.reassign">>, Args, _Ctx) ->
+do(<<"admin.host.reassign">>, Args, #{user := Actor}) ->
     with_bin(<<"from">>, Args, fun(From) ->
-        with_bin(<<"to">>, Args, fun(To) -> reassign_all(sd_util:norm_user(From), sd_util:norm_user(To)) end)
+        with_bin(<<"to">>, Args, fun(To) ->
+            case reassign_all(sd_util:norm_user(From), sd_util:norm_user(To)) of
+                {ok, #{<<"moved">> := Moved} = R} ->
+                    audit(Actor, <<"host.reassign">>, #{<<"username">> => sd_util:norm_user(From)},
+                          #{<<"to">> => sd_util:norm_user(To), <<"moved">> => Moved}),
+                    {ok, R};
+                Err -> Err
+            end
+        end)
     end);
 do(<<"admin.affiliates.list">>, _Args, _Ctx) ->
     {ok, #{<<"affiliates">> => affiliate_rows()}};
 do(<<"admin.admins.list">>, _Args, _Ctx) ->
     {ok, #{<<"admins">> => sd_users:admins()}};
-do(<<"admin.admins.add">>, Args, _Ctx) ->
+do(<<"admin.admins.add">>, Args, #{user := Actor}) ->
     with_bin(<<"username">>, Args, fun(Name) ->
-        case sd_users:get(Name) of
-            #{<<"status">> := <<"active">>} = U ->
-                sd_users:replace(U#{<<"role">> => <<"admin">>, <<"updatedTs">> => sd_util:now_ms()}),
-                {ok, #{<<"admins">> => sd_users:admins()}};
-            _ -> {error, not_found, <<"No such active user.">>}
-        end
+        with_admin_lock(fun() -> sd_users:locked(Name, fun() ->
+            case sd_users:get(Name) of
+                #{<<"status">> := <<"active">>} = U ->
+                    sd_users:replace(U#{<<"role">> => <<"admin">>, <<"updatedTs">> => sd_util:now_ms()}),
+                    audit(Actor, <<"admin.add">>, U, #{}),
+                    {ok, #{<<"admins">> => sd_users:admins()}};
+                _ -> {error, not_found, <<"No such active user.">>}
+            end
+        end) end)
     end);
-do(<<"admin.admins.remove">>, Args, _Ctx) ->
+do(<<"admin.admins.remove">>, Args, #{user := Actor}) ->
     with_bin(<<"username">>, Args, fun(Name) ->
-        case {sd_users:get(Name), length(sd_users:admins())} of
-            {undefined, _} -> {error, not_found, <<"No such user.">>};
-            {#{<<"role">> := <<"admin">>} = U, N} when N > 1 ->
-                sd_users:replace(U#{<<"role">> => <<"user">>, <<"updatedTs">> => sd_util:now_ms()}),
-                {ok, #{<<"admins">> => sd_users:admins()}};
-            {#{<<"role">> := <<"admin">>}, _} -> {error, last_admin, <<"There must be at least one administrator.">>};
-            _ -> {error, invalid, <<"That user isn't an administrator.">>}
-        end
+        with_admin_lock(fun() -> sd_users:locked(Name, fun() ->
+            case {sd_users:get(Name), length(sd_users:admins())} of
+                {undefined, _} -> {error, not_found, <<"No such user.">>};
+                {#{<<"role">> := <<"admin">>} = U, N} when N > 1 ->
+                    sd_users:replace(U#{<<"role">> => <<"user">>, <<"updatedTs">> => sd_util:now_ms()}),
+                    audit(Actor, <<"admin.remove">>, U, #{}),
+                    {ok, #{<<"admins">> => sd_users:admins()}};
+                {#{<<"role">> := <<"admin">>}, _} -> {error, last_admin, <<"There must be at least one administrator.">>};
+                _ -> {error, invalid, <<"That user isn't an administrator.">>}
+            end
+        end) end)
     end);
 
 %% ---- admin: lite tstructs, options, application connections ------------------------------------------------------------------------
@@ -992,8 +1043,11 @@ invite_user(Args, Actor) ->
                                true -> Opts0;
                                false -> Opts0#{scope_host => HostUser}
                            end,
-                    %% Only an administrator may give someone roles (they decide who may approve what).
-                    ArgsOk = case IsAdmin of true -> Args; false -> maps:remove(<<"roles">>, Args) end,
+                    %% Only an administrator may give someone roles, host rights or user-management rights.
+                    ArgsOk = case IsAdmin of
+                                 true -> Args;
+                                 false -> maps:without([<<"roles">>, <<"isHost">>, <<"hostScope">>, <<"canManageUsers">>], Args)
+                             end,
                     case sd_users:create(ArgsOk, Opts) of
                         {ok, User} ->
                             Username = maps:get(<<"username">>, User),
@@ -1053,32 +1107,49 @@ row(U, OrgName) ->
 int(V, _) when is_integer(V) -> V;
 int(_, Default) -> Default.
 
-set_active(Actor, Target, Active) ->
+set_active(Actor, Target, Active, ReassignTo) ->
     ActorName = maps:get(<<"username">>, Actor),
-    case sd_users:get(Target) of
-        undefined -> {error, not_found, <<"No such user.">>};
-        _ when Target =:= ActorName -> {error, invalid, <<"You can't change your own status.">>};
-        U ->
-            TargetIsAdmin = sd_users:is_admin(U),
-            ActorIsAdmin = sd_users:is_admin(Actor),
-            case {TargetIsAdmin andalso not ActorIsAdmin,
-                  TargetIsAdmin andalso (not Active) andalso length(sd_users:admins()) =< 1} of
-                {true, _} -> {error, forbidden, <<"Only an administrator can change an administrator.">>};
-                {_, true} -> {error, last_admin, <<"There must be at least one active administrator.">>};
-                _ ->
-                    Status = case Active of true -> <<"active">>; false -> <<"inactive">> end,
-                    {ok, New} = sd_users:set_status(Target, Status),
-                    Active orelse sd_notify:disconnect(Target),
-                    %% A deactivated host leaves users without one -- hand the
-                    %% admin the list so they can pick a new host ("provide
-                    %% option to assign new hosts for users").
-                    Orphans = case (not Active) andalso sd_users:is_host(U) of
-                                  true -> [sd_users:public(X) || X <- sd_users:users_of_host(Target)];
-                                  false -> []
-                              end,
-                    {ok, #{<<"user">> => New, <<"orphans">> => Orphans}}
-            end
-    end.
+    with_admin_lock(fun() ->
+        case sd_users:get(Target) of
+            undefined -> {error, not_found, <<"No such user.">>};
+            _ when Target =:= ActorName -> {error, invalid, <<"You can't change your own status.">>};
+            U ->
+                TargetIsAdmin = sd_users:is_admin(U),
+                ActorIsAdmin = sd_users:is_admin(Actor),
+                ReassignCheck = case {Active, sd_users:is_host(U), ReassignTo} of
+                                    {false, true, To} when is_binary(To) ->
+                                        ToN = sd_util:norm_user(To),
+                                        case ToN =:= Target of
+                                            true -> {error, invalid, <<"reassignTo can't be the same user.">>};
+                                            false -> case sd_users:valid_host_target(ToN) of ok -> {ok, ToN}; E -> E end
+                                        end;
+                                    _ -> {ok, undefined}
+                                end,
+                case {TargetIsAdmin andalso not ActorIsAdmin,
+                      TargetIsAdmin andalso (not Active) andalso length(sd_users:admins()) =< 1, ReassignCheck} of
+                    {true, _, _} -> {error, forbidden, <<"Only an administrator can change an administrator.">>};
+                    {_, true, _} -> {error, last_admin, <<"There must be at least one active administrator.">>};
+                    {_, _, {error, _, _} = RErr} -> RErr;
+                    {_, _, {ok, MoveTo}} ->
+                        Status = case Active of true -> <<"active">>; false -> <<"inactive">> end,
+                        {ok, New} = sd_users:set_status(Target, Status),
+                        Active orelse sd_notify:disconnect(Target),
+                        %% A deactivated host leaves users without one. With reassignTo they move in the same
+                        %% call; without it the admin gets the list ("provide option to assign new hosts").
+                        Moved = case MoveTo of undefined -> []; T -> sd_users:move_hosted(Target, T) end,
+                        Orphans = case (not Active) andalso sd_users:is_host(U) of
+                                      true -> [sd_users:public(X) || X <- sd_users:users_of_host(Target)];
+                                      false -> []
+                                  end,
+                        audit(Actor, <<"user.status">>, U, #{<<"active">> => Active, <<"movedUsers">> => Moved,
+                                                              <<"orphans">> => length(Orphans)}),
+                        {ok, #{<<"user">> => New, <<"orphans">> => Orphans, <<"movedUsers">> => Moved}}
+                end
+        end
+    end).
+
+%% Serialises changes that must see a consistent set of administrators (last-admin rule).
+with_admin_lock(Fun) -> sd_users:locked(<<"*admins*">>, Fun).
 
 reassign_one(Name, null) ->
     case sd_users:set_host(Name, null) of
@@ -1106,15 +1177,83 @@ reassign_all(From, To) ->
             {ok, #{<<"moved">> => Moved, <<"count">> => length(Moved)}}
     end.
 
-valid_host_target(Host) ->
-    case sd_users:get(Host) of
-        #{<<"status">> := <<"active">>} = U ->
-            case sd_users:is_host(U) orelse sd_users:is_admin(U) of
-                true -> ok;
-                false -> {error, invalid, <<"The new host must be a host or administrator.">>}
-            end;
-        _ -> {error, not_found, <<"No such active host.">>}
+valid_host_target(Host) -> sd_users:valid_host_target(Host).
+
+%% Host change with a heads-up when the new host's scope doesn't cover the user (admins may still override).
+audited_host_change(Actor, Name, Host) ->
+    case reassign_one(Name, Host) of
+        {ok, #{<<"user">> := U} = R} ->
+            Covers = case Host of
+                         null -> true;
+                         H -> case sd_users:get(H) of
+                                  undefined -> true;
+                                  HU -> sd_users:is_admin(HU) orelse sd_users:host_covers(HU, U)
+                              end
+                     end,
+            audit(Actor, <<"host.change">>, U, #{<<"host">> => Host, <<"coversUser">> => Covers}),
+            {ok, R#{<<"coversUser">> => Covers}};
+        Err -> Err
     end.
+
+audit(Actor, Action, Target, Details) ->
+    T = case Target of #{<<"username">> := N} -> N; N when is_binary(N) -> N; _ -> <<"-">> end,
+    sd_audit:log(maps:get(<<"username">>, Actor, <<"?">>), Action, T, Details).
+
+%% Fields an admin edit changed: #{field => #{from, to}}.
+-define(AUDITED, [<<"name">>, <<"email">>, <<"mobile">>, <<"isEmployee">>, <<"branch">>, <<"department">>,
+                  <<"designation">>, <<"reportingManager">>, <<"affiliate">>, <<"affiliateBranch">>, <<"category">>,
+                  <<"country">>, <<"city">>, <<"pin">>, <<"isHost">>, <<"hostScope">>, <<"canManageUsers">>, <<"roles">>]).
+diff_fields(undefined, _) -> #{};
+diff_fields(Old, New) ->
+    maps:from_list([{K, #{<<"from">> => maps:get(K, Old, null), <<"to">> => maps:get(K, New, null)}}
+                    || K <- ?AUDITED, maps:get(K, Old, null) =/= maps:get(K, New, null)]).
+
+%% Tell the person (in their notification feed) when an admin changed their organisation details.
+notify_changed(_Actor, _User, Changes) when map_size(Changes) =:= 0 -> ok;
+notify_changed(Actor, User, Changes) ->
+    Shown = [{K, V} || {K, V} <- maps:to_list(Changes),
+                       lists:member(K, [<<"branch">>, <<"department">>, <<"designation">>, <<"isHost">>, <<"roles">>, <<"reportingManager">>])],
+    case Shown of
+        [] -> ok;
+        _ ->
+            Text = iolist_to_binary(lists:join(<<", ">>,
+                     [[K, <<": ">>, show(maps:get(<<"from">>, V)), <<" -> ">>, show(maps:get(<<"to">>, V))] || {K, V} <- Shown])),
+            Who = maps:get(<<"name">>, Actor, <<"An administrator">>),
+            Name = maps:get(<<"username">>, User),
+            sd_feed_srv:async(fun() ->
+                sd_feed:notify(Name, #{<<"severity">> => <<"low">>, <<"category">> => <<"system">>,
+                                       <<"title">> => <<"Your details were updated">>,
+                                       <<"message">> => <<Who/binary, " changed ", Text/binary>>,
+                                       <<"icon">> => <<"manage_accounts">>,
+                                       <<"key">> => <<"profile:", (integer_to_binary(sd_util:now_ms()))/binary>>}, [])
+            end),
+            sd_notify:push_event(Name, <<"profile_changed">>, #{<<"changes">> => Changes})
+    end.
+
+show(null) -> <<"-">>;
+show(true) -> <<"yes">>;
+show(false) -> <<"no">>;
+show(V) when is_binary(V) -> V;
+show(V) when is_list(V) -> iolist_to_binary(lists:join(<<"/">>, [show(X) || X <- V]));
+show(_) -> <<"...">>.
+
+bulk_kind(<<"department">>) -> {<<"department">>, departments};
+bulk_kind(<<"branch">>) -> {<<"branch">>, branches};
+bulk_kind(<<"designation">>) -> {<<"designation">>, designations};
+bulk_kind(_) -> undefined.
+
+bulk_apply(Actor, Field, ToName, Names, Args) ->
+    Auto = sd_util:is_true(maps:get(<<"autoHost">>, Args, false)),
+    Results = [{N, sd_users:update_full(N, #{Field => ToName, <<"autoHost">> => Auto}, maps:get(<<"username">>, Actor))} || N <- Names],
+    Moved = [N || {N, {ok, _, _}} <- Results],
+    Failed = [#{<<"username">> => N, <<"message">> => M} || {N, {error, _, M}} <- Results],
+    Mismatch = [N || {N, {ok, _, #{<<"hostMismatch">> := _}}} <- Results],
+    sd_audit:log(maps:get(<<"username">>, Actor), <<"users.bulk_move">>, <<"-">>,
+                 #{<<"field">> => Field, <<"to">> => ToName, <<"moved">> => Moved, <<"failed">> => length(Failed)}),
+    lists:foreach(fun({_N, {ok, U, _}}) ->
+                          notify_changed(Actor, U, #{Field => #{<<"from">> => <<"(previous)">>, <<"to">> => ToName}});
+                     (_) -> ok end, Results),
+    {ok, #{<<"moved">> => Moved, <<"count">> => length(Moved), <<"failed">> => Failed, <<"hostMismatch">> => Mismatch}}.
 
 %% "Affiliate listing - Affiliate name, branch, category, host users, users."
 affiliate_rows() ->
