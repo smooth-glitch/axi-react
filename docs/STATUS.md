@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 18:11 IST · commit [`2f8f302`](https://github.com/smooth-glitch/axi-react/commit/2f8f302b8de40569c575c994ad7a85c5b39c2209)
+> Last updated: 01 Oct 2026, 18:26 IST · commit [`1998b1c`](https://github.com/smooth-glitch/axi-react/commit/1998b1cdbf991214e438ce968e914db71fde9806)
 
 ## New here? Start here
 
@@ -36,6 +36,7 @@
 - [Email (invitations and one-time codes)](EMAIL_SETUP.md) · `docs/EMAIL_SETUP.md`
 - [Frontend hand-off: `#commands` changes](FRONTEND_HANDOFF_HASH_COMMANDS.md) · `docs/FRONTEND_HANDOFF_HASH_COMMANDS.md`
 - [`#commands` — the chat prompt bar's action menu](HASH_COMMANDS.md) · `docs/HASH_COMMANDS.md`
+- [Moving the repo to the company GitHub](MIGRATION.md) · `docs/MIGRATION.md`
 - [Axpert Chat Plugin — Next Steps & Progress Tracker](NEXT_STEPS.md) · `docs/NEXT_STEPS.md`
 - [Sandesh API — what the frontend builds against](SANDESH_API.md) · `docs/SANDESH_API.md`
 - [AXI Chat Backend](../axi-chat-backend/README.md) · `axi-chat-backend/README.md`
@@ -53,27 +54,29 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 78 |
+| Arjun Sridhar | 79 |
 | Anish-S-Agile | 36 |
 | Arjun | 35 |
 | Gunn | 26 |
-| connectum-status-bot | 12 |
+| connectum-status-bot | 13 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
 | Area | Files touched |
 |---|---|
 | Frontend | 233 |
-| Other | 114 |
+| Other | 115 |
 | Backend | 101 |
-| CI / DevOps | 29 |
-| Docs | 25 |
+| CI / DevOps | 32 |
+| Docs | 26 |
 | Tests | 12 |
 
 ## Recent changes
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 18:18 | Arjun Sridhar | [`250e7bb`](https://github.com/smooth-glitch/axi-react/commit/250e7bb50928c58c884ffb3ac2645e23792a849e) chore: make the repo portable to another GitHub org | +232 / −23 |
+| 01 Oct, 18:11 | connectum-status-bot | [`88dff6c`](https://github.com/smooth-glitch/axi-react/commit/88dff6cbedf7838d9a2b8694ff4d43d6313e52c9) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 18:01 | connectum-status-bot | [`6fa89b9`](https://github.com/smooth-glitch/axi-react/commit/6fa89b91106f15f186b2e5d04698a1f528a3e62a) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 18:00 | Arjun Sridhar | [`215bcbe`](https://github.com/smooth-glitch/axi-react/commit/215bcbea687d0e84bcebb71a3c0e040ea77232bd) fix(frontend): finishing the recovery codes crashed for non-admins and sent them back to sign-in | +1 / −1 |
 | 01 Oct, 17:45 | Arjun Sridhar | [`3e95831`](https://github.com/smooth-glitch/axi-react/commit/3e9583121b62b9fdfe286bc010b1f1c882390f2b) feat(backend): durable mail queue, bigger accept queue (fixes the flaky connect burst), audit cap setting, docs | +325 / −35 |
@@ -97,5 +100,3 @@
 | 01 Oct, 12:57 | connectum-status-bot | [`a9a5613`](https://github.com/smooth-glitch/axi-react/commit/a9a56137ce480b8ae3c0adef1574f930d01b04f7) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:50 | Arjun Sridhar | [`2cd669c`](https://github.com/smooth-glitch/axi-react/commit/2cd669c09835e53fdcac3cb7426dcabd66e6f12f) ci: automations bundle (deploy notifications, VM watchdog, PR checks, daily digest, branch housekeeping, secret scan, PR conflict warning, release notes, PR template) | +606 / −0 |
 | 01 Oct, 12:44 | connectum-status-bot | [`fdb3085`](https://github.com/smooth-glitch/axi-react/commit/fdb30856a29f40967c7f89c1ba3b20c2e0ba0823) docs: refresh STATUS.md [skip ci] | +0 / −0 |
-| 01 Oct, 12:39 | Arjun Sridhar | [`fe13e11`](https://github.com/smooth-glitch/axi-react/commit/fe13e113c6ef58c430ac43a0979d1dd34ca994b3) docs: link the app and VPN instructions from the generated status page | +7 / −0 |
-| 01 Oct, 12:35 | connectum-status-bot | [`0d23e7f`](https://github.com/smooth-glitch/axi-react/commit/0d23e7f033d6e57a04abf72a2a359fc9a8715db3) docs: refresh STATUS.md [skip ci] | +0 / −0 |
