@@ -34,6 +34,13 @@ for n in $(seq 1 20); do if [ "$n" -le "$FILLED" ]; then BAR="${BAR}▰"; else B
   echo
   echo "**Connectum** is the AXI chat platform: a React SPA frontend plus an Erlang/OTP real-time chat backend, in this one repo."
   echo
+  echo "### Try the app"
+  echo
+  echo "- **App:** <https://10.0.2.146> (reachable on the office network only)"
+  echo "- **Working remotely?** You need VPN access to reach it. New team members: contact **AXPERT SUPPORT** (on Teams) to get your VPN config."
+  echo
+  echo "### First steps"
+  echo
   echo "1. Read the [README]($REPO_URL#readme), especially its *Start here, by role* table."
   echo "2. Skim the docs below, then clone the repo and follow the README's run instructions."
   echo "3. In the **Connectum dev group** on Teams, scroll up for the history of decisions. Ask whoever adds you to share chat history from the start."
