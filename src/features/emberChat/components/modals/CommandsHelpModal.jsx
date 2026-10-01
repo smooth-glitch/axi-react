@@ -4,7 +4,7 @@ import { COMMAND_CATEGORIES, DEFAULT_COMMANDS_CATALOG } from "../../data/hashCom
 export default function CommandsHelpModal({
   initialCommand = null,
   catalog = DEFAULT_COMMANDS_CATALOG,
-  currentUser = null,
+  _currentUser = null,
   onSelectCommand,
   onClose,
 }) {
@@ -103,19 +103,13 @@ export default function CommandsHelpModal({
       aria-modal="true"
       aria-labelledby="commands-directory-title"
     >
-      {/* Header */}
-      <div className="sandesh-modal-header">
+      {/* 1. Header */}
+      <div className="sandesh-modal-header commands-modal-header">
         <div className="modal-title-with-icon">
-          <div
-            className="new-group-icon-badge"
-            style={{
-              background: "rgba(255, 122, 89, 0.15)",
-              color: "var(--sandesh-coral-accent)",
-            }}
-          >
+          <div className="commands-header-badge">
             <span className="material-icons">terminal</span>
           </div>
-          <div>
+          <div className="commands-header-title-col">
             <h3 id="commands-directory-title">Sandesh #Commands Directory</h3>
             <span className="modal-subtitle">
               Complete index of {allCommands.length} chat, system &amp; workflow hash commands
@@ -124,22 +118,22 @@ export default function CommandsHelpModal({
         </div>
         <button
           type="button"
-          className="close-btn-3d"
+          className="close-btn-3d commands-close-btn"
           onClick={onClose}
           aria-label="Close commands dialog"
         >
-          ×
+          <span className="material-icons" style={{ fontSize: "20px" }}>close</span>
         </button>
       </div>
 
-      {/* Search Bar & Filters */}
+      {/* 2. Search Bar & Category Filters */}
       <div className="commands-filter-bar">
         <div className="commands-search-row">
-          <div className="new-group-input-box" style={{ flex: 1 }}>
-            <span className="material-icons field-icon">search</span>
+          <div className="commands-search-box">
+            <span className="material-icons search-input-icon">search</span>
             <input
               type="text"
-              className="new-group-input"
+              className="commands-search-input"
               placeholder="Search commands by name, alias, syntax or keywords..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -151,8 +145,9 @@ export default function CommandsHelpModal({
                 className="search-clear-btn"
                 onClick={() => setSearchQuery("")}
                 title="Clear search"
+                aria-label="Clear search"
               >
-                ✕
+                <span className="material-icons" style={{ fontSize: "16px" }}>close</span>
               </button>
             )}
           </div>
@@ -169,7 +164,8 @@ export default function CommandsHelpModal({
             onClick={() => setSelectedCategory("all")}
           >
             <span className="material-icons pill-cat-icon">apps</span>
-            <span>All Commands ({allCommands.length})</span>
+            <span>All Commands</span>
+            <span className="cmd-pill-count">{allCommands.length}</span>
           </button>
           {COMMAND_CATEGORIES.map((cat) => {
             const count = categoryCounts[cat.id] || 0;
@@ -178,7 +174,7 @@ export default function CommandsHelpModal({
               <button
                 key={cat.id}
                 type="button"
-                className={`cmd-cat-pill ${selectedCategory === cat.id ? "active" : ""}`}
+                className={`cmd-cat-pill cat-${cat.id} ${selectedCategory === cat.id ? "active" : ""}`}
                 onClick={() => setSelectedCategory(cat.id)}
               >
                 <span className="material-icons pill-cat-icon">{cat.icon}</span>
@@ -190,7 +186,7 @@ export default function CommandsHelpModal({
         </div>
       </div>
 
-      {/* Commands Scroll Body */}
+      {/* 3. Commands Scroll Body */}
       <div className="sandesh-modal-body commands-scroll-body">
         {filteredCommands.length === 0 ? (
           <div className="commands-empty-state">
@@ -200,12 +196,12 @@ export default function CommandsHelpModal({
               No hash command matched <strong>&ldquo;{searchQuery}&rdquo;</strong>
               {selectedCategory !== "all" ? ` in category "${selectedCategory}"` : ""}
             </p>
-            <div style={{ marginTop: "12px", display: "flex", gap: "8px" }}>
+            <div style={{ marginTop: "14px", display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
               {searchQuery && (
                 <button
                   type="button"
                   className="sandesh-btn-secondary-3d"
-                  style={{ fontSize: "12px", padding: "6px 14px" }}
+                  style={{ fontSize: "12px", padding: "7px 16px" }}
                   onClick={() => setSearchQuery("")}
                 >
                   Clear Search
@@ -215,7 +211,7 @@ export default function CommandsHelpModal({
                 <button
                   type="button"
                   className="sandesh-btn-secondary-3d"
-                  style={{ fontSize: "12px", padding: "6px 14px" }}
+                  style={{ fontSize: "12px", padding: "7px 16px" }}
                   onClick={() => setSelectedCategory("all")}
                 >
                   View All Categories
@@ -229,6 +225,7 @@ export default function CommandsHelpModal({
               const categoryObj = COMMAND_CATEGORIES.find(
                 (c) => c.id === cmd.uiCategory || c.id === cmd.category
               );
+              const catClass = `cat-${cmd.uiCategory || cmd.category || "help"}`;
               const isCopied = copiedCmd === cmd.name;
 
               return (
@@ -239,13 +236,13 @@ export default function CommandsHelpModal({
                       <span className="cmd-title">{cmd.name}</span>
                       {cmd.aliases && cmd.aliases.length > 0 && (
                         <span className="cmd-aliases">
-                          ({cmd.aliases.map((a) => `#${a}`).join(", ")})
+                          {cmd.aliases.map((a) => `#${a}`).join(", ")}
                         </span>
                       )}
                     </div>
                     <div className="command-tags-row">
                       {categoryObj && (
-                        <span className="cmd-cat-tag">
+                        <span className={`cmd-cat-tag ${catClass}`}>
                           {categoryObj.label}
                         </span>
                       )}
@@ -317,9 +314,9 @@ export default function CommandsHelpModal({
                         onSelectCommand?.(cmd);
                         onClose?.();
                       }}
-                      title={`Insert #${cmd.name} in chat`}
+                      title={`Insert #${cmd.name} into composer`}
                     >
-                      <span className="material-icons">play_arrow</span>
+                      <span className="material-icons" style={{ fontSize: "16px" }}>play_arrow</span>
                       <span>Use Command</span>
                     </button>
                   </div>
@@ -330,14 +327,17 @@ export default function CommandsHelpModal({
         )}
       </div>
 
-      {/* Footer */}
-      <div className="sandesh-modal-actions" style={{ padding: "14px 22px" }}>
-        <span style={{ fontSize: "12px", color: "var(--sandesh-text-muted)" }}>
-          Tip: You can type <code style={{ color: "var(--sandesh-coral-accent)", fontWeight: 700 }}>#</code> in the composer for quick autocompletion, or type <code style={{ color: "var(--sandesh-coral-accent)", fontWeight: 700 }}>#help</code> anytime.
-        </span>
+      {/* 4. Footer */}
+      <div className="commands-modal-footer">
+        <div className="commands-footer-tip">
+          <span className="material-icons footer-tip-icon">lightbulb</span>
+          <span>
+            Tip: Type <code className="footer-tip-code">#</code> in composer for autocomplete, or <code className="footer-tip-code">#help</code> to view all commands.
+          </span>
+        </div>
         <button
           type="button"
-          className="sandesh-btn-secondary-3d"
+          className="sandesh-btn-secondary-3d commands-modal-close-btn"
           onClick={onClose}
         >
           Close
