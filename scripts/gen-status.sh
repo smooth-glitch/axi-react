@@ -28,7 +28,7 @@ for n in $(seq 1 20); do if [ "$n" -le "$FILLED" ]; then BAR="${BAR}▰"; else B
   echo "# ⬡ Connectum · Live Status"
   echo
   echo "> Auto-generated on every push to \`main\`. Do not edit by hand."
-  echo "> Last updated: $(date -u +'%d %b %Y, %H:%M UTC') · commit [\`$(git rev-parse --short HEAD)\`]($REPO_URL/commit/$(git rev-parse HEAD))"
+  echo "> Last updated: $(TZ=Asia/Kolkata date +'%d %b %Y, %H:%M IST') · commit [\`$(git rev-parse --short HEAD)\`]($REPO_URL/commit/$(git rev-parse HEAD))"
   echo
   echo "## New here? Start here"
   echo
@@ -75,7 +75,7 @@ for n in $(seq 1 20); do if [ "$n" -le "$FILLED" ]; then BAR="${BAR}▰"; else B
   echo
   echo "| When | Who | Change | Diff |"
   echo "|---|---|---|---|"
-  git log --no-merges -n 25 --format='%H|%an|%ad|%s' --date=format:'%d %b' | while IFS='|' read -r H N D S; do
+  TZ=Asia/Kolkata git log --no-merges -n 25 --format='%H|%an|%ad|%s' --date=format-local:'%d %b, %H:%M' | while IFS='|' read -r H N D S; do
     read -r I X <<< "$(git show --numstat --format= "$H" | awk '$1 ~ /^[0-9]+$/ {i+=$1; d+=$2} END {print i+0, d+0}')"
     S=${S//|/\\|}
     echo "| $D | $N | [\`${H:0:7}\`]($REPO_URL/commit/$H) $S | +$I / −$X |"
