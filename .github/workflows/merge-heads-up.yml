@@ -1,18 +1,23 @@
-name: Main updated heads-up
+name: Main updated (Teams)
 
-# When something lands on main, post a Teams card telling devs to pull, plus a
-# per-branch dry-run of "merge main into this branch": which branches are clean,
-# which would conflict, in which files, who changed those files on main, and how
-# to resolve without losing anyone's work. Nothing is merged or pushed: the check
-# uses `git merge-tree`, which never touches a working tree.
+# The single Teams message for a push to main: what landed (stats + commits), a
+# reminder to pull, and a per-branch dry-run of "merge main into this branch":
+# which branches are clean, which would conflict, in which files, who changed
+# those files on main, and how to resolve without losing anyone's work.
+# Nothing is merged or pushed: the check uses `git merge-tree`, which never
+# touches a working tree. Branches already merged (incl. squash merges) are ignored.
 # Needs the repo secret TEAMS_WEBHOOK_URL; without it the job exits quietly.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
-  group: merge-heads-up
+  group: main-updated-teams
   cancel-in-progress: false
 
 jobs:
@@ -27,8 +32,10 @@ jobs:
       - name: Build and post the card
         env:
           WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SERVER: ${{ github.server_url }}
+          ACTOR: ${{ github.actor }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
         run: |
