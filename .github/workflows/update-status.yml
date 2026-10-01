@@ -1,0 +1,29 @@
+name: Update status page
+
+# Regenerates docs/STATUS.md (the page the pinned Teams message links to)
+# whenever something lands on main. The commit is pushed with GITHUB_TOKEN,
+# which does not trigger other workflows, so there is no loop.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/STATUS.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate docs/STATUS.md
+        run: bash scripts/gen-status.sh
+      - name: Commit if changed
+        run: |
+          git config user.name "connectum-status-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/STATUS.md
+          git diff --cached --quiet || (git commit -m "docs: refresh STATUS.md [skip ci]" && git push)
