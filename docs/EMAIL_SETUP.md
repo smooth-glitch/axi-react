@@ -17,6 +17,17 @@ The backend reads these from its environment. On the VM they live in `/etc/axi-c
 | `SMTP_FROM` | optional sender address if different from `SMTP_USER` |
 | `SMTP_FROM_NAME` | display name, default `Connectum` |
 | `APP_URL` | link put in the email, e.g. `https://10.0.2.146` |
+| `SMTP_RETRY_DELAYS_MS` | optional, default `0,5000,30000`: delays before each delivery attempt (first is immediate) |
+
+**Delivery.** Each email is sent in the background. A temporary failure (connection problem, `4xx` "try later") is
+retried up to twice more (see `SMTP_RETRY_DELAYS_MS`); a permanent refusal (`5xx`: bad address, wrong login) is logged
+once and not retried. The person is created either way, so a lost invitation can be re-sent:
+`users.resend_invite {username}` (administrators, or the person's own host; only for someone who has not signed in
+yet; at most once a minute per person).
+
+**What an invitation says.** The username, and how to sign in: enter the username (or email); the first time scan the
+QR code with an authenticator app; after that sign in with the app's 6-digit code. Only administrators have a password,
+so no password is mentioned.
 
 A person with no email address, or a server with SMTP unset, simply gets nothing sent (a warning is logged);
 it never blocks the request that triggered it. The password is never written to a log or returned by the API.
@@ -47,6 +58,6 @@ The service log shows each delivery: `journalctl -u axi-chat-backend | grep sd_n
 
 ## Security notes
 
-- The invitation text contains the person's temporary sign-in password, which they must change on first use.
+- Invitations contain no password (only administrators have one). The first sign-in is the authenticator enrolment.
 - `SANDESH_DEV_OTP=1` additionally returns each one-time code in the API response (for development). Turn it off
   on a shared deployment, otherwise the email adds nothing: anyone can read the code from the response.

@@ -144,7 +144,7 @@ access(A) when A =:= <<"test.sleep">>; A =:= <<"test.slow_sleep">> ->
 access(<<"admin.", _/binary>> = A) when A =:= <<"admin.unlock.start">>; A =:= <<"admin.unlock">> -> user;
 access(<<"admin.user.status">>) -> manage;
 access(<<"admin.", _/binary>>) -> admin;
-access(A) when A =:= <<"users.invite">>; A =:= <<"host.users">> -> host;
+access(A) when A =:= <<"users.invite">>; A =:= <<"users.resend_invite">>; A =:= <<"host.users">> -> host;
 access(A) ->
     case lists:member(A, user_actions()) of
         true -> user;
@@ -346,6 +346,32 @@ do(<<"host.transfer">>, Args, #{user := User}) ->
 
 do(<<"users.invite">>, Args, #{user := Actor}) ->
     invite_user(Args, Actor);
+
+%% Send the invitation email again to someone who has not signed in yet (lost email, wrong inbox, ...).
+%% Allowed for administrators and for the person's own host; at most one per person per minute.
+do(<<"users.resend_invite">>, Args, #{user := Actor}) ->
+    with_bin(<<"username">>, Args, fun(Name) ->
+        case sd_users:get(Name) of
+            undefined -> {error, not_found, <<"No such user.">>};
+            U ->
+                ActorName = maps:get(<<"username">>, Actor),
+                Allowed = sd_users:is_admin(Actor) orelse sd_util:get(<<"host">>, U) =:= ActorName,
+                case {Allowed, maps:get(<<"status">>, U, <<>>), sd_util:get(<<"lastLoginTs">>, U)} of
+                    {false, _, _} -> {error, forbidden, <<"You can only re-send an invitation to someone you host.">>};
+                    {_, S, _} when S =/= <<"active">> -> {error, invalid, <<"Only an active person can be re-invited.">>};
+                    {_, _, L} when L =/= null -> {error, invalid, <<"They have already signed in.">>};
+                    _ ->
+                        case sd_db:rate(["resend:", maps:get(<<"username">>, U)], 1, 60) of
+                            limited -> {error, rate_limited, <<"An invitation was sent a moment ago; try again in a minute.">>};
+                            ok ->
+                                sd_notify:deliver(invite, sd_util:take([<<"name">>, <<"email">>, <<"mobile">>], U),
+                                                  #{<<"text">> => invite_text(maps:get(<<"username">>, U), maps:get(<<"name">>, Actor))}),
+                                audit(Actor, <<"user.resend_invite">>, U, #{}),
+                                {ok, #{<<"sent">> => true, <<"to">> => maps:get(<<"email">>, U, null)}}
+                        end
+                end
+        end
+    end);
 
 %% ---- cards / sections / reminders -----------------------------------------------------------------------------
 do(<<"cards.list">>, Args, #{user := User}) ->
@@ -727,7 +753,10 @@ do(<<"admin.users.bulk_move">>, Args, #{user := Actor}) ->
 do(<<"admin.audit.list">>, Args, _Ctx) ->
     Filter = case maps:get(<<"username">>, Args, undefined) of U when is_binary(U), U =/= <<>> -> U; _ -> undefined end,
     Limit = int(maps:get(<<"limit">>, Args, 50), 50),
-    {ok, #{<<"entries">> => sd_audit:list(Filter, Limit)}};
+    Offset = max(0, int(maps:get(<<"offset">>, Args, 0), 0)),
+    {Entries, Total} = sd_audit:page(Filter, Limit, Offset),
+    {ok, #{<<"entries">> => Entries, <<"total">> => Total, <<"offset">> => Offset,
+           <<"hasMore">> => Offset + length(Entries) < Total}};
 do(<<"admin.user.status">>, Args, #{user := Actor}) ->
     with_bin(<<"username">>, Args, fun(Name) ->
         case maps:get(<<"active">>, Args, undefined) of
@@ -1037,6 +1066,15 @@ with_kind(Args, Fun) ->
 
 %% "Other users can be invited by providing ...": an administrator or a host
 %% (for users their scope covers). The inviter becomes the new user's host.
+%% What an invited person is told. Only administrators have a password; everyone else signs in with their
+%% username or email plus the authenticator app (or an emailed code), so say exactly that.
+invite_text(Username, InviterName) ->
+    <<"You've been invited to Sandesh by ", InviterName/binary, ".\r\n\r\n"
+      "Your username: ", Username/binary, "\r\n\r\n"
+      "How to sign in: open the app and enter your username (or your email address). The first time, the app shows a QR code: "
+      "scan it with an authenticator app (Google Authenticator or Microsoft Authenticator) and enter the 6-digit code it shows. "
+      "After that you sign in the same way, with a code from the app. You do not need a password.">>.
+
 invite_user(Args, Actor) ->
     ActorName = maps:get(<<"username">>, Actor),
     IsAdmin = sd_users:is_admin(Actor),
@@ -1069,12 +1107,7 @@ invite_user(Args, Actor) ->
                             sd_auth:issue_default_password(Username),
                             sd_notify:deliver(invite,
                                 sd_util:take([<<"name">>, <<"email">>, <<"mobile">>], User),
-                                #{<<"text">> => <<"You've been invited to Sandesh by ",
-                                                  (maps:get(<<"name">>, Actor))/binary,
-                                                  ". Sign in with your email or mobile number and the "
-                                                  "password \"Sandesh", Username/binary, "\" -- "
-                                                  "you'll be asked to change it and set up an "
-                                                  "authenticator app on first login.">>}),
+                                #{<<"text">> => invite_text(Username, maps:get(<<"name">>, Actor))}),
                             {ok, #{<<"user">> => User}};
                         Err -> Err
                     end
