@@ -1,0 +1,39 @@
+name: Main updated heads-up
+
+# When something lands on main, post a Teams card telling devs to pull, plus a
+# per-branch dry-run of "merge main into this branch": which branches are clean,
+# which would conflict, in which files, who changed those files on main, and how
+# to resolve without losing anyone's work. Nothing is merged or pushed: the check
+# uses `git merge-tree`, which never touches a working tree.
+# Needs the repo secret TEAMS_WEBHOOK_URL; without it the job exits quietly.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: merge-heads-up
+  cancel-in-progress: false
+
+jobs:
+  heads-up:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build and post the card
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "TEAMS_WEBHOOK_URL not set; skipping"; exit 0; fi
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          BASE_REF=origin/main bash scripts/merge-heads-up.sh
+          [ -f card.json ] || { echo "No card produced; nothing to post"; exit 0; }
+          curl -sS -f --retry 3 --retry-delay 5 --max-time 30 -X POST -H 'Content-Type: application/json' -d @card.json "$WEBHOOK"
