@@ -102,15 +102,37 @@ export default function CommandsHelpModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="commands-directory-title"
+      style={{ background: "#ffffff", overflow: "hidden" }}
     >
       {/* 1. Header */}
-      <div className="sandesh-modal-header commands-modal-header">
-        <div className="modal-title-with-icon">
-          <div className="commands-header-badge">
+      <div
+        className="sandesh-modal-header commands-modal-header"
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          width: "100%",
+          boxSizing: "border-box",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          className="modal-title-with-icon"
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: "14px",
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
+          <div className="commands-header-badge" style={{ flexShrink: 0 }}>
             <span className="material-icons">terminal</span>
           </div>
-          <div className="commands-header-title-col">
-            <h3 id="commands-directory-title">Sandesh #Commands Directory</h3>
+          <div className="commands-header-title-col" style={{ minWidth: 0, flex: 1 }}>
+            <h3 id="commands-directory-title" style={{ margin: 0 }}>Sandesh #Commands Directory</h3>
             <span className="modal-subtitle">
               Complete index of {allCommands.length} chat, system &amp; workflow hash commands
             </span>
@@ -121,6 +143,11 @@ export default function CommandsHelpModal({
           className="close-btn-3d commands-close-btn"
           onClick={onClose}
           aria-label="Close commands dialog"
+          style={{
+            marginLeft: "auto",
+            flexShrink: 0,
+            cursor: "pointer",
+          }}
         >
           <span className="material-icons" style={{ fontSize: "20px" }}>close</span>
         </button>

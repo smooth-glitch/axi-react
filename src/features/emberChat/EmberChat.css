@@ -6233,14 +6233,22 @@
 }
 
 .commands-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
   gap: 16px;
   padding: 18px 24px;
   background: linear-gradient(180deg, #ffffff 0%, #fffbf9 100%);
   border-bottom: 1px solid rgba(255, 122, 89, 0.12);
   flex-shrink: 0;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.commands-close-btn {
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
 }
 
 .commands-header-badge {
