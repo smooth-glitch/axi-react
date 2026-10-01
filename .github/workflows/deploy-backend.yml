@@ -37,6 +37,15 @@ jobs:
           chmod +x tools/rebar3
           ./tools/rebar3 compile
 
+      # The service runs from the stable path /opt/axi/current (WorkingDirectory in axi-chat-backend.service), NOT from the
+      # runner's workspace folder, whose name follows the repository's name. So moving or renaming the repository needs
+      # no edit on the VM: the first deploy from the new repository re-points this link at its checkout.
+      - name: Point the stable path /opt/axi/current at this checkout
+        run: |
+          sudo mkdir -p /opt/axi
+          sudo ln -sfn "$GITHUB_WORKSPACE" /opt/axi/current
+          echo "/opt/axi/current -> $(readlink /opt/axi/current)"
+
       - name: Restart the service
         run: sudo systemctl restart axi-chat-backend
 
