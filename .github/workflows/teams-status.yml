@@ -1,0 +1,37 @@
+name: Connectum Teams status
+
+# Posts a short status card to the "Connectum dev group" Teams chat on every
+# push. Needs the repo secret TEAMS_WEBHOOK_URL (a Teams "Workflows" webhook
+# for that chat). Without the secret the job exits quietly.
+on:
+  push:
+    branches: [main, feat/connectum-backend]
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post status card
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          COMMITS: ${{ toJson(github.event.commits) }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          COMPARE: ${{ github.event.compare }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "TEAMS_WEBHOOK_URL not set; skipping"; exit 0; fi
+          LINES=$(echo "$COMMITS" | jq -r '[.[]? | select((.message | startswith("Merge ")) | not) | "• " + (.message | split("\n")[0])] | .[:12] | join("\n\n")')
+          if [ -z "$LINES" ]; then echo "No commits to report"; exit 0; fi
+          jq -n --arg title "⬡ Connectum · $BRANCH updated" \
+                --arg who "Pushed by $ACTOR · $(date -u +'%d %b %Y')" \
+                --arg body "$LINES" --arg url "$COMPARE" '
+            {type:"message", attachments:[{contentType:"application/vnd.microsoft.card.adaptive",
+              content:{"$schema":"http://adaptivecards.io/schemas/adaptive-card.json", type:"AdaptiveCard", version:"1.4",
+                body:[
+                  {type:"TextBlock", text:$title, weight:"Bolder", size:"Large", color:"Accent"},
+                  {type:"TextBlock", text:$who, isSubtle:true, spacing:"None"},
+                  {type:"TextBlock", text:$body, wrap:true}],
+                actions:[{type:"Action.OpenUrl", title:"View changes", url:$url}]}}]}' > card.json
+          curl -sS -f -X POST -H 'Content-Type: application/json' -d @card.json "$WEBHOOK"
