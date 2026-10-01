@@ -34,7 +34,7 @@ jobs:
           grep -q '/opt/axi/current/' /etc/systemd/system/axi-chat-backend.service
       - name: Tools on the runner
         run: |
-          for t in gh git curl jq; do command -v $t >/dev/null && echo "ok $t" || { echo "::error::$t missing"; exit 1; }; done
+          for t in git curl jq npm node redis-cli; do command -v $t >/dev/null && echo "ok $t" || { echo "::error::$t missing"; exit 1; }; done
       - name: Post a test card to Teams
         env:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
