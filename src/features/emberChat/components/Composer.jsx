@@ -8,6 +8,7 @@ import {
   filterCatalogCommands,
 } from "../data/hashCommandsCatalog.js";
 import { sandeshSocket } from "../../../services/sandeshSocket.js";
+import { sandeshApi } from "../../../services/sandeshApi.js";
 
 function formatElapsed(seconds) {
   const m = Math.floor(seconds / 60);
@@ -489,51 +490,51 @@ export default function Composer({
     }
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (loadEv) => {
-        onAttachFile?.({
-          kind: "image",
-          fileName: file.name,
-          imageUrl: loadEv.target.result,
-        });
-        pushToast?.(`Photo "${file.name}" sent`);
-      };
-      reader.readAsDataURL(file);
-    } else if (file.type.startsWith("video/")) {
-      const reader = new FileReader();
-      reader.onload = (loadEv) => {
-        onAttachFile?.({
-          kind: "video",
-          fileName: file.name,
-          videoUrl: loadEv.target.result,
-        });
-        pushToast?.(`Video "${file.name}" sent`);
-      };
-      reader.readAsDataURL(file);
-    } else if (file.type.startsWith("audio/")) {
-      const reader = new FileReader();
-      reader.onload = (loadEv) => {
-        onAttachFile?.({
-          kind: "audio",
-          fileName: file.name,
-          audioUrl: loadEv.target.result,
-          duration: "Audio File",
-        });
-        pushToast?.(`Audio "${file.name}" sent`);
-      };
-      reader.readAsDataURL(file);
-    } else {
+    const fileSizeFormatted = file.size > 1024 * 1024
+      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+
+    let kind = "file";
+    if (file.type.startsWith("image/")) kind = "image";
+    else if (file.type.startsWith("video/")) kind = "video";
+    else if (file.type.startsWith("audio/")) kind = "audio";
+
+    pushToast?.(`Sharing "${file.name}"...`);
+
+    try {
+      const uploadRes = await sandeshApi.uploadAttachment(file);
       onAttachFile?.({
-        kind: "file",
+        kind,
         fileName: file.name,
-        fileSize: `${(file.size / 1024).toFixed(1)} KB`,
+        fileSize: fileSizeFormatted,
+        fileUrl: uploadRes.url,
+        fileType: file.type || uploadRes.type,
+        imageUrl: kind === "image" ? uploadRes.url : undefined,
+        videoUrl: kind === "video" ? uploadRes.url : undefined,
+        audioUrl: kind === "audio" ? uploadRes.url : undefined,
       });
-      pushToast?.(`Document "${file.name}" shared`);
+      pushToast?.(`Sent "${file.name}"`);
+    } catch (err) {
+      console.warn("Upload failed, using local file reader", err);
+      const reader = new FileReader();
+      reader.onload = (loadEv) => {
+        onAttachFile?.({
+          kind,
+          fileName: file.name,
+          fileSize: fileSizeFormatted,
+          fileUrl: loadEv.target.result,
+          fileType: file.type,
+          imageUrl: kind === "image" ? loadEv.target.result : undefined,
+          videoUrl: kind === "video" ? loadEv.target.result : undefined,
+          audioUrl: kind === "audio" ? loadEv.target.result : undefined,
+        });
+        pushToast?.(`Sent "${file.name}"`);
+      };
+      reader.readAsDataURL(file);
     }
     e.target.value = "";
   };
@@ -709,12 +710,12 @@ export default function Composer({
           />
         )}
 
-        {/* Hidden native file input */}
+        {/* Hidden native file input accepting any file format like WhatsApp */}
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
-          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
+          accept="*/*"
           style={{ display: "none" }}
           disabled={disabled}
         />

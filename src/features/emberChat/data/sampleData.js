@@ -79,7 +79,53 @@ export const smartPromptsByCategory = {
   ],
 };
 
-export const sampleEpisodes = [];
+export const sampleEpisodes = [
+  {
+    id: "ep-101",
+    chatId: "room-general",
+    title: "Q3 Strategic OKR Alignment",
+    status: "Active",
+    date: "Today at 11:30 AM",
+    summary: "Synchronizing quarterly milestones across cross-functional engineering, product, and enterprise delivery groups.",
+    lastMsg: "Priya: Updated metrics pushed to the dashboard.",
+  },
+  {
+    id: "ep-102",
+    chatId: "room-general",
+    title: "Infrastructure Migration & Resiliency Sprint",
+    status: "In Progress",
+    date: "Yesterday",
+    summary: "Transitioning high-throughput WebSocket message relays to low-latency distributed edge clusters.",
+    lastMsg: "Rahul: Multi-region failover tests succeeded.",
+  },
+  {
+    id: "ep-103",
+    chatId: "room-general",
+    title: "Enterprise Vendor Security & Compliance Review",
+    status: "Approved",
+    date: "Sep 28",
+    summary: "Annual ISO 27001 & SOC 2 compliance verification for third-party affiliate integrations.",
+    lastMsg: "Admin: Audit sign-off certificate issued.",
+  },
+  {
+    id: "ep-201",
+    chatId: "workspace",
+    title: "Daily Task Synchronization",
+    status: "Active",
+    date: "Today at 9:00 AM",
+    summary: "Automated tracking for morning workflow actions, pending sign-offs, and broadcast updates.",
+    lastMsg: "Workspace Assistant: 3 priority tasks require your action.",
+  },
+  {
+    id: "ep-202",
+    chatId: "workspace",
+    title: "Personal Workspace Backlog & Automation",
+    status: "Approved",
+    date: "Sep 29",
+    summary: "Configuring personalized quick prompt triggers and custom workflow webhooks.",
+    lastMsg: "Assistant: Automation rules validated successfully.",
+  },
+];
 
 export const messagesByChat = {
   "workspace": [

@@ -132,6 +132,71 @@ class SandeshApiService {
   }
 
   /**
+   * Upload an arbitrary file attachment (PDF, DOCX, XLSX, Video, Audio, ZIP, etc.)
+   * to the backend /upload service, returning its served URL and metadata.
+   */
+  async uploadAttachment(file) {
+    if (!file) throw new Error("No file selected.");
+    const MAX_SIZE = 25 * 1024 * 1024; // 25 MB max
+    if (file.size > MAX_SIZE) {
+      throw new Error("File too large. Maximum size is 25 MB.");
+    }
+
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+
+    const origins = [this.getServerOrigin(), ''];
+    for (const origin of origins) {
+      const uploadUrl = origin ? `${origin}/upload` : '/upload';
+      try {
+        const res = await fetch(uploadUrl, {
+          method: "POST",
+          body: fd,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.url) {
+            return {
+              url: data.url,
+              name: data.name || file.name,
+              size: data.size || file.size,
+              type: data.type || file.type || 'application/octet-stream',
+            };
+          }
+        }
+      } catch {
+        // try next origin or fallback
+      }
+    }
+
+    // Resilient fallback for local dev or offline mode:
+    // Read as Data URL so the file data is fully preserved and downloadable
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        resolve({
+          url: e.target.result,
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          isLocal: true,
+        });
+      };
+      reader.onerror = () => {
+        const fallbackUrl = URL.createObjectURL(file);
+        resolve({
+          url: fallbackUrl,
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          isLocal: true,
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
    * Device ID generation and persistence.
    * "The every 2 weeks re-check is now per DEVICE, not per account.
    * Start generating and persisting a deviceId (Flow 3) — without it, returning users get asked
@@ -477,3 +542,4 @@ class SandeshApiService {
 }
 
 export const sandeshApi = new SandeshApiService();
+export default sandeshApi;

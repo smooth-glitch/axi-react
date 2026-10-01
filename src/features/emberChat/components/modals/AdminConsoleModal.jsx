@@ -343,7 +343,9 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
     <div className="sandesh-modal-card-3d sandesh-admin-modal">
       <div className="sandesh-modal-header">
         <div className="modal-title-with-icon">
-          <span className="material-icons modal-header-icon admin-icon">admin_panel_settings</span>
+          <div className="admin-header-badge">
+            <span className="material-icons admin-badge-icon">admin_panel_settings</span>
+          </div>
           <div>
             <h3>Sandesh Administration Console</h3>
             <span className="modal-subtitle">Organization Setup • Directory • Host SPOC Management</span>
@@ -417,22 +419,28 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
             <div className="admin-section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
               <h4>All Registered Users ({adminData.users.length})</h4>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <input
-                  type="text"
-                  placeholder="Filter users..."
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: "14px",
-                    border: "1px solid rgba(0,0,0,0.1)",
-                    fontSize: "12px",
-                    background: "rgba(255,255,255,0.7)",
-                    outline: "none",
-                  }}
-                />
-                <button type="button" className="sandesh-btn-mini-primary" onClick={() => setActiveTab("invite")}>
-                  + Invite User
+                <div className="admin-search-glass">
+                  <span className="material-icons" style={{ fontSize: 16, color: "var(--sandesh-text-muted)" }}>search</span>
+                  <input
+                    type="text"
+                    placeholder="Filter users..."
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                  />
+                  {userSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setUserSearch("")}
+                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "var(--sandesh-text-muted)", padding: 0 }}
+                      title="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                <button type="button" className="admin-btn-action" onClick={() => setActiveTab("invite")}>
+                  <span className="material-icons" style={{ fontSize: 15 }}>person_add</span>
+                  <span>+ Invite User</span>
                 </button>
               </div>
             </div>
@@ -654,56 +662,76 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
         {!loading && !loadError && activeTab === "setup" && (
           <div className="admin-setup-grid">
             {[
-              { kind: "branches", title: "Branches", fields: ["name", "city", "country", "pin"] },
-              { kind: "departments", title: "Departments", fields: ["name", "description"] },
-              { kind: "designations", title: "Designations", fields: ["name", "description"] },
-            ].map(({ kind, title, fields }) => (
+              { kind: "branches", title: "Branches", icon: "domain", fields: ["name", "city", "country", "pin"] },
+              { kind: "departments", title: "Departments", icon: "corporate_fare", fields: ["name", "description"] },
+              { kind: "designations", title: "Designations", icon: "badge", fields: ["name", "description"] },
+            ].map(({ kind, title, icon, fields }) => (
               <div className="setup-card" key={kind}>
                 <div className="setup-card-header">
-                  <h5>{title} ({adminData[kind].length})</h5>
+                  <div className="setup-card-title-wrap">
+                    <div className="setup-card-icon-badge">
+                      <span className="material-icons">{icon}</span>
+                    </div>
+                    <h5>{title}</h5>
+                  </div>
+                  <span className="setup-card-count-pill">{adminData[kind].length}</span>
                 </div>
                 <ul className="setup-list">
-                  {adminData[kind].map((item) => (
-                    <li key={item.name}>
-                      <strong>{item.name}</strong>
-                      <span>
-                        {kind === "branches"
-                          ? [item.city, item.country, item.pin && `(${item.pin})`].filter(Boolean).join(", ")
-                          : item.description}
-                      </span>
-                      <button
-                        type="button"
-                        className="sandesh-btn-link"
-                        disabled={busy}
-                        onClick={() => deleteSetupItem(kind, item.name)}
-                      >
-                        Remove
-                      </button>
+                  {adminData[kind].length === 0 ? (
+                    <li className="setup-empty-state">
+                      <span className="material-icons setup-empty-icon">inventory_2</span>
+                      <span>No {title.toLowerCase()} configured</span>
                     </li>
-                  ))}
+                  ) : (
+                    adminData[kind].map((item) => (
+                      <li key={item.name} className="setup-list-item">
+                        <div className="setup-item-details">
+                          <strong className="setup-item-name">{item.name}</strong>
+                          <span className="setup-item-sub">
+                            {kind === "branches"
+                              ? [item.city, item.country, item.pin && `(${item.pin})`].filter(Boolean).join(", ")
+                              : item.description || "No description provided"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="setup-item-remove-btn"
+                          disabled={busy}
+                          onClick={() => deleteSetupItem(kind, item.name)}
+                          title={`Remove ${item.name}`}
+                        >
+                          <span className="material-icons">delete_outline</span>
+                          <span>Remove</span>
+                        </button>
+                      </li>
+                    ))
+                  )}
                 </ul>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     addSetupItem(kind);
                   }}
-                  style={{ display: "grid", gap: 6, marginTop: 8 }}
+                  className="setup-add-form"
                 >
-                  {fields.map((f) => (
-                    <div className="sandesh-input-box-3d" key={f}>
-                      <input
-                        type="text"
-                        placeholder={f === "pin" ? "PIN" : f[0].toUpperCase() + f.slice(1)}
-                        value={setupDraft[kind][f]}
-                        required={f !== "description"}
-                        onChange={(e) =>
-                          setSetupDraft((prev) => ({ ...prev, [kind]: { ...prev[kind], [f]: e.target.value } }))
-                        }
-                      />
-                    </div>
-                  ))}
-                  <button type="submit" className="sandesh-btn-mini-primary" disabled={busy}>
-                    + Add
+                  <div className="setup-inputs-stack">
+                    {fields.map((f) => (
+                      <div className="sandesh-input-box-3d" key={f}>
+                        <input
+                          type="text"
+                          placeholder={f === "pin" ? "PIN Code" : f[0].toUpperCase() + f.slice(1)}
+                          value={setupDraft[kind][f]}
+                          required={f !== "description"}
+                          onChange={(e) =>
+                            setSetupDraft((prev) => ({ ...prev, [kind]: { ...prev[kind], [f]: e.target.value } }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <button type="submit" className="admin-btn-add" disabled={busy}>
+                    <span className="material-icons" style={{ fontSize: 16 }}>add</span>
+                    <span>Add {title.slice(0, -1)}</span>
                   </button>
                 </form>
               </div>

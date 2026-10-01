@@ -23,13 +23,10 @@ import {
   Copy,
   Download,
   RotateCcw,
-  Smartphone,
   AlertTriangle,
   ExternalLink,
   Laptop,
   Check,
-  RefreshCw,
-  Trash2,
   X,
 } from "lucide-react";
 
@@ -2483,88 +2480,6 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
             </form>
           )}
 
-          {/* ────────────────────────────────────────────────────────────── */}
-          {/* DEVICE ID TESTING BAR & FOOTER */}
-          {/* ────────────────────────────────────────────────────────────── */}
-          <div className="sandesh-device-bar">
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <Smartphone size={14} color="var(--sandesh-coral-accent)" />
-              <span>Device:</span>
-              <span className="sandesh-device-id-mono" title={deviceId}>
-                {deviceId.slice(0, 8)}...{deviceId.slice(-4)}
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className="sandesh-dev-chip"
-                onClick={() => {
-                  const fresh = sandeshApi.rotateDeviceId();
-                  setDeviceId(fresh);
-                  setSuccessNotice("Rotated to fresh Device ID! Next login tests unrecognised device flow (Case D).");
-                }}
-                title="Rotate Device ID to test Case D without waiting 14 days"
-              >
-                <RefreshCw size={11} />
-                <span>Rotate Device</span>
-              </button>
-              <button
-                type="button"
-                className="sandesh-dev-chip"
-                onClick={() => {
-                  try {
-                    localStorage.removeItem("sandesh_session_user");
-                    localStorage.removeItem("sandesh_device_id");
-                    sessionStorage.clear();
-                  } catch {
-                    // ignore
-                  }
-                  const freshDevId = sandeshApi.rotateDeviceId();
-                  setDeviceId(freshDevId);
-                  setSignInIdentifier("");
-                  setSignInPassword("");
-                  setAdminOrg("");
-                  setAdminName("");
-                  setAdminUsername("");
-                  setAdminEmail("");
-                  setAdminMobile("");
-                  setAdminSetupToken("");
-                  setRegName("");
-                  setRegUsername("");
-                  setRegEmail("");
-                  setRegMobile("");
-                  setRegPassword("");
-                  setErrorMsg("");
-                  setSelfRegSuccess(null);
-                  setTotpEnrollment(null);
-                  setEmailEnrollment(null);
-                  setTotpChallenge(null);
-                  setEmailChallenge(null);
-                  setRecoveryReveal(null);
-                  setAdminPasswordChange(null);
-                  sandeshApi.getPublic().then((res) => {
-                    if (res.ok && res.data) {
-                      setPublicData(res.data);
-                      if (res.data.setupDone) {
-                        setActiveTab("signin");
-                      } else {
-                        setActiveTab("first_admin");
-                      }
-                    }
-                  });
-                  setSuccessNotice("Local cache and session data cleared successfully.");
-                }}
-                title="Clear all stored session data, cached forms, and device tokens"
-              >
-                <Trash2 size={11} />
-                <span>Clear Cache &amp; Reset</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="sandesh-auth-footer">
-            <span>Powered by Sandesh Enterprise • Secured with Erlang/OTP real-time core</span>
-          </div>
         </div>
       </div>
 
