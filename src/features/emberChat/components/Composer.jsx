@@ -84,9 +84,13 @@ export default function Composer({
   useEffect(() => {
     if (initialText) {
       setText(initialText);
-      textareaRef.current?.focus();
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.style.height = "auto";
+      }
+      updateMenuState(initialText, initialText.length);
     }
-  }, [initialText]);
+  }, [initialText, updateMenuState]);
 
   // Sync mediaPanelConfig if opened externally (e.g. via #gif or #sticker command)
   useEffect(() => {

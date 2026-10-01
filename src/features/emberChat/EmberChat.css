@@ -6161,21 +6161,60 @@
 }
 
 /* 2. Commands Help Center Modal */
-.commands-help-search {
+.sandesh-commands-help-modal {
+  width: 92vw;
+  max-width: 880px;
+  height: 86vh;
+  max-height: 860px;
+  display: flex;
+  flex-direction: column;
+}
+
+.commands-filter-bar {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid rgba(255, 122, 89, 0.1);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(8px);
+}
+
+.commands-search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 14px 22px 8px 22px;
 }
 
-.commands-help-categories {
+.commands-count-indicator {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--sandesh-coral-accent);
+  background: rgba(255, 122, 89, 0.12);
+  padding: 6px 12px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.commands-help-categories,
+.commands-categories-scroll {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 22px 14px 22px;
+  padding: 6px 22px 14px 22px;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 122, 89, 0.2) transparent;
 }
 
-.commands-help-categories::-webkit-scrollbar {
-  display: none;
+.commands-help-categories::-webkit-scrollbar,
+.commands-categories-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.commands-help-categories::-webkit-scrollbar-thumb,
+.commands-categories-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 122, 89, 0.25);
+  border-radius: 4px;
 }
 
 .cmd-cat-pill {
@@ -6185,26 +6224,42 @@
   padding: 6px 14px;
   border-radius: 9999px;
   border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.75);
   font-size: 12px;
   font-weight: 600;
   color: var(--sandesh-text-muted);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: all 0.16s ease;
+  user-select: none;
 }
 
 .cmd-cat-pill:hover {
   background: #fff;
   color: var(--sandesh-text-main);
   transform: translateY(-1px);
+  border-color: rgba(255, 122, 89, 0.25);
 }
 
 .cmd-cat-pill.active {
   background: var(--sandesh-coral-grad);
   color: #fff;
   border-color: transparent;
-  box-shadow: var(--sandesh-shadow-pill);
+  box-shadow: 0 4px 14px rgba(255, 122, 89, 0.32);
+}
+
+.cmd-pill-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.07);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  margin-left: 2px;
+}
+
+.cmd-cat-pill.active .cmd-pill-count {
+  background: rgba(255, 255, 255, 0.28);
+  color: #fff;
 }
 
 .pill-cat-icon {
@@ -6212,130 +6267,318 @@
 }
 
 .commands-scroll-body {
-  max-height: 440px;
+  flex: 1;
   overflow-y: auto;
-  padding: 10px 22px;
+  padding: 16px 22px;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .commands-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 14px;
 }
 
 .command-card-3d {
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 16px;
-  padding: 14px;
-  box-shadow: 0 4px 14px rgba(220, 110, 65, 0.06);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 6px 18px rgba(220, 110, 65, 0.07), inset 0 1px 1px rgba(255, 255, 255, 0.8);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  transition: all 0.18s ease;
+  gap: 10px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
 }
 
 .command-card-3d:hover {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.94);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(220, 110, 65, 0.14);
+  box-shadow: 0 12px 28px rgba(220, 110, 65, 0.16), inset 0 1px 1px #fff;
+  border-color: rgba(255, 122, 89, 0.25);
 }
 
 .command-card-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .command-name-badge {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .command-name-badge .cmd-hash {
   font-weight: 800;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--sandesh-coral-accent);
 }
 
 .command-name-badge .cmd-title {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--sandesh-text-main);
+  letter-spacing: -0.2px;
 }
 
 .command-name-badge .cmd-aliases {
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--sandesh-text-muted);
+}
+
+.command-tags-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cmd-cat-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--sandesh-coral-accent);
+  background: rgba(255, 122, 89, 0.1);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
 }
 
 .cmd-req-badge {
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 9999px;
+  white-space: nowrap;
 }
 
 .cmd-req-badge.req-admin {
   background: rgba(255, 59, 48, 0.12);
   color: #ff3b30;
+  border: 1px solid rgba(255, 59, 48, 0.2);
 }
 
 .cmd-req-badge.req-host {
   background: rgba(0, 122, 255, 0.12);
   color: #007aff;
+  border: 1px solid rgba(0, 122, 255, 0.2);
 }
 
 .command-card-desc {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--sandesh-text-muted);
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.command-card-usage-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.command-card-usage-wrap .command-card-usage {
+  flex: 1;
 }
 
 .command-card-usage {
   background: rgba(0, 0, 0, 0.04);
-  padding: 5px 8px;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  overflow-x: auto;
 }
 
 .command-card-usage code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11.5px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--sandesh-text-main);
+  white-space: nowrap;
+}
+
+.cmd-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.cmd-copy-btn:hover {
+  background: #fff;
+  color: var(--sandesh-coral-accent);
+  border-color: rgba(255, 122, 89, 0.35);
+  box-shadow: 0 2px 8px rgba(255, 122, 89, 0.15);
+}
+
+.cmd-args-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 10px;
+  border: 1px dashed rgba(0, 0, 0, 0.07);
+}
+
+.cmd-args-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--sandesh-text-subtle);
+}
+
+.cmd-args-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmd-arg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.cmd-arg-chip.arg-req {
+  background: rgba(255, 122, 89, 0.09);
+  border: 1px solid rgba(255, 122, 89, 0.22);
+  color: var(--sandesh-text-main);
+}
+
+.cmd-arg-chip.arg-opt {
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  color: var(--sandesh-text-muted);
+}
+
+.arg-chip-name {
+  font-weight: 700;
+}
+
+.arg-chip-type {
+  font-size: 10px;
+  color: var(--sandesh-text-muted);
+  opacity: 0.9;
+}
+
+.arg-req-mark {
+  color: #ff3b30;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.arg-opt-mark {
+  font-size: 9px;
+  color: var(--sandesh-text-subtle);
+  text-transform: uppercase;
 }
 
 .command-card-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.cmd-card-category-hint {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sandesh-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .cmd-run-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 12px;
-  border-radius: 8px;
+  padding: 6px 14px;
+  border-radius: 10px;
   border: none;
   background: var(--sandesh-coral-grad);
   color: #fff;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(255, 122, 89, 0.3);
-  transition: transform 0.15s ease;
+  box-shadow: 0 3px 10px rgba(255, 122, 89, 0.32);
+  transition: all 0.16s ease;
+  user-select: none;
 }
 
 .cmd-run-btn:hover {
   transform: translateY(-1px);
+  box-shadow: 0 5px 16px rgba(255, 122, 89, 0.42);
+}
+
+.cmd-run-btn:active {
+  transform: translateY(0);
+}
+
+.commands-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.commands-empty-state .empty-icon {
+  font-size: 48px;
+  color: var(--sandesh-text-subtle);
+  margin-bottom: 12px;
+}
+
+.commands-empty-state h4 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--sandesh-text-main);
+  margin: 0 0 6px 0;
+}
+
+.commands-empty-state p {
+  font-size: 13px;
+  color: var(--sandesh-text-muted);
+  margin: 0;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .sandesh-commands-help-modal {
+    width: 96vw;
+    height: 92vh;
+    max-height: 92vh;
+  }
+  .commands-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* 3. Directory User Lists & Cards (Users, Hosts, Groups, People, Inbox) */

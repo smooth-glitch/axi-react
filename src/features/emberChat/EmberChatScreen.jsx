@@ -21,6 +21,7 @@ import ApprovalsModal from "./components/modals/ApprovalsModal.jsx";
 import HostedUsersModal from "./components/modals/HostedUsersModal.jsx";
 import NotificationsModal from "./components/modals/NotificationsModal.jsx";
 import CardsModal from "./components/modals/CardsModal.jsx";
+import CommandsHelpModal from "./components/modals/CommandsHelpModal.jsx";
 import { parseCommandLine, DEFAULT_COMMANDS_CATALOG } from "./data/hashCommandsCatalog.js";
 import SandeshLoginScreen from "./components/SandeshLoginScreen.jsx";
 import ToastContainer from "./components/Toast.jsx";
@@ -1960,9 +1961,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
-    // 9. Help
+    // 9. Help & Command Directory
     if (cmd === "help" || cmd === "commands") {
-      pushToast("Type # in chat composer to view and use live commands.");
+      setModalParam(rest || null);
+      setModal("commands_help");
       return;
     }
   };
@@ -3122,6 +3124,23 @@ export function EmberChatScreen({ onOpenAiChat }) {
                   setForwardTargetMsg(null);
                 }}
                 onForward={handleForwardMessage}
+              />
+            )}
+            {modal === "commands_help" && (
+              <CommandsHelpModal
+                initialCommand={modalParam}
+                catalog={catalog}
+                currentUser={currentUser}
+                onSelectCommand={(cmd) => {
+                  setComposerPrefill(`#${cmd.name} `);
+                  setTimeout(() => setComposerPrefill(""), 300);
+                  setModal(null);
+                  setModalParam(null);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
               />
             )}
           </ModalLayer>
