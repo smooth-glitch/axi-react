@@ -2714,6 +2714,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
           messages={messages}
           userCategory={currentUser.category || "employee"}
           isAdmin={currentUser.isAdmin}
+          canApprove={!!(currentUser.isAdmin || currentUser.isHost)}
           onMenuClick={() => {
             if (activeChatId === "workspace") {
               setChatsSliderOpen((v) => !v);

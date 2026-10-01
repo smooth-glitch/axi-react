@@ -139,33 +139,34 @@ export default function Sidebar({
             </div>
           </div>
           <div className="user-actions-right">
+            {/* Hosts approve the sign-ups of the people they cover, so they need this too (admins can approve anything). */}
+            {(me.isAdmin || me.isHost) && (
+              <button
+                type="button"
+                className="sandesh-icon-btn-3d"
+                onClick={onOpenApprovals}
+                title={`User Approvals ${pendingApprovalsCount > 0 ? `(${pendingApprovalsCount} waiting)` : ""}`}
+                aria-label="User approvals"
+                style={{ position: "relative" }}
+              >
+                <span className="material-icons" style={{ color: pendingApprovalsCount > 0 ? "var(--sandesh-coral-accent)" : "inherit" }}>
+                  how_to_reg
+                </span>
+                {pendingApprovalsCount > 0 && (
+                  <span className="sandesh-sidebar-pulse-dot">{pendingApprovalsCount}</span>
+                )}
+              </button>
+            )}
             {me.isAdmin && (
-              <>
-                <button
-                  type="button"
-                  className="sandesh-icon-btn-3d"
-                  onClick={onOpenApprovals}
-                  title={`User Approvals ${pendingApprovalsCount > 0 ? `(${pendingApprovalsCount} waiting)` : ""}`}
-                  aria-label="User approvals"
-                  style={{ position: "relative" }}
-                >
-                  <span className="material-icons" style={{ color: pendingApprovalsCount > 0 ? "var(--sandesh-coral-accent)" : "inherit" }}>
-                    how_to_reg
-                  </span>
-                  {pendingApprovalsCount > 0 && (
-                    <span className="sandesh-sidebar-pulse-dot">{pendingApprovalsCount}</span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="sandesh-icon-btn-3d"
-                  onClick={onOpenAdminConsole}
-                  title="Open Sandesh Admin Console"
-                  aria-label="Admin console"
-                >
-                  <span className="material-icons">settings</span>
-                </button>
-              </>
+              <button
+                type="button"
+                className="sandesh-icon-btn-3d"
+                onClick={onOpenAdminConsole}
+                title="Open Sandesh Admin Console"
+                aria-label="Admin console"
+              >
+                <span className="material-icons">settings</span>
+              </button>
             )}
             <button
               type="button"
