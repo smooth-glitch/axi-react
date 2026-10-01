@@ -1,8 +1,9 @@
 name: Connectum Teams status
 
-# Posts a short status card to the "Connectum dev group" Teams chat on every
-# push. Needs the repo secret TEAMS_WEBHOOK_URL (a Teams "Workflows" webhook
-# for that chat). Without the secret the job exits quietly.
+# Posts a detailed status card to the "Connectum dev group" Teams chat on every
+# push: who pushed, each commit (author, hash link, files, +/-, description),
+# the areas touched and totals. Needs the repo secret TEAMS_WEBHOOK_URL (a
+# Teams "Workflows" webhook for that chat). Without it the job exits quietly.
 on:
   push:
     branches: [main, feat/connectum-backend]
@@ -12,26 +13,108 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Post status card
         env:
           WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          COMMITS: ${{ toJson(github.event.commits) }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           ACTOR: ${{ github.actor }}
-          COMPARE: ${{ github.event.compare }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          SERVER: ${{ github.server_url }}
         run: |
           if [ -z "$WEBHOOK" ]; then echo "TEAMS_WEBHOOK_URL not set; skipping"; exit 0; fi
-          LINES=$(echo "$COMMITS" | jq -r '[.[]? | select((.message | startswith("Merge ")) | not) | "• " + (.message | split("\n")[0])] | .[:12] | join("\n\n")')
-          if [ -z "$LINES" ]; then echo "No commits to report"; exit 0; fi
-          jq -n --arg title "⬡ Connectum · $BRANCH updated" \
-                --arg who "Pushed by $ACTOR · $(date -u +'%d %b %Y')" \
-                --arg body "$LINES" --arg url "$COMPARE" '
+
+          # Commit range: the push, or the last 5 commits for new branches / force pushes / manual runs.
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            RANGE="$BEFORE..$AFTER"
+            COMPARE="$SERVER/$REPO/compare/${BEFORE:0:7}...${AFTER:0:7}"
+          else
+            RANGE="-5 $AFTER"
+            COMPARE="$SERVER/$REPO/commits/$BRANCH"
+          fi
+
+          # Non-merge commits, oldest first, capped at 10 for the card.
+          HASHES=$(git rev-list --no-merges --reverse $RANGE)
+          TOTAL=$(echo "$HASHES" | grep -c . || true)
+          if [ "$TOTAL" -eq 0 ]; then echo "No commits to report"; exit 0; fi
+          SHOWN=$(echo "$HASHES" | tail -n 10)
+
+          # Which part of the project does a path belong to?
+          area() {
+            case "$1" in
+              axi-chat-backend/*) echo "Backend" ;;
+              web/*|src/*|components/*|public/*|index.html) echo "Frontend" ;;
+              docs/*|*.md) echo "Docs" ;;
+              .github/*|ops/*|nginx/*|scripts/*) echo "CI / DevOps" ;;
+              e2e/*|tests/*) echo "Tests" ;;
+              *) echo "Other" ;;
+            esac
+          }
+
+          COMMITS_JSON='[]'
+          ALL_FILES=$(mktemp)
+          for H in $SHOWN; do
+            NAME=$(git show -s --format=%an "$H")
+            DATE=$(git show -s --format=%ad --date=format:'%d %b %H:%M' "$H")
+            SUBJECT=$(git show -s --format=%s "$H")
+            # First 3 non-empty lines of the body, as the description.
+            BODY=$(git show -s --format=%b "$H" | grep -Evi '^(Co-Authored-By|Claude-Session|Signed-off-by|Reviewed-by):' | grep -v '^$' | head -n 3 || true)
+            STAT=$(git show --shortstat --format= "$H" | tr -s ' ' | sed 's/^ //')
+            git show --name-only --format= "$H" >> "$ALL_FILES"
+            AREAS=$(git show --name-only --format= "$H" | while read -r F; do [ -n "$F" ] && area "$F"; done | sort -u | paste -sd ', ' -)
+            COMMITS_JSON=$(echo "$COMMITS_JSON" | jq --arg h "${H:0:7}" --arg url "$SERVER/$REPO/commit/$H" \
+              --arg name "$NAME" --arg date "$DATE" --arg subject "$SUBJECT" --arg body "$BODY" \
+              --arg stat "$STAT" --arg areas "$AREAS" \
+              '. + [{h:$h,url:$url,name:$name,date:$date,subject:$subject,body:$body,stat:$stat,areas:$areas}]')
+          done
+
+          # Totals across the whole push.
+          FILES_N=$(sort -u "$ALL_FILES" | grep -c . || true)
+          AUTHORS=$(for H in $HASHES; do git show -s --format=%an "$H"; done | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "%s (%s), ", $0, c}' | sed 's/, $//')
+          AREA_SUMMARY=$(sort -u "$ALL_FILES" | while read -r F; do [ -n "$F" ] && area "$F"; done | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "%s (%s files), ", $0, c}' | sed 's/, $//')
+          TOTALSTAT=$(git diff --shortstat $( [ "${RANGE#-}" != "$RANGE" ] && echo "${AFTER}~$TOTAL $AFTER" || echo "${RANGE/../ }" ) 2>/dev/null | sed 's/^ //' || true)
+
+          jq -n --argjson commits "$COMMITS_JSON" \
+            --arg title "⬡ Connectum · $BRANCH updated" \
+            --arg branchUrl "$SERVER/$REPO/tree/$BRANCH" --arg branch "$BRANCH" \
+            --arg actor "$ACTOR" --arg actorUrl "$SERVER/$ACTOR" \
+            --arg when "$(date -u +'%d %b %Y, %H:%M UTC')" \
+            --arg total "$TOTAL" --arg files "$FILES_N" --arg authors "$AUTHORS" \
+            --arg areas "$AREA_SUMMARY" --arg totalstat "$TOTALSTAT" --arg compare "$COMPARE" '
+            def commitBlock: {
+              type:"Container", separator:true, spacing:"Medium", items:(
+                [
+                  {type:"TextBlock", text:("**" + .subject + "**"), wrap:true},
+                  {type:"TextBlock", isSubtle:true, spacing:"None", wrap:true,
+                   text:("[" + .h + "](" + .url + ") · " + .name + " · " + .date + (if .areas != "" then " · " + .areas else "" end))}
+                ]
+                + (if .body != "" then [{type:"TextBlock", text:.body, wrap:true, spacing:"Small", size:"Small"}] else [] end)
+                + (if .stat != "" then [{type:"TextBlock", text:.stat, isSubtle:true, size:"Small", spacing:"None", wrap:true}] else [] end)
+              )
+            };
             {type:"message", attachments:[{contentType:"application/vnd.microsoft.card.adaptive",
               content:{"$schema":"http://adaptivecards.io/schemas/adaptive-card.json", type:"AdaptiveCard", version:"1.4",
-                body:[
-                  {type:"TextBlock", text:$title, weight:"Bolder", size:"Large", color:"Accent"},
-                  {type:"TextBlock", text:$who, isSubtle:true, spacing:"None"},
-                  {type:"TextBlock", text:$body, wrap:true}],
-                actions:[{type:"Action.OpenUrl", title:"View changes", url:$url}]}}]}' > card.json
+                body:(
+                  [
+                    {type:"TextBlock", text:$title, weight:"Bolder", size:"Large", color:"Accent", wrap:true},
+                    {type:"FactSet", facts:([
+                      {title:"Pushed by", value:("[" + $actor + "](" + $actorUrl + ")")},
+                      {title:"Branch", value:("[" + $branch + "](" + $branchUrl + ")")},
+                      {title:"When", value:$when},
+                      {title:"Commits", value:$total},
+                      {title:"Files changed", value:$files},
+                      {title:"Authors", value:$authors},
+                      {title:"Areas", value:$areas}
+                    ] + (if $totalstat != "" then [{title:"Overall", value:$totalstat}] else [] end))}
+                  ]
+                  + ($commits | map(commitBlock))
+                  + (if ($total | tonumber) > 10 then [{type:"TextBlock", isSubtle:true, wrap:true, text:("+" + (($total | tonumber) - 10 | tostring) + " older commits not shown. Use the button below for the full list.")}] else [] end)
+                ),
+                actions:[{type:"Action.OpenUrl", title:"View full changes", url:$compare}]}}]}' > card.json
+
           curl -sS -f -X POST -H 'Content-Type: application/json' -d @card.json "$WEBHOOK"
