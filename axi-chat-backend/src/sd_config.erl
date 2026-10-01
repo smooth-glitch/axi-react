@@ -23,7 +23,7 @@
 -export([visible_tstructs/1, find_tstruct_name/2, list_tstructs/0, get_tstruct/1, save_tstruct/1, delete_tstruct/1,
          list_options/0, save_option/1, delete_option/1, options_for/1, option_categories/0, option_categories_for/2, options_page/2, option_types/0,
          list_appconns/0, save_appconn/1, delete_appconn/1, appconn_raw/1, safe_path/1,
-         tstruct_for_user/2, submit/4, list_submissions/2, search_records/2, check_values/2, validate_fields/1, get_option/1, run_option/3,
+         tstruct_for_user/2, submit/4, list_submissions/2, list_submissions_page/2, search_records/2, check_values/2, validate_fields/1, get_option/1, run_option/3,
          update_submission/3, delete_submission/2,
          list_user_tstructs/0, get_user_tstruct/1, save_user_tstruct/2, update_user_tstruct/2,
          delete_user_tstruct/2, submit_user_tstruct/4, applies/2, applies/3, eval/2, valid_cond/2, validate_applicable/1,
@@ -767,43 +767,84 @@ norm_meta(null) -> undefined;
 norm_meta(M) when is_map(M) -> M;
 norm_meta(_) -> invalid_meta.
 
-%% Args (all optional): #{<<"tstruct">> => Name, <<"ref">> => Ref}.
-%%  - neither given: the user's own submissions plus those from users they
-%%    host, newest first (unchanged default behaviour).
-%%  - tstruct given (with or without ref): every submission of that
-%%    structure the *caller* is allowed to see (their own, or ones made by
-%%    someone they host, or any if admin) -- still scoped, just indexed
-%%    differently since it's no longer keyed off one user's own set.
+%% Args (all optional): #{<<"tstruct">> => Name, <<"ref">> => Ref, <<"limit">> => 1..500 (default 500), <<"offset">> => N}.
+%%  - neither tstruct nor ref: the user's own submissions plus those from the people they host (right now),
+%%    newest first.
+%%  - tstruct given (with or without ref): the same set narrowed to that structure; an administrator sees
+%%    every submission of it.
+%% Paged exactly: nothing is dropped after the newest N. The indexes are combined and intersected inside
+%% Redis (ZUNIONSTORE / ZINTERSTORE) BEFORE paging, so a person's older submissions of a busy form can no
+%% longer fall off the end of an organisation-wide "newest 200" window the way they used to.
 list_submissions(User, Args) ->
-    Username = maps:get(<<"username">>, User),
-    TName = case sd_util:get(<<"tstruct">>, Args, undefined) of
-                RawT when is_binary(RawT), RawT =/= <<>> -> key(RawT);
-                _ -> undefined
-            end,
+    maps:get(<<"submissions">>, list_submissions_page(User, Args)).
+
+list_submissions_page(User, Args) ->
+    TKey = case sd_util:get(<<"tstruct">>, Args, undefined) of
+               RawT when is_binary(RawT), RawT =/= <<>> -> key(RawT);
+               _ -> undefined
+           end,
     Ref = case sd_util:get(<<"ref">>, Args, undefined) of
               RawR when is_binary(RawR), RawR =/= <<>> -> RawR;
               _ -> undefined
           end,
-    Ids = case {TName, Ref} of
-              {undefined, _} -> sd_db:zrevrange("sd:subs:u:" ++ sd_util:s(Username), 0, 99);
-              {TK, undefined} -> sd_db:zrevrange("sd:subs:t:" ++ TK, 0, 199);
-              {TK, RV} -> sd_db:zrevrange("sd:subs:tr:" ++ TK ++ ":" ++ sd_util:s(RV), 0, 199)
-          end,
-    Subs = [S || B <- Ids, S <- [sd_db:hget_json("sd:subs", binary_to_list(B))], is_map(S)],
-    case TName of
-        undefined -> Subs; %% sd:subs:u:<user> is already correctly scoped
-        _ -> [S || S <- Subs, can_see_submission(User, S)]
+    Limit = clamp(num_arg(sd_util:get(<<"limit">>, Args, undefined)), 1, 500, 500),
+    Offset = clamp(num_arg(sd_util:get(<<"offset">>, Args, undefined)), 0, 100000, 0),
+    {Ids, Total} = candidate_ids(User, TKey, Ref, Offset, Limit + 1),
+    Subs = [S || B <- Ids, S <- [sd_db:hget_json("sd:subs", binary_to_list(B))], is_map(S), can_see_submission(User, S)],
+    Page = lists:sublist(Subs, Limit),
+    #{<<"submissions">> => Page, <<"total">> => Total, <<"offset">> => Offset, <<"limit">> => Limit,
+      <<"hasMore">> => length(Ids) > Limit orelse Offset + length(Page) < Total}.
+
+%% Ids (newest first) of what User may see, narrowed by structure key / ref, plus how many match in total.
+candidate_ids(User, TKey, Ref, Offset, Count) ->
+    Username = maps:get(<<"username">>, User),
+    StructKey = case {TKey, Ref} of
+                    {undefined, _} -> undefined;
+                    {TK, undefined} -> "sd:subs:t:" ++ TK;
+                    {TK, RV} -> "sd:subs:tr:" ++ TK ++ ":" ++ sd_util:s(RV)
+                end,
+    case {sd_users:is_admin(User), StructKey} of
+        {true, SK} when SK =/= undefined ->
+            %% Administrators see everything of a structure: page its own index directly.
+            {sd_db:zrevrange(SK, Offset, Offset + Count - 1), zcard(SK)};
+        _ ->
+            Hosted = ["sd:subs:u:" ++ sd_util:s(maps:get(<<"username">>, H)) || H <- sd_users:users_of_host(Username)],
+            Sources = ["sd:subs:u:" ++ sd_util:s(Username) | Hosted],
+            Tmp = "sd:tmp:subs:" ++ sd_util:s(sd_util:rand_token()),
+            union_store(Tmp, Sources),
+            Final = case StructKey of
+                        undefined -> Tmp;
+                        SK2 ->
+                            Tmp2 = Tmp ++ ":x",
+                            sd_db:q(["ZINTERSTORE", Tmp2, "2", Tmp, SK2, "AGGREGATE", "MAX"]),
+                            sd_db:expire(Tmp2, 60),
+                            Tmp2
+                    end,
+            Ids = sd_db:zrevrange(Final, Offset, Offset + Count - 1),
+            Total = zcard(Final),
+            sd_db:q(["DEL", Tmp, Tmp ++ ":x"]),
+            {Ids, Total}
+    end.
+
+union_store(Tmp, Sources) ->
+    sd_db:q(["ZUNIONSTORE", Tmp, integer_to_list(length(Sources)) | Sources] ++ ["AGGREGATE", "MAX"]),
+    sd_db:expire(Tmp, 60).
+
+zcard(Key) ->
+    case sd_db:q(["ZCARD", Key]) of
+        B when is_binary(B) -> binary_to_integer(B);
+        N when is_integer(N) -> N
     end.
 
 %% #list: records of one structure, newest first, with text search, date range, scope and paging.
 %%   tstruct (required), q (matches any value, case-insensitive), from/to (ms since epoch), scope "mine" | "all"
 %%   ("all" = everything the caller may see), limit (1..100, default 20), offset.
-%% Looks at the newest 1000 records of the structure at most, so one call stays cheap.
+%% Looks at the newest 1000 records the caller may see at most, so one call stays cheap.
 search_records(User, Args) ->
     case sd_util:get(<<"tstruct">>, Args, undefined) of
         T when is_binary(T), T =/= <<>> ->
             Me = maps:get(<<"username">>, User),
-            Ids = sd_db:zrevrange("sd:subs:t:" ++ key(T), 0, 999),
+            {Ids, _} = candidate_ids(User, key(T), undefined, 0, 1000),
             All = [S || B <- Ids, S <- [sd_db:hget_json("sd:subs", binary_to_list(B))], is_map(S), can_see_submission(User, S)],
             Scoped = case sd_util:get(<<"scope">>, Args, <<"all">>) of
                          <<"mine">> -> [S || S <- All, maps:get(<<"by">>, S) =:= Me];
@@ -839,10 +880,17 @@ value_text(V) when is_integer(V) -> integer_to_binary(V);
 value_text(V) when is_float(V) -> float_to_binary(V, [{decimals, 6}, compact]);
 value_text(_) -> <<>>.
 
+%% Their own; ones made by someone they host now (the host can change later, and the new host should see the
+%% history); ones that were sent to them as the host at the time; or anything, for an administrator.
 can_see_submission(User, Sub) ->
     Username = maps:get(<<"username">>, User),
-    sd_users:is_admin(User) orelse maps:get(<<"by">>, Sub) =:= Username
-        orelse maps:get(<<"host">>, Sub, null) =:= Username.
+    By = maps:get(<<"by">>, Sub),
+    sd_users:is_admin(User) orelse By =:= Username
+        orelse maps:get(<<"host">>, Sub, null) =:= Username
+        orelse (case sd_users:get(By) of
+                    Author when is_map(Author) -> sd_util:get(<<"host">>, Author) =:= Username;
+                    _ -> false
+                end).
 
 %% Only the person who made a submission may edit or delete it -- no time
 %% limit, no host override (deliberately the simplest rule that needed no

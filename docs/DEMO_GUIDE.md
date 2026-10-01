@@ -46,9 +46,10 @@ Note Bijaya's username for Anup's sign-up.
 On the sign-in page click **Self Register** and fill in:
 - Full name, a username (optional), email, mobile, a password (8+ characters, letters and a digit).
 - Registration Type **Enterprise Employee**, Branch, Department, Designation.
-- **Reporting Manager**: the manager's username (Sab for Gunn and Anish, Bijaya for Anup).
-  - Gunn and Anish: Department **Tech**, Designation **Engineer**.
-  - Anup: Department **Sales**, Designation **Analyst**.
+- Gunn and Anish: Department **Tech**, Designation **Engineer**. Anup: Department **Sales**, Designation **Analyst**.
+- A reporting manager can no longer be chosen at sign-up: the server ignores that field. An administrator sets it
+  afterwards (`admin.user.update {username, reportingManager}`), or a host sets it when inviting someone.
+  The host who covers the person (Sab for Tech, Bijaya for Sales) still receives the approval request.
 
 Each sees "Pending Host / Admin Approval". The request goes to the host who covers them, not to the admin:
 - **Sab** signs in, opens **Approvals** (top bar) and clicks **Allow Entry to Chat** for Gunn and Anish.
@@ -82,7 +83,7 @@ All in the Admin console (shield icon), tab **Users & Hosts** unless noted.
 - **Unlock** (strict mode): the console asks for your password plus an emailed one-time code, and asks again if the
   unlock lapses.
 - **Email**: invitations and one-time codes are sent for real (see `EMAIL_SETUP.md`).
-- **Sign-up form**: optional *Reporting Manager*.
+- **Sign-up form**: no reporting-manager choice (the server ignores it; see step 6).
 
 ## Part 3: good to know
 - Self-registered people are not hosts and cannot give themselves host or user-management rights.

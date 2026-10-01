@@ -103,10 +103,33 @@ handshake(Name, Token) ->
         {_, false} -> legacy
     end.
 
+%% Open mode stays "anything goes" for plain chat, with ONE exception that also protects the Sandesh layer:
+%% when the sender is signed in to Sandesh, the target is a Sandesh host, and the sender isn't someone that
+%% host is for (see sd_users:can_see_host/2), the message is refused. Otherwise hiding hosts in the UI
+%% would not stop anyone from messaging them.
+%% Plain chat connections (no Sandesh session) never reach Redis here, so a Redis stall cannot slow their
+%% direct messages; and a failed lookup lets the message through rather than crashing the connection.
+open_host_rule(From, To) ->
+    case get(sd_session) of
+        #{token := _} ->
+            try
+                case {sd_users:get(From), sd_users:get(To)} of
+                    {F, T} when is_map(F), is_map(T) ->
+                        case sd_users:can_see_host(F, T) of
+                            true -> true;
+                            false -> {false, "That host isn't one of yours. You can message the hosts who cover you."}
+                        end;
+                    _ -> true
+                end
+            catch _:_ -> true
+            end;
+        _ -> true
+    end.
+
 %% true | {false, Message}
 can_message(From, To) ->
     case sd_util:strict() of
-        false -> true;
+        false -> open_host_rule(From, To);
         true ->
             F = sd_users:get(From), T = sd_users:get(To),
             Ok = F =/= undefined andalso T =/= undefined andalso

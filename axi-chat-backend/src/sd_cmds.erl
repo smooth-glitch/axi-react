@@ -152,7 +152,7 @@ access(A) ->
     end.
 
 user_actions() ->
-    [<<"assoc.list">>, <<"assoc.invite">>, <<"assoc.remove">>, <<"users.search">>,
+    [<<"assoc.list">>, <<"assoc.invite">>, <<"assoc.remove">>, <<"users.search">>, <<"hosts.mine">>,
      <<"req.list">>, <<"req.respond">>, <<"host.transfer">>,
      <<"cards.list">>, <<"cards.dismiss">>, <<"sections.list">>, <<"sections.save">>,
      <<"sections.delete">>, <<"reminder.add">>,
@@ -297,8 +297,18 @@ do(<<"users.search">>, Args, #{user := User}) ->
                     end;
                 false -> sd_users:search(Q, 21)
             end,
-    Hits = [sd_users:public(U) || U <- Found, sd_users:is_active(U), maps:get(<<"username">>, U) =/= Me],
+    %% A host shows up only for the people it covers (or is assigned to / connected with), staff and admins;
+    %% everyone else is visible as before. See sd_users:can_see_host/2.
+    Hits = [sd_users:public(U) || U <- Found, sd_users:is_active(U), maps:get(<<"username">>, U) =/= Me,
+                                  sd_users:can_see_host(User, U)],
     {ok, #{<<"users">> => lists:sublist(Hits, 20)}};
+
+%% My hosts: only the hosts that cover the caller (plus the one they are assigned to), never the full list.
+do(<<"hosts.mine">>, _Args, #{user := User}) ->
+    Rows = [maps:merge(sd_users:public(H), #{<<"relation">> => Rel,
+                                             <<"online">> => is_online(maps:get(<<"username">>, H))})
+            || {H, Rel} <- sd_users:hosts_for(User)],
+    {ok, #{<<"hosts">> => Rows}};
 
 %% ---- requests (approvals / invitations) ---------------------------------------------------------------------
 do(<<"req.list">>, Args, #{user := User}) ->
@@ -459,7 +469,8 @@ do(<<"tstruct.submit">>, Args, #{user := User}) ->
         end
     end);
 do(<<"submissions.list">>, Args, #{user := User}) ->
-    {ok, #{<<"submissions">> => sd_config:list_submissions(User, Args)}};
+    %% submissions, plus total / offset / limit / hasMore so a client can page instead of losing what is past the first page.
+    {ok, sd_config:list_submissions_page(User, Args)};
 do(<<"records.list">>, Args, #{user := User}) ->
     sd_config:search_records(User, Args);
 do(<<"submissions.update">>, Args, #{user := User}) ->
