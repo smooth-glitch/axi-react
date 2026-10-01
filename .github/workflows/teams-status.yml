@@ -58,63 +58,99 @@ jobs:
 
           COMMITS_JSON='[]'
           ALL_FILES=$(mktemp)
+          TOT_INS=0; TOT_DEL=0
+          for H in $HASHES; do
+            read -r I D <<< "$(git show --numstat --format= "$H" | awk '$1 ~ /^[0-9]+$/ {i+=$1; d+=$2} END {print i+0, d+0}')"
+            TOT_INS=$((TOT_INS + I)); TOT_DEL=$((TOT_DEL + D))
+          done
           for H in $SHOWN; do
             NAME=$(git show -s --format=%an "$H")
-            DATE=$(git show -s --format=%ad --date=format:'%d %b %H:%M' "$H")
+            DATE=$(git show -s --format=%ad --date=format:'%d %b, %H:%M' "$H")
             SUBJECT=$(git show -s --format=%s "$H")
+            # Conventional-commit prefix -> icon, scope tag and clean title.
+            TYPE=$(echo "$SUBJECT" | sed -nE 's/^([a-z]+)(\([^)]*\))?!?:.*/\1/p')
+            SCOPE=$(echo "$SUBJECT" | sed -nE 's/^[a-z]+\(([^)]*)\)!?:.*/\1/p')
+            TITLE=$(echo "$SUBJECT" | sed -E 's/^[a-z]+(\([^)]*\))?!?: ?//')
+            case "$TYPE" in
+              feat) ICON="✨" ;; fix) ICON="🐛" ;; docs) ICON="📚" ;; ci) ICON="⚙️" ;;
+              refactor) ICON="♻️" ;; test) ICON="🧪" ;; perf) ICON="⚡" ;; chore) ICON="🧹" ;;
+              style) ICON="🎨" ;; *) ICON="🔹" ;;
+            esac
             # First 3 non-empty lines of the body, as the description.
             BODY=$(git show -s --format=%b "$H" | grep -Evi '^(Co-Authored-By|Claude-Session|Signed-off-by|Reviewed-by):' | grep -v '^$' | head -n 3 || true)
-            STAT=$(git show --shortstat --format= "$H" | tr -s ' ' | sed 's/^ //')
+            read -r I D F <<< "$(git show --numstat --format= "$H" | awk '$1 ~ /^[0-9]+$/ {i+=$1; d+=$2} {f++} END {print i+0, d+0, f+0}')"
             git show --name-only --format= "$H" >> "$ALL_FILES"
-            AREAS=$(git show --name-only --format= "$H" | while read -r F; do [ -n "$F" ] && area "$F"; done | sort -u | paste -sd ', ' -)
+            AREAS=$(git show --name-only --format= "$H" | while read -r P; do [ -n "$P" ] && area "$P"; done | sort -u | paste -sd ' · ' -)
             COMMITS_JSON=$(echo "$COMMITS_JSON" | jq --arg h "${H:0:7}" --arg url "$SERVER/$REPO/commit/$H" \
-              --arg name "$NAME" --arg date "$DATE" --arg subject "$SUBJECT" --arg body "$BODY" \
-              --arg stat "$STAT" --arg areas "$AREAS" \
-              '. + [{h:$h,url:$url,name:$name,date:$date,subject:$subject,body:$body,stat:$stat,areas:$areas}]')
+              --arg name "$NAME" --arg date "$DATE" --arg title "$TITLE" --arg icon "$ICON" --arg scope "$SCOPE" \
+              --arg body "$BODY" --arg areas "$AREAS" --argjson ins "$I" --argjson del "$D" --argjson files "$F" \
+              '. + [{h:$h,url:$url,name:$name,date:$date,title:$title,icon:$icon,scope:$scope,body:$body,areas:$areas,ins:$ins,del:$del,files:$files}]')
           done
 
           # Totals across the whole push.
           FILES_N=$(sort -u "$ALL_FILES" | grep -c . || true)
           AUTHORS=$(for H in $HASHES; do git show -s --format=%an "$H"; done | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "%s (%s), ", $0, c}' | sed 's/, $//')
-          AREA_SUMMARY=$(sort -u "$ALL_FILES" | while read -r F; do [ -n "$F" ] && area "$F"; done | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "%s (%s files), ", $0, c}' | sed 's/, $//')
-          TOTALSTAT=$(git diff --shortstat $( [ "${RANGE#-}" != "$RANGE" ] && echo "${AFTER}~$TOTAL $AFTER" || echo "${RANGE/../ }" ) 2>/dev/null | sed 's/^ //' || true)
+          AREA_SUMMARY=$(sort -u "$ALL_FILES" | while read -r P; do [ -n "$P" ] && area "$P"; done | sort | uniq -c | sort -rn | awk '{c=$1; $1=""; sub(/^ /,""); printf "%s %s  ", $0, c}' | sed 's/  $//')
 
           jq -n --argjson commits "$COMMITS_JSON" \
-            --arg title "⬡ Connectum · $BRANCH updated" \
             --arg branchUrl "$SERVER/$REPO/tree/$BRANCH" --arg branch "$BRANCH" \
             --arg actor "$ACTOR" --arg actorUrl "$SERVER/$ACTOR" \
-            --arg when "$(date -u +'%d %b %Y, %H:%M UTC')" \
+            --arg when "$(date -u +'%d %b %Y · %H:%M UTC')" \
             --arg total "$TOTAL" --arg files "$FILES_N" --arg authors "$AUTHORS" \
-            --arg areas "$AREA_SUMMARY" --arg totalstat "$TOTALSTAT" --arg compare "$COMPARE" '
+            --arg areas "$AREA_SUMMARY" --arg ins "$TOT_INS" --arg del "$TOT_DEL" --arg compare "$COMPARE" '
+            def tile($num; $label; $color): {
+              type:"Column", width:"stretch", items:[{
+                type:"Container", style:"emphasis", items:[
+                  {type:"TextBlock", text:$num, size:"ExtraLarge", weight:"Bolder", color:$color, horizontalAlignment:"Center"},
+                  {type:"TextBlock", text:$label, size:"Small", isSubtle:true, spacing:"None", horizontalAlignment:"Center"}
+                ]}]};
             def commitBlock: {
-              type:"Container", separator:true, spacing:"Medium", items:(
-                [
-                  {type:"TextBlock", text:("**" + .subject + "**"), wrap:true},
-                  {type:"TextBlock", isSubtle:true, spacing:"None", wrap:true,
-                   text:("[" + .h + "](" + .url + ") · " + .name + " · " + .date + (if .areas != "" then " · " + .areas else "" end))}
-                ]
-                + (if .body != "" then [{type:"TextBlock", text:.body, wrap:true, spacing:"Small", size:"Small"}] else [] end)
-                + (if .stat != "" then [{type:"TextBlock", text:.stat, isSubtle:true, size:"Small", spacing:"None", wrap:true}] else [] end)
-              )
-            };
+              type:"Container", style:"emphasis", spacing:"Small", items:[{
+                type:"ColumnSet", columns:[
+                  {type:"Column", width:"auto", items:[{type:"TextBlock", text:.icon, size:"Large"}]},
+                  {type:"Column", width:"stretch", items:(
+                    [
+                      {type:"TextBlock", wrap:true, weight:"Bolder",
+                       text:((if .scope != "" then "`" + .scope + "`  " else "" end) + .title)},
+                      {type:"TextBlock", isSubtle:true, spacing:"None", wrap:true, size:"Small",
+                       text:("[`" + .h + "`](" + .url + ")  ·  **" + .name + "**  ·  " + .date)}
+                    ]
+                    + (if .body != "" then [{type:"TextBlock", text:.body, wrap:true, spacing:"Small", size:"Small"}] else [] end)
+                    + [{type:"TextBlock", spacing:"Small", size:"Small", wrap:true,
+                        text:("🟢 +" + (.ins|tostring) + "   🔴 −" + (.del|tostring) + "   📄 " + (.files|tostring) + (if .files == 1 then " file" else " files" end) + (if .areas != "" then "   ·   " + .areas else "" end))}]
+                  )}
+                ]}]};
             {type:"message", attachments:[{contentType:"application/vnd.microsoft.card.adaptive",
               content:{"$schema":"http://adaptivecards.io/schemas/adaptive-card.json", type:"AdaptiveCard", version:"1.4",
+                msteams:{width:"Full"},
                 body:(
                   [
-                    {type:"TextBlock", text:$title, weight:"Bolder", size:"Large", color:"Accent", wrap:true},
-                    {type:"FactSet", facts:([
-                      {title:"Pushed by", value:("[" + $actor + "](" + $actorUrl + ")")},
-                      {title:"Branch", value:("[" + $branch + "](" + $branchUrl + ")")},
-                      {title:"When", value:$when},
-                      {title:"Commits", value:$total},
-                      {title:"Files changed", value:$files},
-                      {title:"Authors", value:$authors},
-                      {title:"Areas", value:$areas}
-                    ] + (if $totalstat != "" then [{title:"Overall", value:$totalstat}] else [] end))}
+                    {type:"Container", style:"accent", bleed:true, items:[
+                      {type:"ColumnSet", columns:[
+                        {type:"Column", width:"auto", verticalContentAlignment:"Center", items:[{type:"TextBlock", text:"⬡", size:"ExtraLarge", weight:"Bolder"}]},
+                        {type:"Column", width:"stretch", items:[
+                          {type:"TextBlock", text:"CONNECTUM  ·  DEV UPDATE", size:"Small", weight:"Bolder", isSubtle:true},
+                          {type:"TextBlock", text:("[" + $branch + "](" + $branchUrl + ")"), size:"Large", weight:"Bolder", spacing:"None", wrap:true},
+                          {type:"TextBlock", text:("Pushed by [" + $actor + "](" + $actorUrl + ")  ·  " + $when), size:"Small", spacing:"None", wrap:true}
+                        ]}
+                      ]}
+                    ]},
+                    {type:"ColumnSet", spacing:"Medium", columns:[
+                      tile($total; "COMMITS"; "Accent"),
+                      tile($files; "FILES"; "Default"),
+                      tile("+" + $ins; "ADDED"; "Good"),
+                      tile("−" + $del; "REMOVED"; "Attention")
+                    ]},
+                    {type:"TextBlock", spacing:"Medium", wrap:true, size:"Small", text:("**Areas** " + $areas)},
+                    {type:"TextBlock", wrap:true, size:"Small", spacing:"None", text:("**Contributors** " + $authors)},
+                    {type:"TextBlock", text:"WHAT CHANGED", size:"Small", weight:"Bolder", isSubtle:true, spacing:"Large", separator:true}
                   ]
                   + ($commits | map(commitBlock))
-                  + (if ($total | tonumber) > 10 then [{type:"TextBlock", isSubtle:true, wrap:true, text:("+" + (($total | tonumber) - 10 | tostring) + " older commits not shown. Use the button below for the full list.")}] else [] end)
+                  + (if ($total | tonumber) > 10 then [{type:"TextBlock", isSubtle:true, wrap:true, size:"Small", text:("+" + (($total | tonumber) - 10 | tostring) + " more commits in this push, see the full list below.")}] else [] end)
                 ),
-                actions:[{type:"Action.OpenUrl", title:"View full changes", url:$compare}]}}]}' > card.json
+                actions:[
+                  {type:"Action.OpenUrl", title:"View full changes", url:$compare},
+                  {type:"Action.OpenUrl", title:"Open branch", url:$branchUrl}
+                ]}}]}' > card.json
 
           curl -sS -f -X POST -H 'Content-Type: application/json' -d @card.json "$WEBHOOK"
