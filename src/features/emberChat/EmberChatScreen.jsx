@@ -21,6 +21,7 @@ import ApprovalsModal from "./components/modals/ApprovalsModal.jsx";
 import HostedUsersModal from "./components/modals/HostedUsersModal.jsx";
 import NotificationsModal from "./components/modals/NotificationsModal.jsx";
 import CardsModal from "./components/modals/CardsModal.jsx";
+import CommandsHelpModal from "./components/modals/CommandsHelpModal.jsx";
 import { parseCommandLine, DEFAULT_COMMANDS_CATALOG } from "./data/hashCommandsCatalog.js";
 import SandeshLoginScreen from "./components/SandeshLoginScreen.jsx";
 import ToastContainer from "./components/Toast.jsx";
@@ -1558,6 +1559,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     const sendsItself =
       cmd === "addmember" || cmd === "invitegroup" ||
       cmd === "leavegroup" || cmd === "leave" ||
+      cmd === "help" || cmd === "commands" || cmd === "directory" || cmd === "cmds" ||
       ((cmd === "creategroup" || cmd === "newgroup") && !rest);
     if (!sendsItself) sandeshSocket.send(rawLine);
 
@@ -1960,20 +1962,32 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
-    // 9. Help
-    if (cmd === "help" || cmd === "commands") {
-      pushToast("Type # in chat composer to view and use live commands.");
+    // 9. Help & Command Directory
+    if (cmd === "help" || cmd === "commands" || cmd === "directory" || cmd === "cmds") {
+      setModalParam(rest || null);
+      setModal("commands_help");
       return;
     }
   };
 
   // P0 & P1: Send messages with sending/sent/failed status and correct routing
   const handleSend = (text, replyTo) => {
-    // Check if text is a known #command
-    if (text.startsWith("#")) {
-      const parsed = parseCommandLine(text);
+    const trimmed = (text || "").trim();
+
+    // 1. Direct intercept for #help / #commands to immediately open the Commands Directory popup
+    if (/^#(help|commands|directory|cmds)(\s+.*)?$/i.test(trimmed)) {
+      const match = trimmed.match(/^#(help|commands|directory|cmds)(?:\s+(.*))?$/i);
+      const queryParam = match && match[2] ? match[2].trim() : null;
+      setModalParam(queryParam);
+      setModal("commands_help");
+      return;
+    }
+
+    // 2. Check if text is a known #command
+    if (trimmed.startsWith("#")) {
+      const parsed = parseCommandLine(trimmed);
       if (parsed && parsed.matchedCommand) {
-        handleRouteHashCommand(text, parsed, replyTo);
+        handleRouteHashCommand(trimmed, parsed, replyTo);
         return;
       }
     }
@@ -2034,6 +2048,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
       return;
     }
 
+    if (activeChat.id !== "workspace" && !activeChat.isWorkspace) {
+      newMsg.status = "sent";
+      newMsg.ticks = "sent";
+    }
+
     updateActiveMessages((list) => [...list, newMsg]);
 
     // In My Workspace, provide automated prompt tips or confirmations
@@ -2085,12 +2104,14 @@ export function EmberChatScreen({ onOpenAiChat }) {
 
   const handleAttachFile = (filePayload) => {
     const tempId = `temp-${Date.now()}`;
+    const isWs = activeChat.id === "workspace" || activeChat.isWorkspace;
     const newMsg = {
       id: tempId,
       dir: "out",
       from: currentUser.name || currentUser.username,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      ticks: "sent",
+      status: isWs ? "read" : "sent",
+      ticks: isWs ? "read" : "sent",
       ...filePayload,
     };
     updateActiveMessages((list) => [...list, newMsg]);
@@ -3123,6 +3144,23 @@ export function EmberChatScreen({ onOpenAiChat }) {
                   setForwardTargetMsg(null);
                 }}
                 onForward={handleForwardMessage}
+              />
+            )}
+            {modal === "commands_help" && (
+              <CommandsHelpModal
+                initialCommand={modalParam}
+                catalog={catalog}
+                currentUser={currentUser}
+                onSelectCommand={(cmd) => {
+                  setComposerPrefill(`#${cmd.name} `);
+                  setTimeout(() => setComposerPrefill(""), 300);
+                  setModal(null);
+                  setModalParam(null);
+                }}
+                onClose={() => {
+                  setModal(null);
+                  setModalParam(null);
+                }}
               />
             )}
           </ModalLayer>

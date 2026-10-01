@@ -15,6 +15,7 @@ export const COMMAND_CATEGORIES = [
   { id: "profile", label: "Your Profile", icon: "person" },
   { id: "people", label: "People & Approvals", icon: "badge" },
   { id: "notifs", label: "Notifications & Cards", icon: "notifications" },
+  { id: "forms", label: "Forms & T-Struct", icon: "dynamic_form" },
   { id: "admin", label: "Administration", icon: "admin_panel_settings" },
   { id: "help", label: "Help & Reference", icon: "help_outline" },
 ];
@@ -424,11 +425,11 @@ export const DEFAULT_COMMANDS_CATALOG = [
     requires: "admin",
   },
 
-  // 7b. Lite T-Struct viewer
+  // 7b. Forms & T-Struct viewer
   {
     name: "tstruct",
     aliases: ["ts", "struct"],
-    category: "lookup",
+    category: "forms",
     summary: "Open a lite T-Struct in the viewer (definition + your records)",
     usage: "#tstruct <name>",
     args: [{ name: "name", type: "word", required: true }],
@@ -438,7 +439,7 @@ export const DEFAULT_COMMANDS_CATALOG = [
   {
     name: "tstruct-add",
     aliases: ["ts-add", "struct-add"],
-    category: "lookup",
+    category: "forms",
     summary: "Open a lite T-Struct to add a new record",
     usage: "#tstruct-add <name>",
     args: [{ name: "name", type: "word", required: true }],
@@ -448,20 +449,50 @@ export const DEFAULT_COMMANDS_CATALOG = [
   {
     name: "lookups",
     aliases: ["cfg-lookups"],
-    category: "lookup",
+    category: "forms",
     summary: "Org config lists for Option Builder dropdowns (branches, departments, etc.)",
     usage: "#lookups",
     args: [],
     available: true,
     requires: "none",
   },
+  {
+    name: "forms",
+    aliases: ["options"],
+    category: "forms",
+    summary: "The forms and options available to you",
+    usage: "#forms",
+    args: [],
+    available: true,
+    requires: "none",
+  },
+  {
+    name: "form",
+    aliases: [],
+    category: "forms",
+    summary: "Open a form definition",
+    usage: "#form <name>",
+    args: [{ name: "name", type: "word", required: true }],
+    available: true,
+    requires: "none",
+  },
+  {
+    name: "submissions",
+    aliases: [],
+    category: "forms",
+    summary: "Forms you have submitted",
+    usage: "#submissions",
+    args: [],
+    available: true,
+    requires: "none",
+  },
 
-  // 8. Help
+  // 8. Help & Commands Directory
   {
     name: "help",
-    aliases: ["commands"],
+    aliases: ["commands", "directory", "cmds"],
     category: "help",
-    summary: "List all # commands or explain a specific one",
+    summary: "Open the full interactive #Commands Directory popup",
     usage: "#help [command]",
     args: [{ name: "command", type: "word", required: false }],
     available: true,

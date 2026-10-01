@@ -132,3 +132,37 @@ test("sandeshApi.uploadAvatar validates file before sending", async () => {
     /8 MB/i
   );
 });
+
+test("DEFAULT_COMMANDS_CATALOG and COMMAND_CATEGORIES directory integrity", async () => {
+  const { DEFAULT_COMMANDS_CATALOG, COMMAND_CATEGORIES } = await import(
+    "../../src/features/emberChat/data/hashCommandsCatalog.js"
+  );
+
+  assert.ok(Array.isArray(DEFAULT_COMMANDS_CATALOG), "Catalog must be an array");
+  assert.ok(DEFAULT_COMMANDS_CATALOG.length >= 35, "Catalog should have all project commands");
+
+  // #help exists
+  const helpCmd = DEFAULT_COMMANDS_CATALOG.find((c) => c.name === "help");
+  assert.ok(helpCmd, "help command must exist in catalog");
+  assert.equal(helpCmd.usage, "#help [command]");
+  assert.ok(helpCmd.aliases.includes("commands"), "help command should have 'commands' alias");
+
+  // Category coverage
+  const categoryIds = new Set(COMMAND_CATEGORIES.map((c) => c.id));
+  assert.ok(categoryIds.has("messaging"), "Messaging category exists");
+  assert.ok(categoryIds.has("lookup"), "Lookup category exists");
+  assert.ok(categoryIds.has("groups"), "Groups category exists");
+  assert.ok(categoryIds.has("people"), "People category exists");
+  assert.ok(categoryIds.has("notifs"), "Notifications category exists");
+  assert.ok(categoryIds.has("forms"), "Forms category exists");
+  assert.ok(categoryIds.has("admin"), "Admin category exists");
+  assert.ok(categoryIds.has("help"), "Help category exists");
+
+  // Every command has valid structure
+  DEFAULT_COMMANDS_CATALOG.forEach((cmd) => {
+    assert.ok(cmd.name, "Command must have a name");
+    assert.ok(cmd.summary, `Command #${cmd.name} must have a summary`);
+    assert.ok(cmd.usage.startsWith("#"), `Command #${cmd.name} usage must start with '#'`);
+    assert.ok(categoryIds.has(cmd.category), `Command #${cmd.name} category '${cmd.category}' must be valid`);
+  });
+});

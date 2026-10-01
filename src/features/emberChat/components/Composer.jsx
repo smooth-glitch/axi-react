@@ -80,13 +80,6 @@ export default function Composer({
 
   const hasText = text.trim().length > 0;
 
-  // Sync initialText if supplied externally (e.g. from #help modal)
-  useEffect(() => {
-    if (initialText) {
-      setText(initialText);
-      textareaRef.current?.focus();
-    }
-  }, [initialText]);
 
   // Sync mediaPanelConfig if opened externally (e.g. via #gif or #sticker command)
   useEffect(() => {
@@ -338,6 +331,18 @@ export default function Composer({
     },
     [currentUser, computeLocalArgSuggestions, currentArgSpec]
   );
+
+  // Sync initialText if supplied externally (e.g. from #help modal)
+  useEffect(() => {
+    if (initialText) {
+      setText(initialText);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.style.height = "auto";
+      }
+      updateMenuState(initialText, initialText.length);
+    }
+  }, [initialText, updateMenuState]);
 
   const handlePageChange = (newPage) => {
     const caret = textareaRef.current?.selectionEnd ?? text.length;
