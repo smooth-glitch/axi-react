@@ -5,7 +5,14 @@
 -export([log/4, list/2, page/3]).
 
 -define(KEY, "sd:audit").
--define(MAX, 5000).
+-define(DEFAULT_MAX, 5000).
+
+%% How many entries are kept (newest win): SANDESH_AUDIT_MAX, default 5000, at least 100.
+max_entries() ->
+    case string:to_integer(os:getenv("SANDESH_AUDIT_MAX", "5000")) of
+        {N, _} when is_integer(N), N >= 100 -> N;
+        _ -> ?DEFAULT_MAX
+    end.
 
 %% Actor: username of who did it. Action: e.g. <<"user.update">>. Target: username (or <<"-">>).
 %% Details: any JSON-able map (before/after, counts, ...).
@@ -14,7 +21,7 @@ log(Actor, Action, Target, Details) ->
         Entry = #{<<"ts">> => sd_util:now_ms(), <<"actor">> => Actor, <<"action">> => Action,
                   <<"target">> => Target, <<"details">> => Details},
         sd_db:q(["LPUSH", ?KEY, sd_util:jenc(Entry)]),
-        sd_db:q(["LTRIM", ?KEY, "0", integer_to_list(?MAX - 1)]),
+        sd_db:q(["LTRIM", ?KEY, "0", integer_to_list(max_entries() - 1)]),
         ok
     catch _:_ -> ok
     end.
@@ -26,7 +33,7 @@ list(Filter, Limit) ->
 
 %% One page of the log plus how many entries match in all: {Entries, Total}.
 page(Filter, Limit, Offset) ->
-    Raw = sd_db:q(["LRANGE", ?KEY, "0", integer_to_list(?MAX - 1)]),
+    Raw = sd_db:q(["LRANGE", ?KEY, "0", integer_to_list(max_entries() - 1)]),
     All = [E || R <- Raw, {ok, E} <- [sd_util:jdec(R)]],
     Match = case Filter of
                 undefined -> All;

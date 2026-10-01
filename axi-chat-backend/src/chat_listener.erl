@@ -18,7 +18,7 @@ init([Port]) ->
     %% {nodelay, true}: see chat_web_listener for why -- same Nagle's-algorithm
     %% latency applies here, since every chat line is its own small write.
     {ok, ListenSocket} = gen_tcp:listen(Port,
-        [binary, {packet, line}, {active, false}, {reuseaddr, true}, {nodelay, true}]),
+        [binary, {packet, line}, {active, false}, {reuseaddr, true}, {nodelay, true}, {backlog, 1024}]),
     self() ! accept,
     {ok, #state{listen_socket = ListenSocket}}.
 

@@ -33,6 +33,10 @@ handle_info(tick, State) ->
     catch Class:Reason ->
         ?LOG_WARNING("sd_scheduler tick skipped: ~p:~p", [Class, Reason])
     end,
+    try sd_mailq:fire_due()
+    catch Class2:Reason2 ->
+        ?LOG_WARNING("sd_mailq tick skipped: ~p:~p", [Class2, Reason2])
+    end,
     schedule(),
     {noreply, State};
 handle_info(_Other, State) ->

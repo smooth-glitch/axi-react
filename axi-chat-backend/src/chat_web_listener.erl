@@ -18,7 +18,9 @@ init([Port]) ->
     %% hold a small outgoing chat message for tens of milliseconds waiting
     %% to coalesce it with more data, which is pure added latency for a
     %% protocol that's nothing but small, interactive writes.
-    {ok, ListenSocket} = gen_tcp:listen(Port, [binary, {active, false}, {reuseaddr, true}, {nodelay, true}]),
+    %% {backlog, 1024}: the default queue of pending connections is 5, so a burst of simultaneous connects (a
+    %% whole office reconnecting after a restart) had some of them dropped. The OS caps this at net.core.somaxconn.
+    {ok, ListenSocket} = gen_tcp:listen(Port, [binary, {active, false}, {reuseaddr, true}, {nodelay, true}, {backlog, 1024}]),
     self() ! accept,
     {ok, #state{listen_socket = ListenSocket}}.
 

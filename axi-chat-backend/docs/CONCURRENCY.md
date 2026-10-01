@@ -37,3 +37,15 @@ Measured locally (40 users, 1,200 simultaneous DMs): 2,300 -> ~18,000 messages/s
 * Need a message id / to persist something from `chat_room` or `chat_groups`? Use `chat_writer:run_async(fun() -> ... end)`, or
   a worker with `offload_reply` when the caller needs the answer.
 * Never `gen_server:call` from inside one of those servers into something that can wait on Redis.
+
+## Single-node assumptions (know these before running two backends)
+
+* **Per-user lock.** Every read-modify-write of a person's record (`sd_users:locked/2`) uses `global:trans` on this node. It
+  makes simultaneous admin/self edits safe on ONE backend node (what runs today). With several nodes against one Redis it
+  would need a Redis-side lock (SET NX with an expiry) or a compare-and-set instead.
+* **Mail queue.** `sd_mailq` leases jobs in Redis, so two nodes would not send the same email twice, but the retry timing
+  assumes one scheduler per Redis.
+* **Audit log.** Keeps the newest `SANDESH_AUDIT_MAX` entries (default 5000, minimum 100); older ones are dropped. Read it
+  with `admin.audit.list` (paged); there is no export yet.
+* **Host rule in open mode** only covers people signed in to Sandesh; plain chat clients (no session) are not scoped. Strict
+  mode closes that (every connection needs a session and a DM needs an association).

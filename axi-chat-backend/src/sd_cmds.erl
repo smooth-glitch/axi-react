@@ -750,6 +750,10 @@ do(<<"admin.users.bulk_move">>, Args, #{user := Actor}) ->
             end;
         _ -> {error, invalid, <<"from and to are required.">>}
     end;
+%% Outgoing mail that is waiting (will be retried) or was given up on (refused for good / out of attempts).
+do(<<"admin.mail.queue">>, _Args, _Ctx) ->
+    Pending = sd_mailq:pending(), Dead = sd_mailq:dead(),
+    {ok, #{<<"pending">> => Pending, <<"dead">> => Dead, <<"counts">> => #{<<"pending">> => length(Pending), <<"dead">> => length(Dead)}}};
 do(<<"admin.audit.list">>, Args, _Ctx) ->
     Filter = case maps:get(<<"username">>, Args, undefined) of U when is_binary(U), U =/= <<>> -> U; _ -> undefined end,
     Limit = int(maps:get(<<"limit">>, Args, 50), 50),
