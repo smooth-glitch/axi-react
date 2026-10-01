@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 17:28 IST · commit [`db526cd`](https://github.com/smooth-glitch/axi-react/commit/db526cd7c43ddd9abfa4bff549cab303a84da978)
+> Last updated: 01 Oct 2026, 17:32 IST · commit [`632afff`](https://github.com/smooth-glitch/axi-react/commit/632affff3b9af2bf25f09f9542128b493ff8cc1d)
 
 ## New here? Start here
 
@@ -53,11 +53,11 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 75 |
+| Arjun Sridhar | 76 |
 | Anish-S-Agile | 36 |
 | Arjun | 35 |
 | Gunn | 26 |
-| connectum-status-bot | 9 |
+| connectum-status-bot | 10 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -65,8 +65,8 @@
 |---|---|
 | Frontend | 233 |
 | Other | 114 |
-| Backend | 97 |
-| CI / DevOps | 28 |
+| Backend | 99 |
+| CI / DevOps | 29 |
 | Docs | 25 |
 | Tests | 12 |
 
@@ -74,6 +74,8 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 17:28 | connectum-status-bot | [`75bae4a`](https://github.com/smooth-glitch/axi-react/commit/75bae4aa65be9712220f4801918d93970592828d) docs: refresh STATUS.md [skip ci] | +0 / −0 |
+| 01 Oct, 17:22 | Arjun Sridhar | [`e473fd3`](https://github.com/smooth-glitch/axi-react/commit/e473fd337d76b3cef9bcdff20b7f74a593402db3) feat: honest invitation email, resend invite, mail retry, audit paging; page re-check header on the VM | +434 / −19 |
 | 01 Oct, 17:09 | Arjun Sridhar | [`840cf45`](https://github.com/smooth-glitch/axi-react/commit/840cf451d27d327b75579b1f5b5a610266554c6c) feat(backend): hosts visible only to the people they are for, scoped DMs, complete submissions listing, profiles on connect | +393 / −46 |
 | 01 Oct, 16:39 | connectum-status-bot | [`b0bf118`](https://github.com/smooth-glitch/axi-react/commit/b0bf11851cc54c6f3d12ced0ba6805223cc5af86) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 16:28 | Anish-S-Agile | [`7cc8a52`](https://github.com/smooth-glitch/axi-react/commit/7cc8a52f205caf76c700d93e9a0615280ecdbd9d) fix: update UI labels from Sandesh to Connectum in SandeshLoginScreen | +10 / −10 |
@@ -97,5 +99,3 @@
 | 01 Oct, 12:31 | connectum-status-bot | [`998b8ce`](https://github.com/smooth-glitch/axi-react/commit/998b8ce9f2d88c225b3ce76134d0c74c5a55ba84) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:28 | Arjun Sridhar | [`24faec4`](https://github.com/smooth-glitch/axi-react/commit/24faec474791299fc00e92d23d8fb7ebc191e384) ci: one Teams card per merge to main; ignore already-merged branches; protect generated STATUS.md | +194 / −244 |
 | 01 Oct, 12:26 | Anish-S-Agile | [`55eeec3`](https://github.com/smooth-glitch/axi-react/commit/55eeec364275e8b5fe30c9fda15406dd35d3a16b) Hash Bug fix | +20 / −8 |
-| 01 Oct, 12:24 | Arjun Sridhar | [`88325fb`](https://github.com/smooth-glitch/axi-react/commit/88325fb353324874af3d12dac8a5530e40689c5c) ci: on every merge to main, post a pull reminder with a per-branch conflict forecast and safe-resolution steps to Teams | +173 / −0 |
-| 01 Oct, 12:22 | connectum-status-bot | [`9e30d9a`](https://github.com/smooth-glitch/axi-react/commit/9e30d9a968b925bf1c8d52757f1d4adac5f8dc7d) docs: refresh STATUS.md [skip ci] | +0 / −0 |
