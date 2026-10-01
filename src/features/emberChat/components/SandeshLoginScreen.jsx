@@ -902,7 +902,7 @@ export default function SandeshLoginScreen({ onLoginSuccess, notice = "" }) {
       return;
     }
 
-    const sessionUser = buildSessionUser(session, adminModalState?.identifier || signInIdentifier);
+    const sessionUser = buildSessionUser(session, adminModalIdentifier || signInIdentifier);
     onLoginSuccess(sessionUser);
   };
 
