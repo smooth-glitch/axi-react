@@ -115,11 +115,11 @@ const CURATED_STICKERS = [
   },
   {
     id: "s5",
-    title: "SANDESH VERIFIED",
-    tags: ["sandesh", "official", "enterprise", "badge"],
+    title: "CONNECTUM VERIFIED",
+    tags: ["connectum", "official", "enterprise", "badge"],
     color: "var(--sandesh-coral-accent)",
     icon: "security",
-    badge: "SANDESH",
+    badge: "CONNECTUM",
   },
   {
     id: "s6",

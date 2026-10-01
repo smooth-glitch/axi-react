@@ -8,7 +8,7 @@ import { sandeshApi } from './sandeshApi.js';
 export const MAX_UPLOAD_MB = 10; // keep in step with SANDESH_MAX_FILE_MB and nginx client_max_body_size
 
 async function request(path, token, init = {}) {
-  if (!token) throw Object.assign(new Error('Sign in to Sandesh first.'), { status: 401 });
+  if (!token) throw Object.assign(new Error('Sign in to Connectum first.'), { status: 401 });
   let res;
   try {
     res = await fetch(`${sandeshApi.getBaseUrl()}${path}`, {
@@ -16,7 +16,7 @@ async function request(path, token, init = {}) {
       headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` },
     });
   } catch {
-    throw Object.assign(new Error('Unable to reach the Sandesh server.'), { status: 503 });
+    throw Object.assign(new Error('Unable to reach the Connectum server.'), { status: 503 });
   }
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;

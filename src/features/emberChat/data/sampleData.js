@@ -132,7 +132,7 @@ export const messagesByChat = {
     {
       id: "ws-msg-1",
       sender: "Workspace Assistant",
-      senderName: "Sandesh Workspace",
+      senderName: "Connectum Workspace",
       time: "now",
       dir: "in",
       avatar: "WS",

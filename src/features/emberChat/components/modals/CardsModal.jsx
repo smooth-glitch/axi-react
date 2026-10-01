@@ -41,7 +41,7 @@ export default function CardsModal({
             <span className="material-icons">view_carousel</span>
           </div>
           <div>
-            <h3>Sandesh Message Cards &amp; Reminders</h3>
+            <h3>Connectum Message Cards &amp; Reminders</h3>
             <span className="modal-subtitle">
               Interactive task cards, smart alerts and scheduled reminders
             </span>

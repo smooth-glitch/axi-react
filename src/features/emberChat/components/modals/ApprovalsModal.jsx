@@ -49,7 +49,7 @@ export default function ApprovalsModal({
           <div>
             <h3>User Access &amp; Registration Approvals</h3>
             <span className="modal-subtitle">
-              Verify applicant details and authorize user entry into the Sandesh Chat Interface
+              Verify applicant details and authorize user entry into the Connectum Chat Interface
             </span>
           </div>
         </div>

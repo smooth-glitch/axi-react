@@ -25,7 +25,7 @@ export const ERROR_MESSAGES = {
   no_pending_setup: 'No setup is currently pending. Please start setup again.',
   already_enabled: 'Two-factor authentication is already active.',
   not_found: 'The requested resource was not found.',
-  network_error: 'Unable to connect to Sandesh backend (http://10.0.2.146/api/sd). Check server connection.',
+  network_error: 'Unable to connect to Connectum backend (http://10.0.2.146/api/sd). Check server connection.',
 };
 
 export function validatePasswordPolicy(password) {

@@ -187,7 +187,7 @@ function mapServerRequests(requests, profiles = {}) {
         r.type === "onboarding"
           ? (r.status === "accepted" || r.status === "approved" || String(r.status).toLowerCase() === "accepted" || String(r.status).toLowerCase() === "approved"
               ? undefined
-              : "Self-registered and waiting for approval to enter Sandesh.")
+              : "Self-registered and waiting for approval to enter Connectum.")
           : r.type === "associate"
             ? `${r.fromName || r.from} wants to connect with you.`
             : r.type === "host_transfer"
@@ -256,7 +256,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
       {
         id: "ws-msg-1",
         sender: "Workspace Assistant",
-        senderName: "Sandesh Workspace",
+        senderName: "Connectum Workspace",
         time: "now",
         dir: "in",
         avatar: "WS",
@@ -566,7 +566,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
               username: clean,
               initials: name.slice(0, 2).toUpperCase(),
               color: "#34c759",
-              status: "Online on Sandesh",
+              status: "Online on Connectum",
             };
           });
         setOnlineUsers(realUsers);
@@ -1799,7 +1799,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const found =
           associates.find((u) => (u.username || "").toLowerCase() === clean) ||
           onlineUsers.find((u) => (u.username || "").toLowerCase() === clean) ||
-          { username: user, name: user, designation: "Associate", status: "Active on Sandesh" };
+          { username: user, name: user, designation: "Associate", status: "Active on Connectum" };
         setModalParam({
           ...found,
           avatar: profileInfo.avatar || found.avatar,
@@ -2412,7 +2412,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
       }
       return prev;
     });
-    pushToast(`Welcome to Sandesh, ${user.name}!`);
+    pushToast(`Welcome to Connectum, ${user.name}!`);
   };
 
   const handleSignOut = () => {
@@ -2427,7 +2427,7 @@ export function EmberChatScreen({ onOpenAiChat }) {
     } catch {
       // ignore
     }
-    pushToast("Signed out of Sandesh");
+    pushToast("Signed out of Connectum");
   };
 
   // The server ended this session (signed in elsewhere, expired, deactivated).

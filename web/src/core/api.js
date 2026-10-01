@@ -95,14 +95,14 @@ class SandeshClient {
 
     const user = this._resolveUser();
     if (!user) {
-      const e = new Error('Not signed in to Sandesh. Open the chat first.');
+      const e = new Error('Not signed in to Connectum. Open the chat first.');
       e.status = 401;
       return Promise.reject(e);
     }
 
     // The backend only accepts a real session token from POST /api/sd/login.
     if (!user.token) {
-      const e = new Error('Not signed in to Sandesh. Sign in again.');
+      const e = new Error('Not signed in to Connectum. Sign in again.');
       e.status = 401;
       return Promise.reject(e);
     }
@@ -118,7 +118,7 @@ class SandeshClient {
       this._ws = ws;
 
       const timeout = setTimeout(() => {
-        const e = new Error('Connection to Sandesh timed out');
+        const e = new Error('Connection to Connectum timed out');
         e.status = 503;
         reject(e);
         try { ws.close(); } catch {}
@@ -166,7 +166,7 @@ class SandeshClient {
       ws.onerror = () => {
         if (this._epoch !== epoch) return;
         clearTimeout(timeout);
-        reject(Object.assign(new Error('Cannot connect to Sandesh backend'), { status: 503 }));
+        reject(Object.assign(new Error('Cannot connect to Connectum backend'), { status: 503 }));
       };
 
       ws.onclose = () => {
@@ -730,12 +730,12 @@ const fileToWeb = (f) => ({ id: f.id, originalName: f.name, mimeType: f.mime, si
 
 async function fileRequest(path, init = {}) {
   const token = authToken();
-  if (!token) throw Object.assign(new Error('Sign in to Sandesh first.'), { status: 401 });
+  if (!token) throw Object.assign(new Error('Sign in to Connectum first.'), { status: 401 });
   let res;
   try {
     res = await fetch(`${httpBase()}${path}`, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
   } catch {
-    throw Object.assign(new Error('Unable to reach the Sandesh server.'), { status: 503 });
+    throw Object.assign(new Error('Unable to reach the Connectum server.'), { status: 503 });
   }
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;

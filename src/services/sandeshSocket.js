@@ -32,7 +32,7 @@ class SandeshSocketService {
   sd(action, args = {}, timeoutMs = 10000) {
     return new Promise((resolve) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        resolve({ type: 'sd', ok: false, error: { code: 'not_connected', message: 'Not connected to the Sandesh server.' } });
+        resolve({ type: 'sd', ok: false, error: { code: 'not_connected', message: 'Not connected to the Connectum server.' } });
         return;
       }
       const reqId = `ui-${++this.sdSeq}`;
@@ -392,7 +392,7 @@ class SandeshSocketService {
   disconnect() {
     this.pendingSd.forEach(({ resolve, timer }) => {
       clearTimeout(timer);
-      resolve({ type: 'sd', ok: false, error: { code: 'disconnected', message: 'Disconnected from the Sandesh server.' } });
+      resolve({ type: 'sd', ok: false, error: { code: 'disconnected', message: 'Disconnected from the Connectum server.' } });
     });
     this.pendingSd.clear();
     this.isManualDisconnect = true;

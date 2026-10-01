@@ -466,7 +466,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
             <span className="material-icons admin-badge-icon">admin_panel_settings</span>
           </div>
           <div>
-            <h3>Sandesh Administration Console</h3>
+            <h3>Connectum Administration Console</h3>
             <span className="modal-subtitle">Organization Setup • Directory • Host SPOC Management</span>
           </div>
         </div>
@@ -1042,7 +1042,7 @@ export default function AdminConsoleModal({ initialTab = "users", initialQuery =
         {/* TAB 4: INVITE USER */}
         {!locked && !loading && !loadError && activeTab === "invite" && (
           <form onSubmit={handleInviteSubmit} className="invite-user-form">
-            <h4>Invite User to Sandesh Platform</h4>
+            <h4>Invite User to Connectum Platform</h4>
             <div className="sandesh-form-row">
               <div className="sandesh-input-group">
                 <label>Full Name</label>

@@ -29,7 +29,7 @@ const DEFAULT_HOSTS = [
   {
     id: "host-workspace",
     hostKey: "workspace",
-    name: "My Workspace (Sandesh)",
+    name: "My Workspace (Connectum)",
     category: "ai_host",
     spoc: "Application Assistant",
     description: "Core workspace automation: Tstruct records, Smart prompts, data bin synchronization.",
@@ -83,7 +83,7 @@ export default function HostsDirectoryModal({
             <span className="material-icons">domain</span>
           </div>
           <div>
-            <h3>Sandesh Host Directory</h3>
+            <h3>Connectum Host Directory</h3>
             <span className="modal-subtitle">
               Department Hosts, Functional SPOCs &amp; Enterprise AI Assistants
             </span>

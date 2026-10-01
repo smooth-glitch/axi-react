@@ -132,7 +132,7 @@ export default function CommandsHelpModal({
             <span className="material-icons">terminal</span>
           </div>
           <div className="commands-header-title-col" style={{ minWidth: 0, flex: 1 }}>
-            <h3 id="commands-directory-title" style={{ margin: 0 }}>Sandesh #Commands Directory</h3>
+            <h3 id="commands-directory-title" style={{ margin: 0 }}>Connectum #Commands Directory</h3>
             <span className="modal-subtitle">
               Complete index of {allCommands.length} chat, system &amp; workflow hash commands
             </span>

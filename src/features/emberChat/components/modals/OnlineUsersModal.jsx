@@ -73,7 +73,7 @@ export default function OnlineUsersModal({
             <span className="material-icons">people</span>
           </div>
           <div>
-            <h3>Sandesh Active Directory</h3>
+            <h3>Connectum Active Directory</h3>
             <span className="modal-subtitle">
               {onlineCount} user{onlineCount === 1 ? "" : "s"} online now • {usersList.length} colleagues available
             </span>

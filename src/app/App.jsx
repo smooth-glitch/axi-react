@@ -333,9 +333,9 @@ export default function App() {
           {/* 1. Global Logo Header (Slim, sticky top) */}
           <header className="globalBar">
             <div className="globalBar__inner">
-              <div className="globalBrand" role="banner" aria-label="Sandesh AI">
+              <div className="globalBrand" role="banner" aria-label="Connectum AI">
                 <span className="globalBrandWordmark">
-                  <span className="globalBrandWordmark-main">Sandesh</span>
+                  <span className="globalBrandWordmark-main">Connectum</span>
                   <span className="globalBrandWordmark-accent">AI</span>
                 </span>
               </div>

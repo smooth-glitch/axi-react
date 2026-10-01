@@ -170,9 +170,9 @@ export function formatServerMessage(input, defaultError = false, meta = {}) {
 
   const rawLower = rawText.toLowerCase();
 
-  // Strip prefixes like "Sandesh error: " or "Error: "
+  // Strip prefixes like "Sandesh error: ", "Connectum error: ", or "Error: "
   const cleanedRaw = rawText
-    .replace(/^sandesh\s+error:\s*/i, "")
+    .replace(/^(?:sandesh|connectum)\s+error:\s*/i, "")
     .replace(/^error:\s*/i, "")
     .replace(/^backend\s+error:\s*/i, "")
     .trim();
@@ -302,7 +302,7 @@ export function formatServerMessage(input, defaultError = false, meta = {}) {
 
   if (code === "unauthenticated" || rawLower === "unauthenticated" || rawLower.includes("unauthenticated")) {
     return {
-      text: "Please sign in to your Sandesh account to access this feature.",
+      text: "Please sign in to your Connectum account to access this feature.",
       title: meta.title || "Authentication Required",
       type: "warning",
       icon: meta.icon || "account_circle",

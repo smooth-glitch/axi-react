@@ -72,7 +72,7 @@ export default function WorkspaceChatsSlider({
           isGroup: false,
           category: "direct",
           designation: user.status || "Active Associate",
-          preview: user.status || "Online on Sandesh",
+          preview: user.status || "Online on Connectum",
           time: "now",
           unread: 0,
           initials: user.initials || (user.name || uUsername).slice(0, 2).toUpperCase(),
@@ -112,10 +112,10 @@ export default function WorkspaceChatsSlider({
       <div className="wcs-header">
         <div className="wcs-brand-row">
           <div className="wcs-logo-wrap">
-            <img src={sandeshLogo} alt="Sandesh" className="wcs-logo-img" />
+            <img src={sandeshLogo} alt="Connectum" className="wcs-logo-img" />
           </div>
           <div>
-            <div className="wcs-brand-title">Sandesh Chats</div>
+            <div className="wcs-brand-title">Connectum Chats</div>
             <div className="wcs-brand-sub">Active Conversations &amp; Hosts</div>
           </div>
         </div>
@@ -244,7 +244,7 @@ export default function WorkspaceChatsSlider({
                     />
                     {online && <span className="wcs-online-dot" title="Online now" />}
                     {c.isHost && (
-                      <span className="wcs-host-badge" title="Sandesh Certified Host">
+                      <span className="wcs-host-badge" title="Connectum Certified Host">
                         <span className="material-icons">verified</span>
                       </span>
                     )}
