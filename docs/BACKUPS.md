@@ -21,3 +21,16 @@
 
 (Check `redis-cli CONFIG GET dir` for the real data directory first; use `appendonly` handling
 appropriate to your setup.)
+
+## Copy the backups off the VM
+
+The snapshots live on the VM's own disk, so losing the VM would lose them too. Pull them to another machine regularly
+(from a machine that can `ssh` to the VM, on the office network or VPN):
+
+    mkdir -p ~/axi-backups && chmod 700 ~/axi-backups
+    ssh axi-vm 'sudo -n tar -C /var/backups/axi-redis -cf - $(sudo -n ls /var/backups/axi-redis)' | tar -C ~/axi-backups -xf -
+    chmod 600 ~/axi-backups/*
+
+The folder holds the company's data and `env-latest.bak` (the keys needed to read a snapshot): keep it private, and delete
+snapshots you no longer need. Removing a person's data "everywhere" also means removing it from these copies and from
+older snapshots (`grep -qa <name> redis-*.rdb` finds which ones still contain it).

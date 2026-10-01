@@ -761,3 +761,5 @@ Events sent while a client is offline are lost, so after reconnecting a client s
 - `admin.audit.list {username?, limit?, offset?}` -> `{entries,total,offset,hasMore}` (newest first; `limit` up to 500;
   the log keeps the latest 5,000 entries).
 - Invitation emails are retried on temporary mail-server failures; see `docs/EMAIL_SETUP.md`.
+- `admin.mail.queue` (administrator) -> `{pending:[{id,kind,to,subject,attempts,lastError?,nextTs}], dead:[...], counts}`: outgoing
+  mail that is waiting to be (re)sent, and mail that was given up on. No message bodies.

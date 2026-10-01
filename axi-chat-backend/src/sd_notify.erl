@@ -77,13 +77,21 @@ smtp(Kind, To, Extra) ->
                          [Kind, maps:get(<<"name">>, To, <<>>)]);
         true ->
             {Subject, Body} = mail_text(Kind, To, Extra),
-            spawn(fun() -> send_with_retry(Kind, Email, Subject, Body, retry_delays()) end)
+            case Kind of
+                %% One-time codes: short-lived secrets, retried in memory for about a minute, never stored in Redis.
+                otp -> spawn(fun() -> send_with_retry(Kind, Email, Subject, Body, code_delays()) end);
+                %% Everything else (invitations, ...): queued in Redis so a restart cannot lose it.
+                _ ->
+                    try sd_mailq:enqueue(Kind, Email, Subject, Body), sd_mailq:kick()
+                    catch _:_ -> spawn(fun() -> send_with_retry(Kind, Email, Subject, Body, code_delays()) end)
+                    end
+            end
     end,
     ok.
 
-%% Mail servers hiccup (connection reset, 4xx "try later"). Try again a couple of times, then give up and say so in
-%% the log. A permanent refusal (bad address, wrong login: 5xx) is not retried. Delays in ms, SMTP_RETRY_DELAYS_MS
-%% (default "0,5000,30000": the first attempt is immediate).
+%% In-memory retry, used for one-time codes (invitations etc. go through the durable sd_mailq instead).
+%% Mail servers hiccup (connection reset, 4xx "try later"): try again, then give up and say so in the log.
+%% A permanent refusal (bad address, wrong login: 5xx) is not retried.
 send_with_retry(Kind, Email, Subject, Body, [Delay | Rest]) ->
     timer:sleep(Delay),
     case sd_smtp:send(Email, Subject, Body) of
@@ -99,23 +107,14 @@ send_with_retry(Kind, Email, Subject, Body, [Delay | Rest]) ->
             end
     end.
 
-transient({unexpected_reply, [$4 | _], _}) -> true;      %% 4xx: ask again later
-transient({unexpected_reply, _, _}) -> false;            %% 5xx: refused for good
-transient(no_recipient) -> false;
-transient(_) -> true.                                    %% connection / TLS / timeout trouble
+transient(Why) -> sd_mailq:transient(Why).
 
-retry_delays() ->
-    Default = [0, 5000, 30000],
-    case os:getenv("SMTP_RETRY_DELAYS_MS") of
-        false -> Default;
-        S ->
-            Parts = [string:trim(P) || P <- string:split(S, ",", all)],
-            try [list_to_integer(P) || P <- Parts, P =/= ""] of
-                [] -> Default;
-                L -> L
-            catch _:_ -> Default
-            end
-    end.
+%% Retry delays for one-time codes: the configured list, cut off after about 90 s in total (a code lives 5 minutes).
+code_delays() ->
+    cut(sd_mailq:delays(), 0, []).
+cut([], _, Acc) -> lists:reverse(Acc);
+cut([D | Rest], Sum, Acc) when Sum + D =< 90000 -> cut(Rest, Sum + D, [D | Acc]);
+cut(_, _, Acc) -> case Acc of [] -> [0]; _ -> lists:reverse(Acc) end.
 
 mail_text(Kind, To, Extra) ->
     Name = maps:get(<<"name">>, To, <<>>),

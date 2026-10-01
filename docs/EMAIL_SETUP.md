@@ -17,13 +17,23 @@ The backend reads these from its environment. On the VM they live in `/etc/axi-c
 | `SMTP_FROM` | optional sender address if different from `SMTP_USER` |
 | `SMTP_FROM_NAME` | display name, default `Connectum` |
 | `APP_URL` | link put in the email, e.g. `https://10.0.2.146` |
-| `SMTP_RETRY_DELAYS_MS` | optional, default `0,5000,30000`: delays before each delivery attempt (first is immediate) |
+| `SMTP_RETRY_DELAYS_MS` | optional, default `0,5000,30000,120000,600000,3600000`: delay before each delivery attempt in ms (the first is immediate) |
 
-**Delivery.** Each email is sent in the background. A temporary failure (connection problem, `4xx` "try later") is
-retried up to twice more (see `SMTP_RETRY_DELAYS_MS`); a permanent refusal (`5xx`: bad address, wrong login) is logged
-once and not retried. The person is created either way, so a lost invitation can be re-sent:
-`users.resend_invite {username}` (administrators, or the person's own host; only for someone who has not signed in
-yet; at most once a minute per person).
+**Delivery.** Invitations (and every other non-secret email) go into a durable queue in Redis first (`sd_mailq`) and are
+sent from there, so a backend restart or crash in the middle of a retry cannot lose them. A temporary failure (mail server
+down, connection problem, `4xx` "try later") is retried on the schedule above, up to six attempts over about an hour; a
+permanent refusal (`5xx`: bad address, wrong login) goes straight to the dead list. The person is created either way.
+One-time sign-in codes are the exception: they are short-lived secrets, so they are not stored in Redis and are retried only
+in memory for about a minute.
+
+See what is waiting or failed with `admin.mail.queue` (administrators): `pending` (with attempts, last error, next try) and
+`dead` (the latest 100 given-up jobs). Message bodies are never returned. A lost invitation can be re-sent:
+`users.resend_invite {username}` (administrators, or the person's own host; only for someone who has not signed in yet; at
+most once a minute per person).
+
+**Rotating the SMTP password.** Reset it in Microsoft 365, then update `SMTP_PASS` in `/etc/axi-chat-backend.env` and
+`sudo systemctl restart axi-chat-backend`; the `sd_smtp:probe()` check below confirms the new login. (Keep the password out
+of chats and shell history: type it into the file on the VM.)
 
 **What an invitation says.** The username, and how to sign in: enter the username (or email); the first time scan the
 QR code with an authenticator app; after that sign in with the app's 6-digit code. Only administrators have a password,
