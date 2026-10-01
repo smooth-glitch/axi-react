@@ -3,8 +3,7 @@
 # (b) branches with unmerged commits and no activity for 30+ days. Reports only: it never deletes.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-REPO=${REPO:-smooth-glitch/axi-react}
-SERVER=${SERVER:-https://github.com}
+. "$(dirname "$0")/repo-env.sh"
 STALE_DAYS=${STALE_DAYS:-30}
 BASE=${BASE_REF:-origin/main}
 NOW=$(date +%s)

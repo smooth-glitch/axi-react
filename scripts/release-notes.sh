@@ -5,7 +5,7 @@ set -euo pipefail
 TO=${1:?usage: release-notes.sh <to-ref> [from-ref]}
 FROM=${2:-$(git describe --tags --abbrev=0 "$TO^" 2>/dev/null || true)}
 RANGE=${FROM:+$FROM..}$TO
-REPO_URL=${REPO_URL:-https://github.com/smooth-glitch/axi-react}
+. "$(dirname "$0")/repo-env.sh"
 
 section() {  # $1 heading  $2 egrep of types
   local rows

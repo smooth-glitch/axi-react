@@ -48,7 +48,7 @@ On the VM, as root:
 
 ```sh
 set -a; . /etc/axi-chat-backend.env; set +a
-cd /home/opc/actions-runner/_work/axi-react/axi-react/axi-chat-backend
+cd /opt/axi/current/axi-chat-backend
 /opt/erlang/27.3.4.18/bin/erl -noshell -pa _build/default/lib/axi_chat_backend/ebin \
   -eval 'io:format("~p~n", [sd_smtp:probe()]), halt().'
 ```

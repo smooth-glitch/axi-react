@@ -5,7 +5,7 @@
 # docs/STATUS.md is bot-generated and never counted. Needs gh (GH_TOKEN), jq, git >= 2.38.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
-REPO=${REPO:-smooth-glitch/axi-react}
+. "$(dirname "$0")/repo-env.sh"
 BASE=${BASE_REF:-origin/main}
 MARK='<!-- connectum-conflict-warning -->'
 DRY=${DRY_RUN:-0}

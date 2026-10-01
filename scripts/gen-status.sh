@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 OUT=docs/STATUS.md
-REPO_URL=${REPO_URL:-https://github.com/smooth-glitch/axi-react}
+. "$(dirname "$0")/repo-env.sh"
 
 area() {
   case "$1" in

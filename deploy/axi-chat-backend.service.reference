@@ -1,0 +1,25 @@
+# Reference copy of /etc/systemd/system/axi-chat-backend.service on the VM.
+# Secrets live in /etc/axi-chat-backend.env (root-only), never in the repo.
+# /opt/axi/current is a symlink the deploy workflow re-points at the runner
+# checkout, so moving the repo or renaming the runner folder needs no unit edit.
+[Unit]
+Description=AXI Chat Backend (Erlang)
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/opt/axi/current/axi-chat-backend
+EnvironmentFile=/etc/axi-chat-backend.env
+ExecStart=/opt/erlang/27.3.4.18/bin/erl -noshell \
+    -pa /opt/axi/current/axi-chat-backend/_build/default/lib/axi_chat_backend/ebin \
+    -pa /opt/axi/current/axi-chat-backend/_build/default/lib/eredis/ebin \
+    -s chat_app start_web_only 8080
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

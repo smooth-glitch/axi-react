@@ -2,8 +2,7 @@
 # Teams digest: what merged today (IST), open PRs, and PRs waiting >24h without a review.
 # Needs gh (GH_TOKEN) and jq. Posts nothing if there is nothing to report.
 set -euo pipefail
-REPO=${REPO:-smooth-glitch/axi-react}
-SERVER=${SERVER:-https://github.com}
+. "$(dirname "$0")/repo-env.sh"
 TODAY=$(TZ=Asia/Kolkata date +%Y-%m-%d)
 NOW=$(date +%s)
 
@@ -34,5 +33,5 @@ $(echo "$OPEN_LINES" | head -n 12)"; fi
 export CARD_STYLE=accent CARD_ICON="📋" CARD_KICKER="CONNECTUM  ·  DAILY DIGEST" CARD_TITLE="$(TZ=Asia/Kolkata date +'%A, %d %b')" \
   CARD_SUB="$N_MERGED merged today  ·  $N_OPEN open" CARD_BODY="$BODY" \
   CARD_ACTIONS="Open pull requests|$SERVER/$REPO/pulls
-Project status page|$SERVER/$REPO/blob/main/docs/STATUS.md"
+Project status page|$SERVER/$REPO/blob/$DEFAULT_BRANCH/docs/STATUS.md"
 bash "$(dirname "$0")/teams-card.sh" "$@"

@@ -13,8 +13,7 @@ BASE=${BASE_REF:-origin/main}
 AFTER=${AFTER:-$(git rev-parse "$BASE")}
 BEFORE=${BEFORE:-}
 ACTOR=${ACTOR:-}
-SERVER=${SERVER:-https://github.com}
-REPO=${REPO:-smooth-glitch/axi-react}
+. "$(dirname "$0")/repo-env.sh"
 MAX_AGE_DAYS=${MAX_AGE_DAYS:-21}
 MAX_BRANCHES=${MAX_BRANCHES:-8}
 MAX_COMMITS=${MAX_COMMITS:-6}
@@ -37,7 +36,7 @@ area() {
 if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
   RANGE="$BEFORE..$AFTER"; COMPARE="$SERVER/$REPO/compare/${BEFORE:0:7}...${AFTER:0:7}"
 else
-  RANGE="-5 $AFTER"; COMPARE="$SERVER/$REPO/commits/main"
+  RANGE="-5 $AFTER"; COMPARE="$SERVER/$REPO/commits/$DEFAULT_BRANCH"
 fi
 HASHES=$(git rev-list --no-merges --reverse $RANGE)
 TOTAL=$(echo "$HASHES" | grep -c . || true)
@@ -142,7 +141,7 @@ build() {  # $1 = max conflict blocks, $2 = max commit blocks
     --arg when "$(TZ=Asia/Kolkata date +'%d %b %Y · %H:%M IST')" --arg compare "$COMPARE" \
     --arg checked "$CHECKED" --arg errors "$ERRORS" --arg merged "$MERGED_SKIPPED" --arg days "$MAX_AGE_DAYS" \
     --arg sha "${AFTER:0:7}" --arg shaUrl "$SERVER/$REPO/commit/$AFTER" \
-    --arg status "$SERVER/$REPO/blob/main/docs/STATUS.md" --arg mainUrl "$SERVER/$REPO/tree/main" '
+    --arg status "$SERVER/$REPO/blob/$DEFAULT_BRANCH/docs/STATUS.md" --arg mainUrl "$SERVER/$REPO/tree/$DEFAULT_BRANCH" '
     def tile($num; $label; $color): {type:"Column", width:"stretch", items:[{type:"Container", style:"emphasis", items:[
       {type:"TextBlock", text:$num, size:"ExtraLarge", weight:"Bolder", color:$color, horizontalAlignment:"Center"},
       {type:"TextBlock", text:$label, size:"Small", isSubtle:true, spacing:"None", horizontalAlignment:"Center"}]}]};

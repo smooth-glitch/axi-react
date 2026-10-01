@@ -31,4 +31,11 @@ jobs:
           git config user.name "connectum-status-bot"
           git config user.email "actions@users.noreply.github.com"
           git add docs/STATUS.md
-          git diff --cached --quiet || (git commit -m "docs: refresh STATUS.md [skip ci]" && git pull --rebase origin "${GITHUB_REF_NAME}" && git push)
+          if git diff --cached --quiet; then echo "STATUS.md is unchanged"; exit 0; fi
+          git commit -m "docs: refresh STATUS.md [skip ci]"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          # If the branch is protected (e.g. "require a pull request"), the push is refused. That must not turn every merge
+          # red: warn instead. To keep the page updating, let the github-actions bot bypass the protection for this branch.
+          if ! git push; then
+            echo "::warning title=STATUS.md was not updated::The push to ${GITHUB_REF_NAME} was refused (branch protection?). Allow the github-actions bot to bypass it, or ignore this: nothing else depends on the page."
+          fi
