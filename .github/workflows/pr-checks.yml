@@ -1,0 +1,89 @@
+name: PR checks
+
+# Runs on GitHub's cloud runners (free for public repos), separate from the VM preview
+# deploy. Frontend: unit tests + production build. Backend: compile + the whole
+# axi-chat-backend/test/run_all.mjs suite (it starts its own throwaway Redis and backends).
+# Teams gets a card when a check fails, and once when a PR is first opened with green checks.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Redis
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-server
+      - name: Compile
+        working-directory: axi-chat-backend
+        run: rebar3 compile
+      - name: Run every backend suite
+        working-directory: axi-chat-backend
+        run: node test/run_all.mjs
+
+  teams:
+    needs: [frontend, backend]
+    if: ${{ always() && github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post result card
+        env:
+          WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          FE: ${{ needs.frontend.result }}
+          BE: ${{ needs.backend.result }}
+          ACTION: ${{ github.event.action }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_USER: ${{ github.event.pull_request.user.login }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "TEAMS_WEBHOOK_URL not set; skipping"; exit 0; fi
+          icon() { [ "$1" = "success" ] && echo "✅ passed" || { [ "$1" = "cancelled" ] && echo "⏹ cancelled" || echo "❌ failed"; }; }
+          if [ "$FE" = "cancelled" ] || [ "$BE" = "cancelled" ]; then echo "superseded by a newer push; skipping"; exit 0; fi
+          if [ "$FE" = "success" ] && [ "$BE" = "success" ]; then
+            # Green: announce once, when the PR is first opened (not on every push).
+            [ "$ACTION" = "opened" ] || [ "$ACTION" = "ready_for_review" ] || { echo "green, not first open; staying quiet"; exit 0; }
+            export CARD_STYLE=good CARD_ICON="✅" CARD_TITLE="PR #$PR_NUM checks passed"
+          else
+            export CARD_STYLE=attention CARD_ICON="❌" CARD_TITLE="PR #$PR_NUM checks FAILED"
+          fi
+          export CARD_KICKER="CONNECTUM  ·  PR CHECKS" CARD_SUB="$PR_USER  ·  \`$BRANCH\`"
+          export CARD_BODY="**$PR_TITLE**
+          Frontend (tests + build): $(icon "$FE")
+          Backend (compile + all suites): $(icon "$BE")"
+          export CARD_ACTIONS="Open the PR|$PR_URL
+          View the run|$RUN_URL"
+          bash scripts/teams-card.sh --post

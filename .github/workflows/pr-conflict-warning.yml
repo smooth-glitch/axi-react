@@ -1,0 +1,35 @@
+name: PR conflict warning
+
+# Keeps one sticky comment on each open PR saying whether it would conflict with main, in which
+# files, and how to resolve safely. Re-checks every PR when a PR changes and whenever main moves.
+# Uses `git merge-tree`, which never touches a working tree or pushes anything.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-conflict-warning
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check every open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          BASE_REF=origin/main bash scripts/pr-conflict-check.sh
