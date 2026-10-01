@@ -73,7 +73,7 @@ export default function Sidebar({
           isGroup: false,
           category: "direct",
           designation: user.status || "Active Associate",
-          preview: user.status || "Online on Sandesh",
+          preview: user.status || "Online on Connectum",
           time: "now",
           unread: 0,
           initials: user.initials || (user.name || uUsername).slice(0, 2).toUpperCase(),
@@ -107,10 +107,10 @@ export default function Sidebar({
       <div className="sandesh-sidebar-header">
         <div className="sandesh-brand-row">
           <div className="sandesh-logo-mark">
-            <img src={sandeshLogo} alt="Sandesh" className="sandesh-logo-mark-img" />
+            <img src={sandeshLogo} alt="Connectum" className="sandesh-logo-mark-img" />
           </div>
           <div className="sandesh-brand-info">
-            <span className="brand-name">Sandesh</span>
+            <span className="brand-name">Connectum</span>
             <span className="brand-badge">ENTERPRISE</span>
           </div>
           <button
@@ -162,7 +162,7 @@ export default function Sidebar({
                 type="button"
                 className="sandesh-icon-btn-3d"
                 onClick={onOpenAdminConsole}
-                title="Open Sandesh Admin Console"
+                title="Open Connectum Admin Console"
                 aria-label="Admin console"
               >
                 <span className="material-icons">settings</span>
@@ -280,7 +280,7 @@ export default function Sidebar({
                     </span>
                   )}
                   {chat.id !== "workspace" && chat.isHost && (
-                    <span className="host-seal-icon" title="Certified Sandesh Host">
+                    <span className="host-seal-icon" title="Certified Connectum Host">
                       <span className="material-icons">verified</span>
                     </span>
                   )}

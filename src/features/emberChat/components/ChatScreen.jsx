@@ -150,7 +150,7 @@ export default function ChatScreen({
                 <span className="material-icons banner-icon">how_to_reg</span>
                 <div className="banner-text-wrap">
                   <strong>{pendingApprovalsCount} User{pendingApprovalsCount > 1 ? "s" : ""} Waiting for Entry Approval</strong>
-                  <span>Verify applicant details and authorize access to enter Sandesh Chat.</span>
+                  <span>Verify applicant details and authorize access to enter Connectum Chat.</span>
                 </div>
               </div>
               <button
@@ -184,7 +184,7 @@ export default function ChatScreen({
               }}
             >
               <span className="material-icons" style={{ fontSize: "18px" }}>wifi_off</span>
-              <span>Disconnected from Sandesh backend. Reconnecting in the background...</span>
+              <span>Disconnected from Connectum backend. Reconnecting in the background...</span>
             </div>
           )}
 

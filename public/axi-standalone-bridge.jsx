@@ -258,7 +258,7 @@
         overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;display:flex;align-items:center;justify-content:center;background:#0F172A;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
         overlay.innerHTML = `
             <form id="axiStandaloneLoginForm" style="background:#fff;border-radius:16px;padding:32px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-                <h1 style="font-size:18px;font-weight:800;color:#0F172A;margin:0 0 4px;">Sandesh — Standalone Mode</h1>
+                <h1 style="font-size:18px;font-weight:800;color:#0F172A;margin:0 0 4px;">Connectum — Standalone Mode</h1>
                 <p style="font-size:12.5px;color:#64748B;margin:0 0 20px;line-height:1.5;">Not running inside Axpert. Sign in with your Axpert credentials to test against the real ARM API.</p>
                 <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:5px;">Username</label>
                 <input id="axiStandaloneUser" type="text" autocomplete="username" style="width:100%;height:40px;padding:0 12px;border-radius:8px;border:1.5px solid #E5E7EB;font-size:14px;margin-bottom:14px;box-sizing:border-box;" required />

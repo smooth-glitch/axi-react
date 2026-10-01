@@ -304,7 +304,7 @@ export default function MyWorkspace({
 
             <div className="workspace-brand-identity">
               <div className="workspace-brand-icon">
-                <img src={sandeshLogo} alt="Sandesh" className="sandesh-logo-mark-img" />
+                <img src={sandeshLogo} alt="Connectum" className="sandesh-logo-mark-img" />
               </div>
               <div className="workspace-brand-meta">
                 <div className="workspace-title-row">
@@ -395,7 +395,7 @@ export default function MyWorkspace({
                 type="button"
                 className="workspace-icon-btn-3d"
                 onClick={onOpenAdminConsole}
-                title="Open Sandesh Admin Console"
+                title="Open Connectum Admin Console"
                 aria-label="Admin console"
               >
                 <span className="material-icons">admin_panel_settings</span>
@@ -452,7 +452,7 @@ export default function MyWorkspace({
                 type="button"
                 className="workspace-icon-btn-3d signout-btn"
                 onClick={onSignOut}
-                title="Sign Out of Sandesh"
+                title="Sign Out of Connectum"
                 aria-label="Sign out"
               >
                 <span className="material-icons">logout</span>
@@ -719,7 +719,7 @@ export default function MyWorkspace({
                       <div>
                         <h3 className="panel-title">Channels &amp; Direct Chats</h3>
                         <span className="panel-sub">
-                          {onlineUsers.length} online associates on Sandesh
+                          {onlineUsers.length} online associates on Connectum
                         </span>
                       </div>
                     </div>

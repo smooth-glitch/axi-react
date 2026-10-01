@@ -35,7 +35,7 @@ export default function AssociatesModal({
             <span className="material-icons">contact_page</span>
           </div>
           <div>
-            <h3>Sandesh Associates &amp; Contacts</h3>
+            <h3>Connectum Associates &amp; Contacts</h3>
             <span className="modal-subtitle">
               Verified enterprise colleagues and partner connections
             </span>

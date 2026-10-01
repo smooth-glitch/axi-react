@@ -11,7 +11,7 @@ export default function UserProfileViewModal({
   const initials = user.initials || displayName.slice(0, 2).toUpperCase();
   const color = user.color || "#34c759";
   const designation = user.designation || user.role || "Enterprise Associate";
-  const status = user.status || "Active on Sandesh";
+  const status = user.status || "Active on Connectum";
 
   return (
     <div className="sandesh-modal-card-3d sandesh-user-profile-modal" style={{ maxWidth: "440px" }}>

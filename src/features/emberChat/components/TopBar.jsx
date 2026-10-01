@@ -78,7 +78,7 @@ export default function TopBar({
           />
           {isOnline && <span className="online-presence-dot" title="Online now" />}
           {chat.isHost && (
-            <span className="host-seal-icon" title="Certified Sandesh Host">
+            <span className="host-seal-icon" title="Certified Connectum Host">
               <span className="material-icons">verified</span>
             </span>
           )}
@@ -106,7 +106,7 @@ export default function TopBar({
                       ? "Enterprise Global Channel"
                       : "Group Channel"
                   : isOnline
-                    ? "Active Now on Sandesh"
+                    ? "Active Now on Connectum"
                     : "Active Now")}
           </span>
         </div>
@@ -195,7 +195,7 @@ export default function TopBar({
             type="button"
             className="sandesh-icon-btn-3d"
             onClick={onOpenAdminConsole}
-            title="Sandesh Admin Console"
+            title="Connectum Admin Console"
           >
             <span className="material-icons">admin_panel_settings</span>
           </button>

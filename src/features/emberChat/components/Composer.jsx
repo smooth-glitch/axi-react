@@ -770,7 +770,7 @@ export default function Composer({
                 rows={1}
                 placeholder={
                   disabled
-                    ? "Connecting to Sandesh server..."
+                    ? "Connecting to Connectum server..."
                     : "Type a message or '#' for commands..."
                 }
                 value={text}
