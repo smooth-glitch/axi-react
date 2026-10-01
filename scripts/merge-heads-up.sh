@@ -52,7 +52,7 @@ for H in $HASHES; do
 done
 for H in $SHOWN; do
   NAME=$(git show -s --format=%an "$H")
-  DATE=$(git show -s --format=%ad --date=format:'%d %b, %H:%M' "$H")
+  DATE=$(TZ=Asia/Kolkata git show -s --format=%ad --date=format-local:'%d %b, %H:%M IST' "$H")
   SUBJECT=$(git show -s --format=%s "$H")
   TYPE=$(echo "$SUBJECT" | sed -nE 's/^([a-z]+)(\([^)]*\))?!?:.*/\1/p')
   SCOPE=$(echo "$SUBJECT" | sed -nE 's/^[a-z]+\(([^)]*)\)!?:.*/\1/p')
@@ -139,7 +139,7 @@ build() {  # $1 = max conflict blocks, $2 = max commit blocks
     --argjson clean "$CLEAN" --argjson conflicts "$CONFLICTS" --argjson maxb "$1" \
     --arg total "$TOTAL" --arg files "$FILES_N" --arg ins "$TOT_INS" --arg del "$TOT_DEL" \
     --arg authors "$AUTHORS" --arg areas "$AREAS" --arg actor "$ACTOR" --arg actorUrl "$SERVER/$ACTOR" \
-    --arg when "$(date -u +'%d %b %Y · %H:%M UTC')" --arg compare "$COMPARE" \
+    --arg when "$(TZ=Asia/Kolkata date +'%d %b %Y · %H:%M IST')" --arg compare "$COMPARE" \
     --arg checked "$CHECKED" --arg errors "$ERRORS" --arg merged "$MERGED_SKIPPED" --arg days "$MAX_AGE_DAYS" \
     --arg sha "${AFTER:0:7}" --arg shaUrl "$SERVER/$REPO/commit/$AFTER" \
     --arg status "$SERVER/$REPO/blob/main/docs/STATUS.md" --arg mainUrl "$SERVER/$REPO/tree/main" '
