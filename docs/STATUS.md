@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 06:52 UTC · commit [`0579a6b`](https://github.com/smooth-glitch/axi-react/commit/0579a6bf0a537dea7e4a1e4e1ad652706b18f9fb)
+> Last updated: 01 Oct 2026, 07:01 UTC · commit [`d05d755`](https://github.com/smooth-glitch/axi-react/commit/d05d755a5ec0ba3a48fb6a6efe46998dc2c61864)
 
 ## New here? Start here
 
@@ -44,28 +44,32 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 64 |
+| Arjun Sridhar | 66 |
 | Arjun | 35 |
 | Anish-S-Agile | 27 |
 | Gunn | 26 |
+| connectum-status-bot | 1 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
 | Area | Files touched |
 |---|---|
 | Frontend | 231 |
-| Other | 113 |
+| Other | 114 |
 | Backend | 93 |
 | Docs | 22 |
-| CI / DevOps | 12 |
+| CI / DevOps | 15 |
 | Tests | 11 |
 
 ## Recent changes
 
 | When | Who | Change | Diff |
 |---|---|---|---|
-| 01 Oct | Arjun Sridhar | [`2dc93a1`](https://github.com/smooth-glitch/axi-react/commit/2dc93a143dfe3c2ccdce474841203277284ce5e7) ci: STATUS.md doubles as a new-developer onboarding page (start-here steps, owners, docs index) | +65 / −5 |
-| 01 Oct | Arjun Sridhar | [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50) ci: Teams status card and self-updating STATUS.md, both on push to main | +310 / −0 |
+| 01 Oct | Arjun Sridhar | [`24faec4`](https://github.com/smooth-glitch/axi-react/commit/24faec474791299fc00e92d23d8fb7ebc191e384) ci: one Teams card per merge to main; ignore already-merged branches; protect generated STATUS.md | +194 / −244 |
+| 01 Oct | Arjun Sridhar | [`88325fb`](https://github.com/smooth-glitch/axi-react/commit/88325fb353324874af3d12dac8a5530e40689c5c) ci: on every merge to main, post a pull reminder with a per-branch conflict forecast and safe-resolution steps to Teams | +173 / −0 |
+| 01 Oct | connectum-status-bot | [`9e30d9a`](https://github.com/smooth-glitch/axi-react/commit/9e30d9a968b925bf1c8d52757f1d4adac5f8dc7d) docs: refresh STATUS.md [skip ci] | +0 / −0 |
+| 01 Oct | Arjun Sridhar | [`2dc93a1`](https://github.com/smooth-glitch/axi-react/commit/2dc93a143dfe3c2ccdce474841203277284ce5e7) ci: STATUS.md doubles as a new-developer onboarding page (start-here steps, owners, docs index) | +27 / −0 |
+| 01 Oct | Arjun Sridhar | [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50) ci: Teams status card and self-updating STATUS.md, both on push to main | +252 / −0 |
 | 01 Oct | Anish-S-Agile | [`62e8331`](https://github.com/smooth-glitch/axi-react/commit/62e8331e6c7b69738f068503094456492b8bd171) Docs Readable + Ui polish | +1923 / −473 |
 | 30 Sep | Arjun Sridhar | [`1d284a8`](https://github.com/smooth-glitch/axi-react/commit/1d284a857f32cd6059d6517a3e50ab2c29b4be98) feat(backend): Connectum backend (codes/QR, wizards, data sources, payments, custom # commands, chat edit) (#86) | +5181 / −107 |
 | 30 Sep | Arjun Sridhar | [`2a267e9`](https://github.com/smooth-glitch/axi-react/commit/2a267e9ed16af3da7d63c1e4fe95b7c4a19857bf) UI cleanup: remove the '#' hint, the green sync dot and the 'Live Sync' pill (#85) | +8 / −31 |
@@ -86,6 +90,3 @@
 | 30 Sep | Arjun Sridhar | [`10f7bb4`](https://github.com/smooth-glitch/axi-react/commit/10f7bb4d1438ee0fd6c51db0ed1d3a5cd40ea9bc) fix: hooks after the logged-out early return crashed the screen right after login | +7 / −5 |
 | 30 Sep | Arjun Sridhar | [`8e99fa9`](https://github.com/smooth-glitch/axi-react/commit/8e99fa9d4a501cc3df25e75221b15ff622062c9a) feat: #accept / #reject suggest the user's pending requests (with who/what) | +36 / −1 |
 | 30 Sep | Arjun Sridhar | [`c0710a3`](https://github.com/smooth-glitch/axi-react/commit/c0710a3ef570e8383caf78a4941a90c26ec75b53) feat: group owner in group events; Members modal + #addmember gated to the group admin | +63 / −5 |
-| 30 Sep | Anish-S-Agile | [`c50db29`](https://github.com/smooth-glitch/axi-react/commit/c50db29353d6d2f8b20e3810b1f2be46d7b5fce4) fix: resolve avatar upload, conversations route, multi-word autocomplete, and profile controls | +339 / −1655 |
-| 30 Sep | Anish-S-Agile | [`68153af`](https://github.com/smooth-glitch/axi-react/commit/68153af205921778a4fe0b9f386be0e2e1c2fb66) Updated UI Polish | +4803 / −2104 |
-| 30 Sep | Gunn | [`b47b415`](https://github.com/smooth-glitch/axi-react/commit/b47b415bc35a782431dc2a0db5d719292a351f3c) fix(tstruct): URL-encode struct names in web paths; drop leftover #tstruct-edit/-delete reply handlers | +16 / −27 |
