@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 06:50 UTC · commit [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50)
+> Last updated: 01 Oct 2026, 06:52 UTC · commit [`0579a6b`](https://github.com/smooth-glitch/axi-react/commit/0579a6bf0a537dea7e4a1e4e1ad652706b18f9fb)
 
 ## New here? Start here
 
@@ -44,7 +44,7 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 63 |
+| Arjun Sridhar | 64 |
 | Arjun | 35 |
 | Anish-S-Agile | 27 |
 | Gunn | 26 |
@@ -64,6 +64,7 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct | Arjun Sridhar | [`2dc93a1`](https://github.com/smooth-glitch/axi-react/commit/2dc93a143dfe3c2ccdce474841203277284ce5e7) ci: STATUS.md doubles as a new-developer onboarding page (start-here steps, owners, docs index) | +65 / −5 |
 | 01 Oct | Arjun Sridhar | [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50) ci: Teams status card and self-updating STATUS.md, both on push to main | +310 / −0 |
 | 01 Oct | Anish-S-Agile | [`62e8331`](https://github.com/smooth-glitch/axi-react/commit/62e8331e6c7b69738f068503094456492b8bd171) Docs Readable + Ui polish | +1923 / −473 |
 | 30 Sep | Arjun Sridhar | [`1d284a8`](https://github.com/smooth-glitch/axi-react/commit/1d284a857f32cd6059d6517a3e50ab2c29b4be98) feat(backend): Connectum backend (codes/QR, wizards, data sources, payments, custom # commands, chat edit) (#86) | +5181 / −107 |
@@ -88,4 +89,3 @@
 | 30 Sep | Anish-S-Agile | [`c50db29`](https://github.com/smooth-glitch/axi-react/commit/c50db29353d6d2f8b20e3810b1f2be46d7b5fce4) fix: resolve avatar upload, conversations route, multi-word autocomplete, and profile controls | +339 / −1655 |
 | 30 Sep | Anish-S-Agile | [`68153af`](https://github.com/smooth-glitch/axi-react/commit/68153af205921778a4fe0b9f386be0e2e1c2fb66) Updated UI Polish | +4803 / −2104 |
 | 30 Sep | Gunn | [`b47b415`](https://github.com/smooth-glitch/axi-react/commit/b47b415bc35a782431dc2a0db5d719292a351f3c) fix(tstruct): URL-encode struct names in web paths; drop leftover #tstruct-edit/-delete reply handlers | +16 / −27 |
-| 30 Sep | Arjun Sridhar | [`b49b2f8`](https://github.com/smooth-glitch/axi-react/commit/b49b2f866aca489300dd70b0d7cf70244441757f) chore: remove #tstruct-edit and #tstruct-delete (record ids can't be discovered); viewer buttons use /sd (#74) | +21 / −63 |
