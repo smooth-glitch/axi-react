@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 18:01 IST · commit [`92e0e53`](https://github.com/smooth-glitch/axi-react/commit/92e0e53048cb4b5e7888f0cf853e7b72f4b690c3)
+> Last updated: 01 Oct 2026, 18:11 IST · commit [`2f8f302`](https://github.com/smooth-glitch/axi-react/commit/2f8f302b8de40569c575c994ad7a85c5b39c2209)
 
 ## New here? Start here
 
@@ -53,11 +53,11 @@
 
 | Contributor | Commits |
 |---|---|
-| Arjun Sridhar | 77 |
+| Arjun Sridhar | 78 |
 | Anish-S-Agile | 36 |
 | Arjun | 35 |
 | Gunn | 26 |
-| connectum-status-bot | 11 |
+| connectum-status-bot | 12 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -74,6 +74,8 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 18:01 | connectum-status-bot | [`6fa89b9`](https://github.com/smooth-glitch/axi-react/commit/6fa89b91106f15f186b2e5d04698a1f528a3e62a) docs: refresh STATUS.md [skip ci] | +0 / −0 |
+| 01 Oct, 18:00 | Arjun Sridhar | [`215bcbe`](https://github.com/smooth-glitch/axi-react/commit/215bcbea687d0e84bcebb71a3c0e040ea77232bd) fix(frontend): finishing the recovery codes crashed for non-admins and sent them back to sign-in | +1 / −1 |
 | 01 Oct, 17:45 | Arjun Sridhar | [`3e95831`](https://github.com/smooth-glitch/axi-react/commit/3e9583121b62b9fdfe286bc010b1f1c882390f2b) feat(backend): durable mail queue, bigger accept queue (fixes the flaky connect burst), audit cap setting, docs | +325 / −35 |
 | 01 Oct, 17:32 | connectum-status-bot | [`9f19559`](https://github.com/smooth-glitch/axi-react/commit/9f1955964031327cbd4d3d04b20d22b198f508a5) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 17:28 | connectum-status-bot | [`75bae4a`](https://github.com/smooth-glitch/axi-react/commit/75bae4aa65be9712220f4801918d93970592828d) docs: refresh STATUS.md [skip ci] | +0 / −0 |
@@ -97,5 +99,3 @@
 | 01 Oct, 12:44 | connectum-status-bot | [`fdb3085`](https://github.com/smooth-glitch/axi-react/commit/fdb30856a29f40967c7f89c1ba3b20c2e0ba0823) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:39 | Arjun Sridhar | [`fe13e11`](https://github.com/smooth-glitch/axi-react/commit/fe13e113c6ef58c430ac43a0979d1dd34ca994b3) docs: link the app and VPN instructions from the generated status page | +7 / −0 |
 | 01 Oct, 12:35 | connectum-status-bot | [`0d23e7f`](https://github.com/smooth-glitch/axi-react/commit/0d23e7f033d6e57a04abf72a2a359fc9a8715db3) docs: refresh STATUS.md [skip ci] | +0 / −0 |
-| 01 Oct, 12:32 | Arjun Sridhar | [`e9d7da7`](https://github.com/smooth-glitch/axi-react/commit/e9d7da746300421ead4fc718ec40cac7b5aa7dea) ci: show Indian time (IST) on the Teams card and the status page | +4 / −4 |
-| 01 Oct, 12:31 | connectum-status-bot | [`998b8ce`](https://github.com/smooth-glitch/axi-react/commit/998b8ce9f2d88c225b3ce76134d0c74c5a55ba84) docs: refresh STATUS.md [skip ci] | +0 / −0 |
