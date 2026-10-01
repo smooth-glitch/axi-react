@@ -1,7 +1,7 @@
 # ⬡ Connectum · Live Status
 
 > Auto-generated on every push to `main`. Do not edit by hand.
-> Last updated: 01 Oct 2026, 15:06 IST · commit [`191d58d`](https://github.com/smooth-glitch/axi-react/commit/191d58d478976ab1ba23b0a05a4606ffb028b24c)
+> Last updated: 01 Oct 2026, 16:39 IST · commit [`182c41e`](https://github.com/smooth-glitch/axi-react/commit/182c41e72e1086e0abaeee3373b08d53285ceb19)
 
 ## New here? Start here
 
@@ -54,10 +54,10 @@
 | Contributor | Commits |
 |---|---|
 | Arjun Sridhar | 74 |
+| Anish-S-Agile | 36 |
 | Arjun | 35 |
-| Anish-S-Agile | 33 |
 | Gunn | 26 |
-| connectum-status-bot | 7 |
+| connectum-status-bot | 8 |
 | Gunn Kataria | 1 |
 | Backend Owner | 1 |
 
@@ -74,6 +74,10 @@
 
 | When | Who | Change | Diff |
 |---|---|---|---|
+| 01 Oct, 16:28 | Anish-S-Agile | [`7cc8a52`](https://github.com/smooth-glitch/axi-react/commit/7cc8a52f205caf76c700d93e9a0615280ecdbd9d) fix: update UI labels from Sandesh to Connectum in SandeshLoginScreen | +10 / −10 |
+| 01 Oct, 16:24 | Anish-S-Agile | [`6a7cecb`](https://github.com/smooth-glitch/axi-react/commit/6a7cecb440b2235df7efb523e573cbaaab9c8d8f) Connectum Ui Updated | +10 / −27 |
+| 01 Oct, 16:22 | Anish-S-Agile | [`bb15a76`](https://github.com/smooth-glitch/axi-react/commit/bb15a7601eade5652ca1b0d033789133bf7e7437) Connectum UI Updated | +72 / −72 |
+| 01 Oct, 15:06 | connectum-status-bot | [`8974349`](https://github.com/smooth-glitch/axi-react/commit/897434998fef676a576c96bed7c2ac8e4192821e) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 14:34 | connectum-status-bot | [`e49a8aa`](https://github.com/smooth-glitch/axi-react/commit/e49a8aaf1bc2d0e1c14ed913782e92ee0320ec9c) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 14:27 | Arjun Sridhar | [`e8bd01b`](https://github.com/smooth-glitch/axi-react/commit/e8bd01bdce5ade61703fec919ac6c42c9e371120) docs: demo guide (set up from scratch, steps 1-7, and how to use the new admin features) | +90 / −0 |
 | 01 Oct, 14:24 | Arjun Sridhar | [`dd42c36`](https://github.com/smooth-glitch/axi-react/commit/dd42c368126f7991fa654e98661348d448352194) docs: email setup guide; deploys can be run by hand (main only) | +58 / −0 |
@@ -95,7 +99,3 @@
 | 01 Oct, 12:22 | connectum-status-bot | [`9e30d9a`](https://github.com/smooth-glitch/axi-react/commit/9e30d9a968b925bf1c8d52757f1d4adac5f8dc7d) docs: refresh STATUS.md [skip ci] | +0 / −0 |
 | 01 Oct, 12:20 | Arjun Sridhar | [`2dc93a1`](https://github.com/smooth-glitch/axi-react/commit/2dc93a143dfe3c2ccdce474841203277284ce5e7) ci: STATUS.md doubles as a new-developer onboarding page (start-here steps, owners, docs index) | +27 / −0 |
 | 01 Oct, 12:17 | Arjun Sridhar | [`2c28026`](https://github.com/smooth-glitch/axi-react/commit/2c28026d7c014587b6e71f3b8150a18c52611b50) ci: Teams status card and self-updating STATUS.md, both on push to main | +252 / −0 |
-| 01 Oct, 12:13 | Anish-S-Agile | [`fe14ef0`](https://github.com/smooth-glitch/axi-react/commit/fe14ef04b6a8e1d36aafc79e725df7e6e19e8cd1) Hash Directory Button fixed | +43 / −8 |
-| 01 Oct, 12:06 | Anish-S-Agile | [`a58db72`](https://github.com/smooth-glitch/axi-react/commit/a58db728e3905d0b2c7299d335f644aa1702a3c3) command Directory UI Updated | +560 / −172 |
-| 01 Oct, 11:42 | Anish-S-Agile | [`449908d`](https://github.com/smooth-glitch/axi-react/commit/449908d8407fb067142ece45c04336fea6b81c81) Ui fixed | +40 / −24 |
-| 01 Oct, 11:23 | Anish-S-Agile | [`2ac33e4`](https://github.com/smooth-glitch/axi-react/commit/2ac33e48eb908e6badd44ab7c3e898f37c4a91fb) feat(commands): polish CommandsHelpModal UI, commands catalog and integration tests | +645 / −136 |
