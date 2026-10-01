@@ -8,6 +8,7 @@ name: Deploy frontend
 # /uploads/ are routed to the Erlang backend; everything else is this
 # static build).
 on:
+  workflow_dispatch:   # lets you press "Run workflow" to redeploy main by hand
   push:
     branches: [main]
     paths:
@@ -22,6 +23,8 @@ on:
 
 jobs:
   deploy:
+    # Production only ever runs main, including when started by hand from the Actions tab.
+    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, axi-vm]
     steps:
       # clean: false -- this runner's workspace is shared with the backend deploy

@@ -7,6 +7,7 @@ name: Deploy backend
 # inbound firewall changes needed), so this is the correct architecture
 # for deploying to a private-network target, not a workaround.
 on:
+  workflow_dispatch:   # lets you press "Run workflow" to redeploy main by hand
   push:
     branches: [main]
     paths:
@@ -15,6 +16,8 @@ on:
 
 jobs:
   deploy:
+    # Production only ever runs main, including when started by hand from the Actions tab.
+    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, axi-vm]
     steps:
       - uses: actions/checkout@v4
