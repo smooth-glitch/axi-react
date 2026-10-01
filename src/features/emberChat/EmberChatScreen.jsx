@@ -56,6 +56,102 @@ function parseForwardedText(rawText, fallbackSender) {
   return { text: rawText, forwarded: false, forwardedBy: null, originalFrom: null };
 }
 
+function parseAttachmentFromText(rawText) {
+  if (typeof rawText !== "string") {
+    return { isAttachment: false, text: rawText };
+  }
+
+  // 1. Tagged wire format: [ATTACHMENT:{"kind":"file",...}]
+  const tagMatch = rawText.match(/\[ATTACHMENT:(\{.*?\})\]/);
+  if (tagMatch) {
+    try {
+      const data = JSON.parse(tagMatch[1]);
+      const cleanText = rawText.replace(tagMatch[0], "").trim();
+      const kind = data.kind || "file";
+      const fileUrl = data.url || data.fileUrl || "";
+      const fileName = data.name || data.fileName || "attachment";
+      const fileSize = data.size || data.fileSize || "";
+      const fileType = data.type || data.fileType || "";
+      return {
+        isAttachment: true,
+        kind,
+        fileName,
+        fileSize,
+        fileUrl,
+        fileType,
+        imageUrl: kind === "image" ? fileUrl : undefined,
+        videoUrl: kind === "video" ? fileUrl : undefined,
+        audioUrl: kind === "audio" ? fileUrl : undefined,
+        text: cleanText,
+      };
+    } catch {
+      // Fall through if json parse fails
+    }
+  }
+
+  // 2. Direct upload URL string: /uploads/... or http(s)://.../uploads/...
+  const trimmed = rawText.trim();
+  const uploadMatch = trimmed.match(/^(?:https?:\/\/[^\/\s]+)?(\/uploads\/[^\s]+)$/i);
+  if (uploadMatch) {
+    const fileUrl = uploadMatch[1];
+    const rawFileName = fileUrl.split("/").pop() || "file";
+    const cleanFileName = rawFileName.replace(/^\d+[-_]/, "");
+    const ext = (cleanFileName.split(".").pop() || "").toLowerCase();
+
+    let kind = "file";
+    if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) kind = "image";
+    else if (["mp4", "webm", "mov", "mkv"].includes(ext)) kind = "video";
+    else if (["mp3", "wav", "ogg", "m4a", "aac"].includes(ext)) kind = "audio";
+
+    return {
+      isAttachment: true,
+      kind,
+      fileName: decodeURIComponent(cleanFileName),
+      fileSize: "",
+      fileUrl,
+      fileType: "",
+      imageUrl: kind === "image" ? fileUrl : undefined,
+      videoUrl: kind === "video" ? fileUrl : undefined,
+      audioUrl: kind === "audio" ? fileUrl : undefined,
+      text: "",
+    };
+  }
+
+  // 3. Legacy descriptor format: 📎 Document: filename.pdf or 📷 Photo: filename.png
+  const legacyMatch = rawText.match(/^(?:📎 Document|📷 Photo|🎥 Video|🎙️ Voice Note):\s*(.+)$/i);
+  if (legacyMatch) {
+    const candidateName = legacyMatch[1].trim();
+    let kind = "file";
+    if (rawText.startsWith("📷")) kind = "image";
+    else if (rawText.startsWith("🎥")) kind = "video";
+    else if (rawText.startsWith("🎙️")) kind = "audio";
+
+    return {
+      isAttachment: true,
+      kind,
+      fileName: candidateName,
+      fileSize: "Document",
+      fileUrl: "",
+      fileType: "",
+      imageUrl: undefined,
+      videoUrl: undefined,
+      audioUrl: undefined,
+      text: "",
+    };
+  }
+
+  return { isAttachment: false, text: rawText };
+}
+
+function getAttachmentPreviewText(att, defaultText) {
+  if (!att || !att.isAttachment) return defaultText;
+  if (att.kind === "image") return "📷 Photo";
+  if (att.kind === "video") return "🎥 Video";
+  if (att.kind === "audio") return "🎙️ Voice note";
+  return `📎 ${att.fileName || "Document"}`;
+}
+
+
 // Server request objects (see sd_reqs:view/1) -> the shape ApprovalsModal renders.
 // The server sends each associate as { online, relation, user: { name, username, ... } };
 // the screens read name / username / online at the top level.
@@ -88,7 +184,9 @@ function mapServerRequests(requests, profiles = {}) {
       time: r.createdTs ? new Date(r.createdTs).toLocaleString() : undefined,
       details:
         r.type === "onboarding"
-          ? "Self-registered and waiting for approval to enter Sandesh."
+          ? (r.status === "accepted" || r.status === "approved" || String(r.status).toLowerCase() === "accepted" || String(r.status).toLowerCase() === "approved"
+              ? undefined
+              : "Self-registered and waiting for approval to enter Sandesh.")
           : r.type === "associate"
             ? `${r.fromName || r.from} wants to connect with you.`
             : r.type === "host_transfer"
@@ -479,13 +577,25 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const timeStr = formatTs(event.ts);
         const isOpen = activeChatIdRef.current === chatId;
         const parsed = parseForwardedText(event.text, fromUser);
+        const att = parseAttachmentFromText(parsed.text);
 
         const newMsg = {
           id: event.id || Date.now(),
-          kind: "text",
+          kind: att.isAttachment ? att.kind : "text",
           dir: "in",
           from: fromUser,
-          text: parsed.text,
+          text: att.isAttachment ? att.text : parsed.text,
+          ...(att.isAttachment
+            ? {
+                fileName: att.fileName,
+                fileSize: att.fileSize,
+                fileUrl: att.fileUrl,
+                fileType: att.fileType,
+                imageUrl: att.imageUrl,
+                videoUrl: att.videoUrl,
+                audioUrl: att.audioUrl,
+              }
+            : {}),
           time: timeStr,
           ts: event.ts,
           status: "read",
@@ -501,9 +611,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           [chatId]: [...(prev[chatId] ?? []), newMsg],
         }));
 
+        const attPreview = getAttachmentPreviewText(att, parsed.text);
         const previewText = parsed.forwarded
-          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
-          : event.text;
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${attPreview}`
+          : attPreview;
 
         setChats((prevChats) => {
           const existingIndex = prevChats.findIndex((c) => c.id === chatId);
@@ -544,12 +655,24 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const isMine = event.from && event.from.toLowerCase().trim() === myUsername;
         const timeStr = formatTs(event.ts);
         const parsed = parseForwardedText(event.text, event.from || "Associate");
+        const att = parseAttachmentFromText(parsed.text);
         const newMsg = {
           id: event.id || Date.now(),
-          kind: "text",
+          kind: att.isAttachment ? att.kind : "text",
           dir: isMine ? "out" : "in",
           from: event.from || "Associate",
-          text: parsed.text,
+          text: att.isAttachment ? att.text : parsed.text,
+          ...(att.isAttachment
+            ? {
+                fileName: att.fileName,
+                fileSize: att.fileSize,
+                fileUrl: att.fileUrl,
+                fileType: att.fileType,
+                imageUrl: att.imageUrl,
+                videoUrl: att.videoUrl,
+                audioUrl: att.audioUrl,
+              }
+            : {}),
           time: timeStr,
           ts: event.ts,
           status: "sent",
@@ -585,9 +708,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           };
         });
 
+        const attPreview = getAttachmentPreviewText(att, parsed.text);
         const chatPreview = parsed.forwarded
-          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
-          : `${event.from || "Associate"}: ${event.text}`;
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${attPreview}`
+          : `${event.from || "Associate"}: ${attPreview}`;
 
         setChats((prevChats) =>
           prevChats.map((c) =>
@@ -612,13 +736,25 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const timeStr = formatTs(event.ts);
         const isOpen = activeChatIdRef.current === targetGroup;
         const parsed = parseForwardedText(event.text, event.from || "Associate");
+        const att = parseAttachmentFromText(parsed.text);
 
         const newMsg = {
           id: event.id || Date.now(),
-          kind: "text",
+          kind: att.isAttachment ? att.kind : "text",
           dir: isMine ? "out" : "in",
           from: event.from || "Associate",
-          text: parsed.text,
+          text: att.isAttachment ? att.text : parsed.text,
+          ...(att.isAttachment
+            ? {
+                fileName: att.fileName,
+                fileSize: att.fileSize,
+                fileUrl: att.fileUrl,
+                fileType: att.fileType,
+                imageUrl: att.imageUrl,
+                videoUrl: att.videoUrl,
+                audioUrl: att.audioUrl,
+              }
+            : {}),
           time: timeStr,
           ts: event.ts,
           status: "sent",
@@ -654,9 +790,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           };
         });
 
+        const attPreview = getAttachmentPreviewText(att, parsed.text);
         const groupPreview = parsed.forwarded
-          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
-          : `${event.from || "Associate"}: ${event.text}`;
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${attPreview}`
+          : `${event.from || "Associate"}: ${attPreview}`;
 
         setChats((prevChats) => {
           const idx = prevChats.findIndex((c) => c.id === targetGroup);
@@ -690,12 +827,24 @@ export function EmberChatScreen({ onOpenAiChat }) {
         const isOpen = activeChatIdRef.current === targetHost;
         const sender = event.from || event.host || "Host";
         const parsed = parseForwardedText(event.text, sender);
+        const att = parseAttachmentFromText(parsed.text);
         const newMsg = {
           id: event.id || Date.now(),
-          kind: "text",
+          kind: att.isAttachment ? att.kind : "text",
           dir: "in",
           from: sender,
-          text: parsed.text,
+          text: att.isAttachment ? att.text : parsed.text,
+          ...(att.isAttachment
+            ? {
+                fileName: att.fileName,
+                fileSize: att.fileSize,
+                fileUrl: att.fileUrl,
+                fileType: att.fileType,
+                imageUrl: att.imageUrl,
+                videoUrl: att.videoUrl,
+                audioUrl: att.audioUrl,
+              }
+            : {}),
           time: timeStr,
           ts: event.ts,
           status: "read",
@@ -711,9 +860,10 @@ export function EmberChatScreen({ onOpenAiChat }) {
           [targetHost]: [...(prev[targetHost] ?? []), newMsg],
         }));
 
+        const attPreview = getAttachmentPreviewText(att, parsed.text);
         const hostPreview = parsed.forwarded
-          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
-          : event.text;
+          ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${attPreview}`
+          : attPreview;
 
         setChats((prevChats) => {
           const idx = prevChats.findIndex((c) => c.id === targetHost);
@@ -838,9 +988,11 @@ export function EmberChatScreen({ onOpenAiChat }) {
             const chatId = `user-${partnerUsername}`;
             const timeStr = formatTs(item.ts);
             const parsed = parseForwardedText(item.text, partner);
+            const att = parseAttachmentFromText(parsed.text);
+            const attPreview = getAttachmentPreviewText(att, parsed.text);
             const previewText = parsed.forwarded
-              ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${parsed.text}`
-              : (item.text || undefined);
+              ? `↪ ${parsed.forwardedBy ? `${parsed.forwardedBy}: ` : ""}${attPreview}`
+              : (attPreview || undefined);
             const existingIdx = updated.findIndex((c) => c.id === chatId);
             if (existingIdx !== -1) {
               updated[existingIdx] = {
@@ -895,12 +1047,24 @@ export function EmberChatScreen({ onOpenAiChat }) {
               });
 
               const parsed = parseForwardedText(m.text, m.from);
+              const att = parseAttachmentFromText(parsed.text);
               return {
                 id: m.id,
-                kind: "text",
+                kind: att.isAttachment ? att.kind : "text",
                 dir: isOutgoing ? "out" : "in",
                 from: m.from,
-                text: parsed.text,
+                text: att.isAttachment ? att.text : parsed.text,
+                ...(att.isAttachment
+                  ? {
+                      fileName: att.fileName,
+                      fileSize: att.fileSize,
+                      fileUrl: att.fileUrl,
+                      fileType: att.fileType,
+                      imageUrl: att.imageUrl,
+                      videoUrl: att.videoUrl,
+                      audioUrl: att.audioUrl,
+                    }
+                  : {}),
                 time: formatTs(m.ts),
                 ts: m.ts,
                 status: "read",
@@ -1931,37 +2095,50 @@ export function EmberChatScreen({ onOpenAiChat }) {
     };
     updateActiveMessages((list) => [...list, newMsg]);
 
-    const descriptor =
-      filePayload.kind === "image"
-        ? `📷 Photo: ${filePayload.fileName || "image"}`
-        : filePayload.kind === "video"
-          ? `🎥 Video: ${filePayload.fileName || "video"}`
-          : filePayload.kind === "audio"
-            ? `🎙️ Voice Note (${filePayload.duration || "0:05"})`
-            : `📎 Document: ${filePayload.fileName || "file"}`;
+    const safeUrl = (filePayload.fileUrl && filePayload.fileUrl.length < 1800)
+      ? filePayload.fileUrl
+      : (filePayload.imageUrl && filePayload.imageUrl.length < 1800 ? filePayload.imageUrl : "");
+    const wireMeta = {
+      kind: filePayload.kind || "file",
+      name: filePayload.fileName || "attachment",
+      size: filePayload.fileSize || "",
+      url: safeUrl,
+      type: filePayload.fileType || "",
+    };
+    const wireTag = `[ATTACHMENT:${JSON.stringify(wireMeta)}]`;
 
     if (socketStatus === "connected") {
       if (activeChat.isGroup) {
         if (activeChat.id === "room-general") {
-          sandeshSocket.sendGlobalMsg(descriptor);
+          sandeshSocket.sendGlobalMsg(wireTag);
         } else {
           const grp = activeChat.name || activeChat.id.replace(/^room-/, "");
-          sandeshSocket.sendGroupMsg(grp, descriptor);
+          sandeshSocket.sendGroupMsg(grp, wireTag);
         }
       } else if (activeChat.isHost) {
-        sandeshSocket.sendHostMsg(activeChat.id.replace(/^host-/, ""), descriptor);
+        sandeshSocket.sendHostMsg(activeChat.id.replace(/^host-/, ""), wireTag);
       } else {
         const targetUser = (activeChat.username || activeChat.id.replace(/^user-/, "")).toLowerCase().trim();
-        sandeshSocket.sendDM(targetUser, descriptor);
+        sandeshSocket.sendDM(targetUser, wireTag);
       }
     }
+
+    const previewLabel = filePayload.fileName
+      ? `📎 ${filePayload.fileName}`
+      : filePayload.kind === "image"
+        ? "📷 Photo"
+        : filePayload.kind === "video"
+          ? "🎥 Video"
+          : filePayload.kind === "audio"
+            ? "🎙️ Voice note"
+            : "📎 Attachment";
 
     setChats((prevChats) =>
       prevChats.map((c) =>
         c.id === activeChatId
           ? {
             ...c,
-            preview: `You: ${descriptor}`,
+            preview: `You: ${previewLabel}`,
             time: "now",
           }
           : c

@@ -2,8 +2,96 @@ import { useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import QuickReactPopup from "./QuickReactPopup.jsx";
 import MessageActionMenu from "./MessageActionMenu.jsx";
+import { sandeshApi } from "../../../services/sandeshApi.js";
 
 const LONG_PRESS_MS = 450;
+
+export function resolveFileUrl(url) {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:") || url.startsWith("blob:")) {
+    return url;
+  }
+  const origin = sandeshApi?.getServerOrigin?.() || "";
+  if (url.startsWith("/")) {
+    return origin ? `${origin}${url}` : url;
+  }
+  return origin ? `${origin}/${url}` : `/${url}`;
+}
+
+export function triggerFileDownload(fileName, fileUrl) {
+  if (!fileUrl) return;
+  const resolvedUrl = resolveFileUrl(fileUrl);
+  const targetName = fileName || "download";
+
+  if (resolvedUrl.startsWith("data:") || resolvedUrl.startsWith("blob:")) {
+    const a = document.createElement("a");
+    a.href = resolvedUrl;
+    a.download = targetName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return;
+  }
+
+  fetch(resolvedUrl)
+    .then((res) => {
+      if (!res.ok) throw new Error("Network response was not ok");
+      return res.blob();
+    })
+    .then((blob) => {
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = targetName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+    })
+    .catch(() => {
+      const a = document.createElement("a");
+      a.href = resolvedUrl;
+      a.download = targetName;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+}
+
+export function getFileBadgeConfig(fileName = "") {
+  const ext = (fileName.split(".").pop() || "").toLowerCase();
+  switch (ext) {
+    case "pdf":
+      return { icon: "picture_as_pdf", label: "PDF", color: "#f43f5e", bg: "rgba(244, 63, 94, 0.12)" };
+    case "doc":
+    case "docx":
+      return { icon: "description", label: "DOC", color: "#2563eb", bg: "rgba(37, 99, 235, 0.12)" };
+    case "xls":
+    case "xlsx":
+    case "csv":
+      return { icon: "table_chart", label: "XLS", color: "#059669", bg: "rgba(5, 150, 105, 0.12)" };
+    case "ppt":
+    case "pptx":
+      return { icon: "slideshow", label: "PPT", color: "#d97706", bg: "rgba(217, 119, 6, 0.12)" };
+    case "zip":
+    case "rar":
+    case "7z":
+    case "tar":
+    case "gz":
+      return { icon: "folder_zip", label: "ZIP", color: "#9333ea", bg: "rgba(147, 51, 234, 0.12)" };
+    case "txt":
+    case "md":
+    case "json":
+    case "js":
+    case "py":
+      return { icon: "code", label: ext.toUpperCase(), color: "#0891b2", bg: "rgba(8, 145, 178, 0.12)" };
+    default:
+      return { icon: "insert_drive_file", label: ext ? ext.toUpperCase().slice(0, 4) : "FILE", color: "var(--sandesh-coral-accent, #ff7a59)", bg: "rgba(255, 122, 89, 0.12)" };
+  }
+}
+
 
 function TicksIcon({ state }) {
   if (state === "sending") {
@@ -29,12 +117,12 @@ function TicksIcon({ state }) {
     <span className={`sandesh-ticks ${state === "read" ? "read" : "sent"}`} title={state === "read" ? "Read" : "Sent"}>
       {state === "read" ? (
         <svg width="15" height="11" viewBox="0 0 16 11" fill="none">
-          <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M5 5.5L8.5 9L15 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5 5.5L8.5 9L15 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ) : (
         <svg width="12" height="11" viewBox="0 0 12 11" fill="none">
-          <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M1 5.5L4.5 9L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
     </span>
@@ -78,7 +166,7 @@ function VoiceNoteBubble({ msg }) {
       {msg.audioUrl && (
         <audio
           ref={audioRef}
-          src={msg.audioUrl}
+          src={resolveFileUrl(msg.audioUrl || msg.fileUrl)}
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleEnded}
           style={{ display: "none" }}
@@ -175,9 +263,6 @@ function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMe
               <span className="forwarded-title">
                 Forwarded by <strong className="forwarder-name">{msg.forwardedBy || msg.from}</strong>
               </span>
-              {msg.originalFrom && msg.originalFrom !== (msg.forwardedBy || msg.from) && (
-                <span className="forwarded-origin">• original from {msg.originalFrom}</span>
-              )}
             </div>
           </div>
         )}
@@ -238,23 +323,74 @@ function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMe
         )}
 
         {/* 2. File / Document Message */}
-        {msg.kind === "file" && (
-          <div className="sandesh-file-card">
-            <span className="material-icons file-icon">description</span>
-            <div className="file-info">
-              <span className="file-name">{msg.fileName}</span>
-              <span className="file-size">{msg.fileSize || "Document"}</span>
+        {msg.kind === "file" && (() => {
+          const badge = getFileBadgeConfig(msg.fileName);
+          const hasUrl = Boolean(msg.fileUrl);
+          return (
+            <div className="sandesh-file-card-wrapper">
+              <div
+                className={`sandesh-file-card ${hasUrl ? "sandesh-file-card-clickable" : ""}`}
+                onClick={() => hasUrl && triggerFileDownload(msg.fileName, msg.fileUrl)}
+                role={hasUrl ? "button" : undefined}
+                tabIndex={hasUrl ? 0 : undefined}
+                title={hasUrl ? `Download ${msg.fileName || "file"}` : msg.fileName}
+                onKeyDown={(e) => {
+                  if (hasUrl && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    triggerFileDownload(msg.fileName, msg.fileUrl);
+                  }
+                }}
+              >
+                <div className="file-icon-badge" style={{ backgroundColor: badge.bg, color: badge.color }}>
+                  <span className="material-icons file-icon">{badge.icon}</span>
+                  <span className="file-ext-tag">{badge.label}</span>
+                </div>
+                <div className="file-info">
+                  <span className="file-name" title={msg.fileName}>{msg.fileName || "Document"}</span>
+                  <div className="file-meta-row">
+                    <span className="file-size">{msg.fileSize || badge.label}</span>
+                    <span className="file-dot">•</span>
+                    <span className="file-download-hint">{hasUrl ? "Tap to download" : "Document"}</span>
+                  </div>
+                </div>
+                {hasUrl && (
+                  <button
+                    type="button"
+                    className="file-download-btn"
+                    title={`Download ${msg.fileName || "file"}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerFileDownload(msg.fileName, msg.fileUrl);
+                    }}
+                  >
+                    <span className="material-icons">download</span>
+                  </button>
+                )}
+              </div>
+              {msg.text && <p className="file-caption">{msg.text}</p>}
             </div>
-            <button type="button" className="file-download-btn" title="Download">
-              <span className="material-icons">download</span>
-            </button>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 3. Image Message */}
         {msg.kind === "image" && (
           <div className="sandesh-img-card">
-            <img src={msg.imageUrl} alt="Shared preview" />
+            <div className="sandesh-media-wrapper">
+              <img src={resolveFileUrl(msg.imageUrl || msg.fileUrl)} alt={msg.fileName || "Shared preview"} />
+              {(msg.imageUrl || msg.fileUrl) && (
+                <button
+                  type="button"
+                  className="media-download-overlay-btn"
+                  title={`Download ${msg.fileName || "image"}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerFileDownload(msg.fileName || "image.png", msg.imageUrl || msg.fileUrl);
+                  }}
+                >
+                  <span className="material-icons">download</span>
+                </button>
+              )}
+            </div>
             {msg.text && <p className="img-caption">{msg.text}</p>}
           </div>
         )}
@@ -262,8 +398,23 @@ function MessageRow({ msg, onReact, onReply, onForward, onDelete, onOpenActionMe
         {/* 4. Video Message */}
         {msg.kind === "video" && (
           <div className="sandesh-video-card">
-            <video src={msg.videoUrl} controls className="sandesh-inline-video" />
-            {msg.text && <p className="video-caption">{msg.text}</p>}
+            <video src={resolveFileUrl(msg.videoUrl || msg.fileUrl)} controls className="sandesh-inline-video" />
+            <div className="video-card-footer">
+              {msg.text && <p className="video-caption">{msg.text}</p>}
+              {(msg.videoUrl || msg.fileUrl) && (
+                <button
+                  type="button"
+                  className="file-download-btn video-dl-btn"
+                  title={`Download ${msg.fileName || "video"}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerFileDownload(msg.fileName || "video.mp4", msg.videoUrl || msg.fileUrl);
+                  }}
+                >
+                  <span className="material-icons">download</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -443,22 +594,22 @@ export default function MessageList({
 
   const popupStyle = popup
     ? (() => {
-        const margin = 12;
-        const width = popup.kind === "react" ? 360 : 190;
-        const height = popup.kind === "react" ? 52 : 270;
-        const left = Math.min(
-          Math.max(popup.x - (popup.kind === "react" ? 60 : 10), margin),
-          window.innerWidth - width - margin
-        );
-        let top = popup.y - height - 10;
-        if (top < margin) {
-          top = popup.y + 24;
-        }
-        if (top + height > window.innerHeight - margin) {
-          top = window.innerHeight - height - margin;
-        }
-        return { left, top, position: "fixed" };
-      })()
+      const margin = 12;
+      const width = popup.kind === "react" ? 360 : 190;
+      const height = popup.kind === "react" ? 52 : 270;
+      const left = Math.min(
+        Math.max(popup.x - (popup.kind === "react" ? 60 : 10), margin),
+        window.innerWidth - width - margin
+      );
+      let top = popup.y - height - 10;
+      if (top < margin) {
+        top = popup.y + 24;
+      }
+      if (top + height > window.innerHeight - margin) {
+        top = window.innerHeight - height - margin;
+      }
+      return { left, top, position: "fixed" };
+    })()
     : null;
 
   return (

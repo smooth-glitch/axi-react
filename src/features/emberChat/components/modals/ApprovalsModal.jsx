@@ -14,12 +14,22 @@ export default function ApprovalsModal({
   const [statusFilter, setStatusFilter] = useState(initialStatus);
 
   const pendingCount = requests.filter((r) => r.status === "pending").length;
-  const acceptedCount = requests.filter((r) => r.status === "accepted").length;
+  const acceptedCount = requests.filter(
+    (r) => r.status === "accepted" || r.status === "approved" || String(r.status).toLowerCase() === "accepted" || String(r.status).toLowerCase() === "approved"
+  ).length;
   const rejectedCount = requests.filter((r) => r.status === "rejected").length;
   const totalCount = requests.length;
 
   const filtered = requests.filter((r) => {
     if (statusFilter === "all") return true;
+    if (statusFilter === "accepted") {
+      return (
+        r.status === "accepted" ||
+        r.status === "approved" ||
+        String(r.status).toLowerCase() === "accepted" ||
+        String(r.status).toLowerCase() === "approved"
+      );
+    }
     return r.status === statusFilter;
   });
 
@@ -123,7 +133,11 @@ export default function ApprovalsModal({
               const displayName = req.name || uName;
               const category = req.category || "Employee";
               const isPending = req.status === "pending";
-              const isAccepted = req.status === "accepted";
+              const isAccepted =
+                req.status === "accepted" ||
+                req.status === "approved" ||
+                String(req.status).toLowerCase() === "accepted" ||
+                String(req.status).toLowerCase() === "approved";
               const isRejected = req.status === "rejected";
 
               return (
@@ -197,8 +211,8 @@ export default function ApprovalsModal({
                     )}
                   </div>
 
-                  {/* Summary / Reason */}
-                  {req.details && (
+                  {/* Summary / Reason - visible before approval, removed once admin has approved */}
+                  {!isAccepted && req.details && (
                     <div className="approval-desc-box">
                       <span className="material-icons" style={{ fontSize: 15, color: "var(--sandesh-text-muted)" }}>info</span>
                       <span>{req.details}</span>
