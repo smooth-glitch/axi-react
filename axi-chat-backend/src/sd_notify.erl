@@ -77,14 +77,45 @@ smtp(Kind, To, Extra) ->
                          [Kind, maps:get(<<"name">>, To, <<>>)]);
         true ->
             {Subject, Body} = mail_text(Kind, To, Extra),
-            spawn(fun() ->
-                case sd_smtp:send(Email, Subject, Body) of
-                    ok -> ?LOG_NOTICE("sd_notify[~s]: email sent to ~s", [Kind, Email]);
-                    {error, Why} -> ?LOG_WARNING("sd_notify[~s]: email to ~s failed: ~p", [Kind, Email, Why])
-                end
-            end)
+            spawn(fun() -> send_with_retry(Kind, Email, Subject, Body, retry_delays()) end)
     end,
     ok.
+
+%% Mail servers hiccup (connection reset, 4xx "try later"). Try again a couple of times, then give up and say so in
+%% the log. A permanent refusal (bad address, wrong login: 5xx) is not retried. Delays in ms, SMTP_RETRY_DELAYS_MS
+%% (default "0,5000,30000": the first attempt is immediate).
+send_with_retry(Kind, Email, Subject, Body, [Delay | Rest]) ->
+    timer:sleep(Delay),
+    case sd_smtp:send(Email, Subject, Body) of
+        ok ->
+            ?LOG_NOTICE("sd_notify[~s]: email sent to ~s", [Kind, Email]);
+        {error, Why} ->
+            case Rest =/= [] andalso transient(Why) of
+                true ->
+                    ?LOG_WARNING("sd_notify[~s]: email to ~s failed (~p); will retry", [Kind, Email, Why]),
+                    send_with_retry(Kind, Email, Subject, Body, Rest);
+                false ->
+                    ?LOG_WARNING("sd_notify[~s]: email to ~s failed: ~p", [Kind, Email, Why])
+            end
+    end.
+
+transient({unexpected_reply, [$4 | _], _}) -> true;      %% 4xx: ask again later
+transient({unexpected_reply, _, _}) -> false;            %% 5xx: refused for good
+transient(no_recipient) -> false;
+transient(_) -> true.                                    %% connection / TLS / timeout trouble
+
+retry_delays() ->
+    Default = [0, 5000, 30000],
+    case os:getenv("SMTP_RETRY_DELAYS_MS") of
+        false -> Default;
+        S ->
+            Parts = [string:trim(P) || P <- string:split(S, ",", all)],
+            try [list_to_integer(P) || P <- Parts, P =/= ""] of
+                [] -> Default;
+                L -> L
+            catch _:_ -> Default
+            end
+    end.
 
 mail_text(Kind, To, Extra) ->
     Name = maps:get(<<"name">>, To, <<>>),

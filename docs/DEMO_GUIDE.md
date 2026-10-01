@@ -87,5 +87,5 @@ All in the Admin console (shield icon), tab **Users & Hosts** unless noted.
 
 ## Part 3: good to know
 - Self-registered people are not hosts and cannot give themselves host or user-management rights.
-- The invitation email contains the person's temporary password; they set their own on first use.
+- The invitation email gives the person's username and how to sign in (enter the username, scan the QR code with an authenticator app). It contains no password: only administrators have one. If an invitation gets lost, an admin or the person's host can re-send it (`users.resend_invite`).
 - If an approver is away, ask the admin to use **Change Host** for the person or to approve through a covering host.

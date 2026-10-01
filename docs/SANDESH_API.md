@@ -752,3 +752,12 @@ Events sent while a client is offline are lost, so after reconnecting a client s
   `{"type":"profile","user","avatar"|null,"status"|null}` event for each person the client already knows (itself, people
   online, its direct-message partners, its Sandesh connections) who has an avatar or a status. Handle it exactly like the
   live `profile` event. People with neither are skipped.
+
+## Re-sending invitations, audit paging
+
+- `users.resend_invite {username}` (administrator, or the person's own host) -> `{sent:true,to}`. Only for an active
+  person who has not signed in yet; refused (`rate_limited`) if one was sent in the last minute. Logged in the audit
+  trail as `user.resend_invite`.
+- `admin.audit.list {username?, limit?, offset?}` -> `{entries,total,offset,hasMore}` (newest first; `limit` up to 500;
+  the log keeps the latest 5,000 entries).
+- Invitation emails are retried on temporary mail-server failures; see `docs/EMAIL_SETUP.md`.

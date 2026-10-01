@@ -1,0 +1,102 @@
+# REFERENCE COPY of the live /etc/nginx/conf.d/axi-chat.conf on the VM (10.0.2.146), kept in the repo so changes are
+# reviewable. The VM's file is the one nginx actually reads; after editing it there run `sudo nginx -t` and
+# `sudo systemctl reload nginx`, then update this copy. Contains no secrets (certificate paths only).
+# 2026-10-01: added the `location ~ ^/(index\.html)?$` block so browsers re-check the page after every deploy.
+#
+# Serves the axi-react frontend build as static files at "/", and routes
+# the Erlang chat backend's own endpoints to it:
+#   - /ws         WebSocket connection (chat_web.erl upgrades on ANY path
+#                 when the Upgrade header is present -- "/ws" here is just
+#                 the path nginx uses to route to it, not something the
+#                 backend itself requires)
+#   - /upload     multipart file upload (POST)
+#   - /uploads/*  serving uploaded files back (GET)
+# Everything else falls through to the static frontend build.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    ssl_certificate     /etc/nginx/ssl/axi.crt;
+    ssl_certificate_key /etc/nginx/ssl/axi.key;
+    server_name _;
+
+    client_max_body_size 10m;
+
+    # Response headers. Permissions-Policy keeps camera/microphone for this origin (barcode scanner, voice notes).
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    include /etc/nginx/axi-security-headers.conf;
+
+    # Credential endpoints: rate-limited per client IP (429 when exceeded).
+    location ~ ^/api/sd/(login|register|setup/start|setup/verify|password/change)$ {
+        limit_req zone=axi_auth burst=30 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    root /var/www/axi-react;
+    index index.html;
+
+    location /ws {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # WebSocket connections are long-lived -- the default 60s proxy
+        # timeout would silently drop idle chat connections.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    location /upload {
+        proxy_pass http://127.0.0.1:8080/upload;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /uploads/ {
+        proxy_pass http://127.0.0.1:8080/uploads/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Sandesh REST API (first-time setup, register, OTP, login, session --
+    # see docs/SANDESH_API.md in the repo). Without this block /api/sd/...
+    # falls through to the static frontend and returns its HTML.
+    # X-Real-IP matters: the per-visitor limits on codes/logins/registrations
+    # key off it, exactly like the upload limit.
+    location /api/sd/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Per-branch preview environments -- see preview-deploy.yml.
+    include /etc/nginx/conf.d/previews/*.conf;
+
+    # The page itself must be re-checked after every deploy, otherwise browsers keep running the old build
+    # (fingerprinted files under /assets/ may be cached; index.html may not). An add_header inside a location
+    # replaces the inherited ones, so the shared security headers are repeated here.
+    location ~ ^/(index\.html)?$ {
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        include /etc/nginx/axi-security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        try_files /index.html =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

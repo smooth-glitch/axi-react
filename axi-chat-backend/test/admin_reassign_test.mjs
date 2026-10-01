@@ -87,7 +87,8 @@ async function main() {
         ok("the mail server was logged into with the configured account", mail.auth[0] === "mailer@test.co" && mail.auth[1] === "pw", mail.auth);
         ok("it is addressed to the person and sent from the configured sender", mail.rcpt.some((r) => r.includes(`${raj}@test.co`)) && /mailer@test\.co/.test(mail.from), { from: mail.from, rcpt: mail.rcpt });
         ok("it has a subject and welcomes them by name", /Subject: You're invited to Connectum/.test(mail.data.join("\n")) && body.includes("Hello Raj"), body.slice(0, 80));
-        ok("it carries the sign-in details and where to open the app", body.includes(`Sandesh${raj}`) && body.includes("https://10.0.2.146") && /VPN/.test(body), body);
+        ok("it says how to sign in (username, authenticator) and where to open the app", body.includes(`Your username: ${raj}`) && /authenticator/i.test(body) && body.includes("https://10.0.2.146") && /VPN/.test(body), body);
+        ok("it does not hand out a temporary password (only administrators have one)", !/Sandesh${raj}|password "/.test(body.replace("You do not need a password.", "")), body);
     }
 
     t.section("Nobody can grant themselves privileges");
